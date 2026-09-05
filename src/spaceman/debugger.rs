@@ -235,9 +235,9 @@ pub enum AuxProtocolError {
     Codec(#[from] bincode::Error),
     #[error("auxtools message length {0} is invalid")]
     Length(u32),
-    #[error("auxtools response timed out")]
+    #[error("auxtools response timed out; stop and relaunch the debugger")]
     Timeout,
-    #[error("auxtools disconnected")]
+    #[error("auxtools disconnected; stop and relaunch the debugger")]
     Disconnected,
 }
 pub struct AuxConnection {
@@ -245,6 +245,11 @@ pub struct AuxConnection {
     max_message_bytes: usize,
     response_timeout: Duration,
     events: VecDeque<AuxResponse>,
+    failed: bool,
+    incoming_header: [u8; 4],
+    header_read: usize,
+    incoming: Vec<u8>,
+    payload_read: usize,
 }
 impl AuxConnection {
     pub fn new(stream: TcpStream, max_message_bytes: usize, response_timeout: Duration) -> Self {
@@ -253,24 +258,51 @@ impl AuxConnection {
             max_message_bytes,
             response_timeout,
             events: VecDeque::new(),
+            failed: false,
+            incoming_header: [0; 4],
+            header_read: 0,
+            incoming: Vec::new(),
+            payload_read: 0,
         }
     }
     pub async fn request(&mut self, request: AuxRequest) -> Result<AuxResponse, AuxProtocolError> {
-        self.send(request).await?;
-        loop {
-            let response = tokio::time::timeout(self.response_timeout, self.read_response())
-                .await
-                .map_err(|_| AuxProtocolError::Timeout)??;
-            match response {
-                AuxResponse::Notification { .. } | AuxResponse::BreakpointHit { .. } => {
-                    self.events.push_back(response)
-                }
-                AuxResponse::Disconnect => return Err(AuxProtocolError::Disconnected),
-                response => return Ok(response),
-            }
+        if self.failed {
+            return Err(AuxProtocolError::Disconnected);
         }
+        // The wire has no request IDs. Any timeout or cancelled request makes
+        // subsequent replies ambiguous, even when a complete frame arrives later.
+        self.failed = true;
+        let result = tokio::time::timeout(self.response_timeout, async {
+            self.write_request(request).await?;
+            loop {
+                match self.read_response().await? {
+                    response @ (AuxResponse::Notification { .. }
+                    | AuxResponse::BreakpointHit { .. }) => self.events.push_back(response),
+                    AuxResponse::Disconnect => return Err(AuxProtocolError::Disconnected),
+                    response => return Ok(response),
+                }
+            }
+        })
+        .await
+        .unwrap_or(Err(AuxProtocolError::Timeout));
+        self.failed = result.is_err();
+        if self.failed {
+            let _ = self.stream.shutdown().await;
+        }
+        result
     }
     pub async fn send(&mut self, request: AuxRequest) -> Result<(), AuxProtocolError> {
+        if self.failed {
+            return Err(AuxProtocolError::Disconnected);
+        }
+        self.failed = true;
+        let result = tokio::time::timeout(self.response_timeout, self.write_request(request))
+            .await
+            .unwrap_or(Err(AuxProtocolError::Timeout));
+        self.failed = result.is_err();
+        result
+    }
+    async fn write_request(&mut self, request: AuxRequest) -> Result<(), AuxProtocolError> {
         let payload = bincode::serialize(&request)?;
         if payload.is_empty() || payload.len() > self.max_message_bytes {
             return Err(AuxProtocolError::Length(payload.len() as u32));
@@ -280,27 +312,63 @@ impl AuxConnection {
         Ok(())
     }
     async fn read_response(&mut self) -> Result<AuxResponse, AuxProtocolError> {
-        let len = self.stream.read_u32_le().await?;
+        // read() is cancellation-safe; retain progress before the next await so
+        // an ordinary event-wait timeout cannot discard a partial wire frame.
+        while self.header_read < 4 {
+            let read = self
+                .stream
+                .read(&mut self.incoming_header[self.header_read..])
+                .await?;
+            if read == 0 {
+                return Err(AuxProtocolError::Disconnected);
+            }
+            self.header_read += read;
+        }
+        let len = u32::from_le_bytes(self.incoming_header);
         if len == 0 || len as usize > self.max_message_bytes {
             return Err(AuxProtocolError::Length(len));
         }
-        let mut data = vec![0; len as usize];
-        self.stream.read_exact(&mut data).await?;
-        Ok(bincode::deserialize(&data)?)
+        self.incoming.resize(len as usize, 0);
+        while self.payload_read < len as usize {
+            let read = self
+                .stream
+                .read(&mut self.incoming[self.payload_read..])
+                .await?;
+            if read == 0 {
+                return Err(AuxProtocolError::Disconnected);
+            }
+            self.payload_read += read;
+        }
+        let response = bincode::deserialize(&self.incoming)?;
+        self.header_read = 0;
+        self.payload_read = 0;
+        self.incoming.clear();
+        Ok(response)
     }
     pub fn pop_event(&mut self) -> Option<AuxResponse> {
         self.events.pop_front()
     }
     pub async fn next_event(&mut self, timeout: Duration) -> Result<AuxResponse, AuxProtocolError> {
+        if self.failed {
+            return Err(AuxProtocolError::Disconnected);
+        }
         if let Some(event) = self.events.pop_front() {
             return Ok(event);
         }
-        tokio::time::timeout(timeout, self.read_response())
-            .await
-            .map_err(|_| AuxProtocolError::Timeout)?
+        match tokio::time::timeout(timeout, self.read_response()).await {
+            Err(_) => Err(AuxProtocolError::Timeout),
+            Ok(result) => {
+                self.failed = result.is_err();
+                result
+            }
+        }
     }
     pub async fn disconnect(&mut self) -> Result<(), AuxProtocolError> {
-        let _ = self.request(AuxRequest::Disconnect).await;
+        // Upstream's reader exits without acknowledging Disconnect. The owned
+        // process will be terminated by the caller, so only bound the send.
+        let _ =
+            tokio::time::timeout(Duration::from_secs(1), self.send(AuxRequest::Disconnect)).await;
+        self.failed = true;
         self.stream.shutdown().await?;
         Ok(())
     }
@@ -327,6 +395,7 @@ pub struct DebuggerSession {
     pub events: VecDeque<DebuggerEventRecord>,
     pub dropped_events: u64,
     pub launch_provenance: crate::LaunchProvenance,
+    pub memory_helper_sha256: Option<String>,
     pub(crate) containment: crate::process::ProcessContainment,
 }
 
@@ -352,6 +421,97 @@ impl DebuggerSession {
 mod tests {
     use super::*;
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn a_timeout_prevents_reusing_a_late_reply_for_another_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release, ready) = tokio::sync::oneshot::channel();
+        let (sent, received) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let len = stream.read_u32_le().await.unwrap();
+            let mut request = vec![0; len as usize];
+            stream.read_exact(&mut request).await.unwrap();
+            ready.await.unwrap();
+            let payload = bincode::serialize(&AuxResponse::Ack).unwrap();
+            let _ = stream.write_u32_le(payload.len() as u32).await;
+            let _ = stream.write_all(&payload).await;
+            sent.send(()).unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+        let stream = TcpStream::connect(address).await.unwrap();
+        let mut connection = AuxConnection::new(stream, 1024, Duration::from_millis(20));
+        assert!(matches!(
+            connection.request(AuxRequest::Configured).await,
+            Err(AuxProtocolError::Timeout)
+        ));
+        release.send(()).unwrap();
+        received.await.unwrap();
+        assert!(matches!(
+            connection.request(AuxRequest::Pause).await,
+            Err(AuxProtocolError::Disconnected)
+        ));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disconnect_does_not_wait_for_an_ack_the_upstream_never_sends() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let len = stream.read_u32_le().await.unwrap();
+            let mut request = vec![0; len as usize];
+            stream.read_exact(&mut request).await.unwrap();
+            assert!(matches!(
+                bincode::deserialize::<AuxRequest>(&request).unwrap(),
+                AuxRequest::Disconnect
+            ));
+            let mut byte = [0];
+            assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
+        });
+        let stream = TcpStream::connect(address).await.unwrap();
+        let mut connection = AuxConnection::new(stream, 1024, Duration::from_secs(30));
+        tokio::time::timeout(Duration::from_millis(500), connection.disconnect())
+            .await
+            .expect("Disconnect must not wait for a response")
+            .unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn event_wait_timeout_retains_a_partial_frame() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sent, received) = tokio::sync::oneshot::channel();
+        let (release, ready) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let payload = bincode::serialize(&AuxResponse::Notification {
+                message: "split event".into(),
+            })
+            .unwrap();
+            let header = (payload.len() as u32).to_le_bytes();
+            stream.write_all(&header[..2]).await.unwrap();
+            sent.send(()).unwrap();
+            ready.await.unwrap();
+            stream.write_all(&header[2..]).await.unwrap();
+            stream.write_all(&payload).await.unwrap();
+        });
+        let stream = TcpStream::connect(address).await.unwrap();
+        let mut connection = AuxConnection::new(stream, 1024, Duration::from_secs(1));
+        received.await.unwrap();
+        assert!(matches!(
+            connection.next_event(Duration::from_millis(20)).await,
+            Err(AuxProtocolError::Timeout)
+        ));
+        release.send(()).unwrap();
+        assert!(
+            matches!(connection.next_event(Duration::from_secs(1)).await.unwrap(), AuxResponse::Notification { message } if message == "split event")
+        );
+        server.await.unwrap();
+    }
 
     #[tokio::test]
     async fn bounded_protocol_routes_interleaved_events() {

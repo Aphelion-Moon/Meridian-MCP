@@ -184,6 +184,8 @@ static CONTRACTS: &[ToolContract] = &[
         None,
         1_048_576
     ),
+    contract!("dm_memory_summary", "Summarize sampled process memory over a selected time window.", Analysis, READ, Experimental, Some(30_000), 1_048_576),
+    contract!("dm_memory_compare", "Compare process memory for matching recorded builds and workloads.", Analysis, READ, Experimental, Some(30_000), 1_048_576),
     contract!("dm_native_evidence_summary", "Summarize bounded redacted native runtime evidence.", Analysis, READ, Experimental, Some(120_000), 1_048_576),
     contract!("dm_native_evidence_compare", "Compare identity-compatible native evidence runs.", Analysis, READ, Experimental, Some(600_000), 1_048_576),
     contract!(
@@ -477,6 +479,15 @@ static CONTRACTS: &[ToolContract] = &[
     contract!(
         "dm_debug_variables",
         "Read a bounded variable-reference page.",
+        Development,
+        DEBUG,
+        Experimental,
+        Some(30_000),
+        1_048_576
+    ),
+    contract!(
+        "dm_debug_memory",
+        "Control bounded, opt-in native allocation attribution.",
         Development,
         DEBUG,
         Experimental,

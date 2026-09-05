@@ -13,6 +13,7 @@ Generated from `src/contracts.rs`; do not edit by hand.
 | `dm_debug_evaluate` | Development | Experimental | read, process, loopback | 30000 | 1048576 | Evaluate an expression in the active debuggee. |
 | `dm_debug_exception_info` | Development | Experimental | read, process, loopback | - | 262144 | Read the last retained runtime exception. |
 | `dm_debug_launch` | Development | Experimental | read, process, loopback | 60000 | 262144 | Launch one owned interactive or headless auxtools session. |
+| `dm_debug_memory` | Development | Experimental | read, process, loopback | 30000 | 1048576 | Control bounded, opt-in native allocation attribution. |
 | `dm_debug_scopes` | Development | Experimental | read, process, loopback | 30000 | 1048576 | Read variable scopes for a debug frame. |
 | `dm_debug_set_breakpoints` | Development | Experimental | read, process, loopback | 30000 | 1048576 | Replace source-oriented auxtools breakpoints. |
 | `dm_debug_set_exception_breakpoints` | Development | Experimental | read, process, loopback | 30000 | 262144 | Toggle breaks on DreamMaker runtimes. |
@@ -39,6 +40,8 @@ Generated from `src/contracts.rs`; do not edit by hand.
 | `dm_list_render_passes` | Analysis | Provisional | memory | - | 262144 | List pinned SpacemanDMM render-pass behavior. |
 | `dm_list_types` | Analysis | Provisional | memory | - | 1048576 | List parsed types under an optional prefix. |
 | `dm_map_info` | Analysis | Provisional | read | - | 1048576 | Read DMM/TGM dimensions and atom statistics. |
+| `dm_memory_compare` | Analysis | Experimental | read | 30000 | 1048576 | Compare process memory for matching recorded builds and workloads. |
+| `dm_memory_summary` | Analysis | Experimental | read | 30000 | 1048576 | Summarize sampled process memory over a selected time window. |
 | `dm_native_evidence_compare` | Analysis | Experimental | read | 600000 | 1048576 | Compare identity-compatible native evidence runs. |
 | `dm_native_evidence_summary` | Analysis | Experimental | read | 120000 | 1048576 | Summarize bounded redacted native runtime evidence. |
 | `dm_parse_environment` | Analysis | Provisional | read | 1800000 | 1048576 | Parse and atomically install DreamMaker analysis and lexical indexes. |

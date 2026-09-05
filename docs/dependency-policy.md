@@ -16,6 +16,8 @@ Windows BYOND 516.1687 runtime provisioning pins the official NuGet package `Mic
 
 Run `cargo update` only for an intentional dependency change. Review the lockfile diff, then run formatting, clippy, all-feature tests, release build, and `cargo deny check`. Advisory exceptions must be narrow, documented, time-bounded, and later removed.
 
+The optional Windows allocation helper is built from Auxtools revision `889006e334570a426f35c0a2f579c08d3d7b2186` (v2.3.7), its committed lockfile and the maintained files under `helpers/auxtools-memory/`. Its separate manifest must match the DLL hash, revision, protocol 1 and every overlay hash embedded in the MCP binary. It initially permits only BYOND 516.1687. Changes require bounded accounting tests, a clean pinned-source helper build and the owned native memory integration gate. The normal debugger retains its original release DLL pin. Preserve the upstream MIT license in distributed helper packages.
+
 ## Temporary advisory exceptions
 
 The following RustSec entries report unmaintained transitive crates, not known vulnerabilities. They

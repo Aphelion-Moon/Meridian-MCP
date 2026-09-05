@@ -5,6 +5,28 @@
   "local_patch_provenance": "vendor/spacemandmm/README.md",
   "capabilities": [
     {
+      "id": "meridian.native_memory",
+      "category": "meridian",
+      "upstream_component": "meridian-mcp",
+      "disposition": "mcp_native",
+      "targets": ["dm_debug_memory"],
+      "platforms": ["windows"],
+      "verification": "bounded accounting, helper identity and owned BYOND allocation fixtures",
+      "evidence": ["owned:native-memory-fixtures"],
+      "rationale": null
+    },
+    {
+      "id": "meridian.memory_evidence",
+      "category": "meridian",
+      "upstream_component": "meridian-mcp",
+      "disposition": "mcp_native",
+      "targets": ["dm_memory_summary", "dm_memory_compare"],
+      "platforms": ["all"],
+      "verification": "bounded process-memory window, identity and stdio evidence gates",
+      "evidence": ["owned:memory-evidence-fixtures"],
+      "rationale": null
+    },
+    {
       "id": "meridian.native_evidence",
       "category": "meridian",
       "upstream_component": "meridian-mcp",

@@ -144,6 +144,8 @@ Analysis tools are read-only. Development mode adds compilation, file generation
 | `dm_list_render_passes` | List available map render passes. |
 | `dm_find_on_map` | Find a type and its descendants on a map. |
 | `dm_native_evidence_summary` | Summarize local runtime artifacts with hashes, redaction and separate clock domains. |
+| `dm_memory_summary` | Summarize recorded process-memory growth, peaks and sampling gaps in a selected time window. |
+| `dm_memory_compare` | Compare memory windows with matching recorded builds, workloads and metric types. |
 | `dm_native_evidence_compare` | Compare verified, matching builds and workloads across repeated measurements. |
 
 ### Development mode
@@ -178,6 +180,7 @@ Enable `MERIDIAN_MCP_DEBUGGER=auxtools` in development mode with the verified au
 | `dm_debug_scopes` | Get argument, local and global variable references for a frame. |
 | `dm_debug_variables` | Read a page of values from a debugger variable reference. |
 | `dm_debug_evaluate` | Evaluate an expression in the debuggee; this can change game state. |
+| `dm_debug_memory` | Start or stop bounded allocation attribution with the optional Windows memory helper. |
 | `dm_debug_exception_info` | Read the latest retained runtime exception. |
 | `dm_debug_source` | Read the session-provided `stddef.dm` through its issued reference. |
 | `dm_debug_wait_for_event` | Wait for events after a sequence number; report dropped events. |
@@ -313,6 +316,8 @@ MERIDIAN_MCP_TRACY = 'disabled'
 ```
 
 ## Operational details
+
+The [memory investigation guide](docs/memory-debugging.md) covers saved process-memory samples and opt-in native allocation attribution. Object retaining-reference graphs remain unsupported.
 
 A managed artifact records compiler, source and output identities. A later failed compile or changed recorded input/output makes it stale, and launch tools reject it. An unmanaged human-built DMB is marked `unverified`; set `require_verified_provenance` to reject it. Use `dm_check_fixture_sync` to check a declarative fixture before building. See [provenance](docs/provenance.md).
 

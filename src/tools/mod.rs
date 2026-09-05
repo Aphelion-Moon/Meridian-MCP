@@ -7,6 +7,7 @@ mod docs;
 mod fixture;
 mod language;
 mod map;
+mod memory;
 mod native_evidence;
 mod parse;
 pub mod rift;
@@ -238,6 +239,8 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         "required":["artifacts"],
         "additionalProperties":false
     });
+    tools.push(ToolDefinition { name: "dm_memory_summary".into(), description: "Read schema-2 Tracy memory evidence and summarize a half-open millisecond window. Reports separate process metrics, sampled peaks, net growth and gaps; does not identify allocations or prove leaks. No parse or native helper required.".into(), input_schema: serde_json::to_value(schemars::schema_for!(crate::memory_evidence::MemoryRequest)).unwrap() });
+    tools.push(ToolDefinition { name: "dm_memory_compare".into(), description: "Compare two memory evidence windows with matching recorded build/workload identities, OS, roles and metrics. Reports descriptive deltas, not verified leak or performance conclusions. No parse or native helper required.".into(), input_schema: serde_json::to_value(schemars::schema_for!(crate::memory_evidence::MemoryCompareRequest)).unwrap() });
     tools.push(ToolDefinition { name:"dm_native_evidence_summary".into(), description:"Validate, redact, phase-align, and summarize bounded BYOND and application-native evidence without modifying raw artifacts.".into(), input_schema:evidence_request_schema.clone() });
     tools.push(ToolDefinition { name:"dm_native_evidence_compare".into(), description:"Recompute and identity-check 2-20 complete native-evidence runs before calculating deterministic metric deltas and distributions.".into(), input_schema:json!({"type":"object","properties":{"runs":{"type":"array","minItems":2,"maxItems":20,"items":evidence_request_schema}},"required":["runs"],"additionalProperties":false}) });
 
@@ -682,7 +685,8 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     });
 
     tools.extend([
-        ToolDefinition { name:"dm_debug_launch".into(), description:"Launch one MCP-owned interactive DreamSeeker or headless DreamDaemon session with the fixed, hash-verified auxtools debugger.".into(), input_schema:json!({"type":"object","properties":{"dmb_path":{"type":"string"},"host_mode":{"type":"string","enum":["interactive","headless"],"default":"interactive"},"startup_timeout_ms":{"type":"integer","minimum":1,"maximum":60000},"require_verified_provenance":{"type":"boolean","default":false}},"required":["dmb_path"],"additionalProperties":false}) },
+        ToolDefinition { name:"dm_debug_launch".into(), description:"Launch one MCP-owned interactive DreamSeeker or headless DreamDaemon session with a hash-verified auxtools debugger. Opt into the separately installed native memory helper with memory_profile.".into(), input_schema:json!({"type":"object","properties":{"dmb_path":{"type":"string"},"host_mode":{"type":"string","enum":["interactive","headless"],"default":"interactive"},"memory_profile":{"type":"boolean","default":false},"startup_timeout_ms":{"type":"integer","minimum":1,"maximum":60000},"require_verified_provenance":{"type":"boolean","default":false}},"required":["dmb_path"],"additionalProperties":false}) },
+        ToolDefinition { name: "dm_debug_memory".into(), description: "Check, start or stop bounded native allocation attribution in a debugger launched with memory_profile: true. Windows BYOND 516.1687 only; excludes other threads and object retaining references.".into(), input_schema: serde_json::to_value(schemars::schema_for!(crate::native_memory::MemoryControl)).expect("native memory schema") },
         ToolDefinition { name:"dm_debug_stop".into(), description:"Disconnect and terminate the active MCP-owned debugger process tree.".into(), input_schema:json!({"type":"object","properties":{}}) },
         ToolDefinition { name:"dm_debug_set_breakpoints".into(), description:"Replace all source breakpoints for one contained parsed DreamMaker file.".into(), input_schema:debug_source_breakpoint_schema() },
         ToolDefinition { name:"dm_debug_set_function_breakpoints".into(), description:"Set a bounded complete list of canonical proc breakpoints.".into(), input_schema:debug_breakpoint_schema() },
@@ -1063,6 +1067,8 @@ pub async fn call_tool(
             parse::parse_environment_with_policy(state, args, context.policy()).await
         }
         "dm_check_fixture_sync" => fixture::check_sync(context, state, args).await,
+        "dm_memory_summary" => memory::run(context, args, false).await,
+        "dm_memory_compare" => memory::run(context, args, true).await,
         "dm_native_evidence_summary" => native_evidence::summary(context, args).await,
         "dm_native_evidence_compare" => native_evidence::compare(context, args).await,
         "dm_get_type" => parse::get_type(state, args).await,
@@ -1112,6 +1118,7 @@ pub async fn call_tool(
         "dm_debug_scopes" => debugger::scopes(state, args).await,
         "dm_debug_variables" => debugger::variables(state, args).await,
         "dm_debug_evaluate" => debugger::evaluate(state, args).await,
+        "dm_debug_memory" => debugger::memory(state, args).await,
         "dm_debug_exception_info" => debugger::exception_info(state).await,
         "dm_debug_source" => debugger::source(state, args).await,
         "dm_debug_wait_for_event" => debugger::wait_for_event(state, args).await,
@@ -1147,6 +1154,14 @@ fn contain_arguments(
         }
         "dm_check_fixture_sync" => {
             canonical_argument(policy, args, "fixture_manifest_path", false)?
+        }
+        "dm_memory_summary" => canonical_argument(policy, args, "evidence_path", false)?,
+        "dm_memory_compare" => {
+            for name in ["baseline", "current"] {
+                if let Some(request) = args.get_mut(name) {
+                    canonical_argument(policy, request, "evidence_path", false)?;
+                }
+            }
         }
         "dm_native_evidence_summary" => contain_evidence_request(policy, args)?,
         "dm_native_evidence_compare" => {

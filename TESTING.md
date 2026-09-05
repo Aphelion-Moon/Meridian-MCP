@@ -44,6 +44,10 @@ The repository's checked-in cross-platform text policy is LF, including PowerShe
 
 ## Tracy native gates
 
+Run `cargo +1.95.0 test --locked --test memory_tools` for offline memory evidence: time-window boundaries, sampled peaks, negative growth, missing data, pagination, size limits, path containment, identity checks and explicit phase comparisons. These tools read existing schema-2 JSON without launching BYOND or requiring Tracy helpers. Native allocation or retention support must be qualified separately; see [memory investigation](docs/memory-debugging.md).
+
+Run `cargo +1.95.0 test --locked --test native_memory` for bounded allocation accounting and control validation. On Windows with BYOND 516.1687, build the optional helper using `scripts/build-auxtools-memory.ps1`, install its package beside the test MCP executable, then run `scripts/run-native-memory-integration.ps1 -DreamMakerPath <dm.exe> -BinaryPath <meridian-mcp.exe> -EvidencePath <result.json>`. This compiles an owned UCRT fixture and checks known allocation bytes, failed and zero-size realloc, release, capture limits/deadline, repeated sessions and the console guard. A helper build alone is not native runtime qualification.
+
 First run `cargo +1.95.0 test --locked --test tracy_protocol --test tracy_tools` and `cargo +1.95.0 test --locked --lib tracy -- --nocapture`. These cover blocked writes, cancellation, late responses, bounded framing, actual child EOF/termination, failed cleanup retries and journal retention. A bounded error is distinct from confirmed process exit; synthetic transport gates do not qualify a live capture.
 
 Check out Tracy and byond-tracy at the exact revisions recorded in `tracy-capabilities.json`, then build from those local sources. The builder never downloads source and merges its schema-v2 entries into an existing dmdoc manifest.

@@ -74,7 +74,23 @@ pub async fn launch(
             .parent()
             .ok_or_else(|| anyhow!("DMB path has no parent"))?,
     );
-    let debugger_dll = normalize_spawn_path(&installation.debug_server_dll);
+    let memory_profile = match args.get("memory_profile") {
+        None => false,
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| anyhow!("memory_profile must be a boolean"))?,
+    };
+    let memory_helper = memory_profile
+        .then(crate::native_memory::installed_memory_helper)
+        .transpose()?;
+    let debugger_dll = normalize_spawn_path(
+        memory_helper
+            .as_ref()
+            .map_or(&installation.debug_server_dll, |helper| &helper.path),
+    );
+    let dll_sha256 = memory_helper
+        .as_ref()
+        .map_or(&installation.dll_sha256, |helper| &helper.sha256);
     let mut command = Command::new(debugger_host);
     command
         .arg(dmb_spawn_path)
@@ -143,6 +159,19 @@ pub async fn launch(
         let _ = process.kill().await;
         return Err(anyhow!("debugger configuration was not acknowledged"));
     }
+    if memory_profile {
+        let response = connection
+            .request(AuxRequest::Eval {
+                frame_id: None,
+                command: "#meridian_memory_v1 {\"action\":\"status\"}".into(),
+                context: Some("repl".into()),
+            })
+            .await?;
+        let AuxResponse::Eval(response) = response else {
+            return Err(anyhow!("Native memory capability handshake failed"));
+        };
+        crate::native_memory::parse_response(&response.value)?;
+    }
     let generation = state.state_generation().await;
     *slot = Some(DebuggerSession {
         lifecycle: DebuggerLifecycle::Running,
@@ -158,11 +187,12 @@ pub async fn launch(
         events: VecDeque::new(),
         dropped_events: 0,
         launch_provenance: launch_provenance.clone(),
+        memory_helper_sha256: memory_helper.as_ref().map(|helper| helper.sha256.clone()),
         containment,
     });
     Ok(json_success(
         ToolMetadata::complete(Some(generation)),
-        json!({"lifecycle":"running","host_mode":host_mode,"port":port,"dmb_path":dmb_path,"dll_sha256":installation.dll_sha256,"launch_provenance":launch_provenance}),
+        json!({"lifecycle":"running","host_mode":host_mode,"port":port,"dmb_path":dmb_path,"dll_sha256":dll_sha256,"memory_profile":memory_profile,"launch_provenance":launch_provenance}),
     ))
 }
 
@@ -336,6 +366,7 @@ pub async fn variables(state: &ServerState, args: Value) -> Result<ToolResult> {
 
 pub async fn evaluate(state: &ServerState, args: Value) -> Result<ToolResult> {
     let expression = required_string(&args, "expression", 16_384)?;
+    validate_expression(&expression)?;
     let context = args
         .get("context")
         .and_then(Value::as_str)
@@ -364,6 +395,55 @@ pub async fn evaluate(state: &ServerState, args: Value) -> Result<ToolResult> {
     Ok(json_success(
         ToolMetadata::complete(Some(generation)),
         json!({"result":result}),
+    ))
+}
+
+fn validate_expression(expression: &str) -> Result<()> {
+    if expression.trim_start().starts_with('#') {
+        return Err(anyhow!("Debugger console commands are not DreamMaker expressions; use explicit MCP controls such as dm_debug_memory"));
+    }
+    Ok(())
+}
+
+pub async fn memory(state: &ServerState, args: Value) -> Result<ToolResult> {
+    let control = crate::native_memory::MemoryControl::parse(args)?;
+    let mut slot = state.debugger().await;
+    let session = slot
+        .as_mut()
+        .ok_or_else(|| anyhow!("No debugger session is active"))?;
+    let hash = session.memory_helper_sha256.clone().ok_or_else(|| {
+        anyhow!("Launch the debugger with memory_profile: true before using native memory controls")
+    })?;
+    let response = session
+        .connection
+        .request(AuxRequest::Eval {
+            frame_id: None,
+            command: control.command()?,
+            context: Some("repl".into()),
+        })
+        .await?;
+    let AuxResponse::Eval(response) = response else {
+        return Err(anyhow!("Unexpected native memory response"));
+    };
+    let evidence = crate::native_memory::parse_response(&response.value)?;
+    let mut metadata = ToolMetadata::complete(Some(session.state_generation));
+    for (key, reason) in [
+        ("rows_truncated", "native_memory_row_limit"),
+        ("capacity_exceeded", "native_memory_record_limit"),
+    ] {
+        if evidence["evidence"]["result"][key] == true {
+            metadata.truncated = true;
+            metadata.truncation_reasons.push(reason.into());
+        }
+    }
+    Ok(json_success(
+        metadata,
+        json!({
+            "native_memory": evidence, "helper_sha256": hash,
+            "helper_source_revision": crate::native_memory::SOURCE_REVISION,
+            "launch_provenance":session.launch_provenance,
+            "warning":"Observed requested allocation bytes are not retained-object sizes or proof of a leak. Cross-thread frees are not observed."
+        }),
     ))
 }
 
@@ -743,6 +823,19 @@ fn optional_string(args: &Value, key: &str, maximum: usize) -> Result<Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expression_evaluation_cannot_bypass_explicit_memory_controls() {
+        for command in [
+            "#mem_profiler begin elsewhere",
+            "  #meridian_memory_v1 {}",
+            "\n#help",
+        ] {
+            assert!(validate_expression(command).is_err());
+        }
+        assert!(validate_expression("memory_allocate()").is_ok());
+        assert!(validate_expression("\"#literal\"").is_ok());
+    }
 
     fn debugger_installation_fixture() -> DebuggerInstallation {
         DebuggerInstallation {

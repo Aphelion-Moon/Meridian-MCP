@@ -87,8 +87,8 @@ fn mode_inventories_are_exact_and_exclude_removed_protocol() {
     let development = server("development", RiftBuildAccess::Disabled).tool_names();
     let development_offline = server("development", RiftBuildAccess::Offline).tool_names();
     let development_network = server("development", RiftBuildAccess::Network).tool_names();
-    assert_eq!(analysis.len(), 24);
-    assert_eq!(development.len(), 33);
+    assert_eq!(analysis.len(), 26);
+    assert_eq!(development.len(), 35);
     for tool in [
         "dm_document_symbols",
         "dm_find_references",
@@ -101,6 +101,8 @@ fn mode_inventories_are_exact_and_exclude_removed_protocol() {
         "dm_list_render_passes",
         "dm_check_fixture_sync",
         "dm_native_evidence_summary",
+        "dm_memory_summary",
+        "dm_memory_compare",
         "dm_native_evidence_compare",
     ] {
         assert!(

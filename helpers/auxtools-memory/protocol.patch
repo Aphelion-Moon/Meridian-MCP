@@ -1,0 +1,40 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index a377cd5..9ac4d12 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -667,6 +667,7 @@ dependencies = [
+  "region",
+  "retour",
+  "serde",
++ "serde_json",
+  "winapi",
+ ]
+ 
+diff --git a/debug_server/Cargo.toml b/debug_server/Cargo.toml
+index d27e4e5..bff816e 100644
+--- a/debug_server/Cargo.toml
++++ b/debug_server/Cargo.toml
+@@ -17,6 +17,7 @@ instruction_hooking = { path = "../instruction_hooking" }
+ lazy_static = { workspace = true }
+ serde = { version = "1", features = ["derive"] }
+ bincode = "1"
++serde_json = "1"
+ clap = "3"
+ dmasm = { workspace = true }
+ region = "3"
+diff --git a/debug_server/src/server.rs b/debug_server/src/server.rs
+index 41883e3..9c38a8b 100644
+--- a/debug_server/src/server.rs
++++ b/debug_server/src/server.rs
+@@ -895,6 +895,11 @@ impl Server {
+ 	}
+ 
+ 	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
++		#[cfg(windows)]
++		if let Some(input) = command.strip_prefix("#meridian_memory_v1 ") {
++			self.send_or_disconnect(Response::Eval(EvalResponse { value: mem_profiler::command(input), variables: None }));
++			return;
++		}
+ 		if let Some(command) = command.strip_prefix('#') {
+ 			let response = self.handle_command(frame_id, command);
+ 			self.send_or_disconnect(Response::Eval(EvalResponse {

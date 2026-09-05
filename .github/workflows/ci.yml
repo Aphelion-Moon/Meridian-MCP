@@ -9,6 +9,22 @@ on:
   pull_request:
 
 jobs:
+  native-memory-build:
+    name: Optional native memory helper build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: willox/auxtools
+          ref: 889006e334570a426f35c0a2f579c08d3d7b2186
+          path: integration/auxtools
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: i686-pc-windows-msvc
+      - name: Build pinned helper with maintained overlays
+        shell: pwsh
+        run: ./scripts/build-auxtools-memory.ps1 -SourceRoot ./integration/auxtools -BuildRoot ./target/aux-memory-build -OutputDirectory ./target/aux-memory-package
   rust:
     name: Rust and MCP (${{ matrix.name }})
     strategy:
