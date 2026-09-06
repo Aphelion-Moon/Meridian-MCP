@@ -468,18 +468,18 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     tools.push(ToolDefinition {
 		name: "dm_document_symbols".to_string(),
-		description: "List deterministically ordered parsed DreamMaker symbols declared in one contained source file.".to_string(),
-		input_schema: json!({"type":"object","properties":{"file_path":{"type":"string"},"limit":{"type":"integer","minimum":1}},"required":["file_path"]}),
+		description: "Page through parsed declarations and variable assignments in one contained source file. In compact detail, overlay each row on shared to reconstruct full fields.".to_string(),
+		input_schema: json!({"type":"object","properties":{"file_path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":20000,"default":100},"cursor":{"type":"string","description":"Opaque next_cursor from the same query and parsed snapshot."},"detail":{"type":"string","enum":["full","compact"],"default":"full"}},"required":["file_path"]}),
 	});
     tools.push(ToolDefinition {
 		name: "dm_find_references".to_string(),
-		description: "Find bounded source references for an exact DreamMaker member name without guessing dynamic references.".to_string(),
-		input_schema: json!({"type":"object","properties":{"type_path":{"type":"string"},"member_name":{"type":"string"},"kind":{"type":"string","enum":["call","read","write","type_path","macro_expansion"]},"include_declaration":{"type":"boolean"},"limit":{"type":"integer","minimum":1}},"required":["type_path","member_name"]}),
+		description: "Page through resolved references to a type or exact member. Dynamic skips are environment-wide, not a per-symbol completeness count. In compact detail, overlay each row on shared.".to_string(),
+		input_schema: json!({"type":"object","properties":{"type_path":{"type":"string"},"member_name":{"type":"string","minLength":1},"kind":{"type":"string","enum":["call","read","write","type_path","macro_expansion","declaration"]},"include_declaration":{"type":"boolean","default":false},"limit":{"type":"integer","minimum":1,"maximum":10000,"default":100},"cursor":{"type":"string","description":"Opaque next_cursor from the same query and parsed snapshot."},"detail":{"type":"string","enum":["full","compact"],"default":"full"}},"required":["type_path"]}),
 	});
     tools.push(ToolDefinition {
 		name: "dm_find_implementations".to_string(),
-		description: "List type descendants or concrete member implementations in deterministic inheritance order.".to_string(),
-		input_schema: json!({"type":"object","properties":{"type_path":{"type":"string"},"member_name":{"type":"string"},"limit":{"type":"integer","minimum":1}},"required":["type_path"]}),
+		description: "Page through semantic type descendants, proc implementations or variable assignments, including explicit parent_type. In compact detail, overlay each row on shared.".to_string(),
+		input_schema: json!({"type":"object","properties":{"type_path":{"type":"string"},"member_name":{"type":"string","minLength":1},"limit":{"type":"integer","minimum":1,"maximum":10000,"default":100},"cursor":{"type":"string","description":"Opaque next_cursor from the same query and parsed snapshot."},"detail":{"type":"string","enum":["full","compact"],"default":"full"}},"required":["type_path"]}),
 	});
 
     // Compile tool

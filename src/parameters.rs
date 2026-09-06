@@ -98,6 +98,8 @@ pub struct GetDefinitionParams {
 pub struct DocumentSymbolsParams {
     pub file_path: PathBuf,
     pub limit: Option<usize>,
+    pub cursor: Option<String>,
+    pub detail: Option<String>,
 }
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindReferencesParams {
@@ -106,12 +108,16 @@ pub struct FindReferencesParams {
     pub kind: Option<String>,
     pub include_declaration: Option<bool>,
     pub limit: Option<usize>,
+    pub cursor: Option<String>,
+    pub detail: Option<String>,
 }
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindImplementationsParams {
     pub type_path: String,
     pub member_name: Option<String>,
     pub limit: Option<usize>,
+    pub cursor: Option<String>,
+    pub detail: Option<String>,
 }
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CompileParams {

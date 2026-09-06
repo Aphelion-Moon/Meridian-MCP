@@ -99,6 +99,14 @@ impl DomainToolResult {
 }
 
 pub fn json_success<T: Serialize>(metadata: ToolMetadata, data: T) -> ToolResult {
+    encoded_success(metadata, data, true)
+}
+
+pub fn json_success_compact<T: Serialize>(metadata: ToolMetadata, data: T) -> ToolResult {
+    encoded_success(metadata, data, false)
+}
+
+fn encoded_success<T: Serialize>(metadata: ToolMetadata, data: T, pretty: bool) -> ToolResult {
     let value = match serde_json::to_value(data) {
         Ok(value) => value,
         Err(error) => {
@@ -126,9 +134,14 @@ pub fn json_success<T: Serialize>(metadata: ToolMetadata, data: T) -> ToolResult
     for (key, value) in metadata {
         payload.insert(key, value);
     }
+    let payload = Value::Object(payload);
     ToolResult::text(
-        serde_json::to_string_pretty(&Value::Object(payload))
-            .expect("JSON value serialization cannot fail"),
+        if pretty {
+            serde_json::to_string_pretty(&payload)
+        } else {
+            serde_json::to_string(&payload)
+        }
+        .expect("JSON value serialization cannot fail"),
     )
 }
 

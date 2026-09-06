@@ -1,6 +1,8 @@
 # SpacemanDMM support audit
 
-This audit covers upstream revision `351ddc0ffb2439876d4565ce5130bb6b027ee605`, Meridian's `meridian-read-policy-v2` patch, and MCP source based on commit `0445bac0f1984053486f0e3af3f9c6da91a9e49c` plus the repairs in this working tree. It does not qualify a different upstream revision or replace BYOND compile/runtime evidence.
+This initial audit covers upstream revision `351ddc0ffb2439876d4565ce5130bb6b027ee605`, Meridian's `meridian-read-policy-v2` patch, and MCP source based on commit `0445bac0f1984053486f0e3af3f9c6da91a9e49c` plus the repairs committed as `288cf49`. It does not qualify a different upstream revision or replace BYOND compile/runtime evidence.
+
+The subsequent [language-query audit and measurements](2026-09-06-language-queries/README.md) cover semantic descendants, variable assignments, declaration references, bounded compact pages and index storage. The broader [follow-up workplan](2026-09-06-functional-performance-followup.md) tracks remaining work.
 
 Meridian integrates the parser, checker, icon and map libraries, packages the documentation generator, and supplies typed source and debugger tools. **This is agent-facing integration, not complete LSP/editor or legacy extools parity.** Registry coverage means every audited entry has an explicit disposition; excluded entries do not count as implemented functionality.
 

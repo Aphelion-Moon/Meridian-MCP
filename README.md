@@ -73,17 +73,21 @@ A missing include or source diagnostic may be a checkout problem, not an install
 
 ### Analyze code
 
-1. `dm_parse_environment` loads an authorized `.dme` for analysis.
-2. `dm_search_context` finds relevant code. Use `dm_search_symbols` for partial-name lookup.
-3. Verify candidates with `dm_get_type`, `dm_get_proc`, `dm_get_var`, or `dm_get_definition`.
-4. Use `dm_find_references`, `dm_find_implementations`, `dm_document_symbols`, and `dm_check_errors` for impact analysis.
-5. Reparse after any source change. Parser success is not compiler success.
+Use text search for literal names, file discovery and questions spanning DM and other languages. Use the parser when you need inheritance, declaration ownership, resolved references or checker diagnostics. The [exploration comparison](docs/audits/2026-09-06-exploration-comparison/README.md) records the measured tradeoffs.
+
+1. Before using parsed source tools, call `dm_parse_environment` with an authorized `.dme`.
+2. For a known symbol, go directly to `dm_get_type`, `dm_get_proc`, `dm_get_var`, or `dm_get_definition`. For discovery, use `dm_search_context` or partial-name `dm_search_symbols`.
+3. Use references, implementations, document symbols and diagnostics for impact analysis. Reparse after source changes. Parser success is not compiler success.
 
 An unchanged environment reuses its snapshot. Reuse checks file paths, sizes and modification times, not content hashes; use `force: true` when you need a full reparse. Responses report timings and the active generation. Performance depends on the project and machine.
 
 Search uses lexical BM25 ranking; embeddings and vector search are not configured. For a known symbol, use exact lookup. Procedure results distinguish the **implementation owner** (executable body) from the **declaration owner** (declaration metadata).
 
+Implementation listings cover the requested type and its semantic descendants. Use `dm_get_proc` to inspect an inherited body outside that subtree, or query its declaration owner for the wider implementation family.
+
 Diagnostics come from the last successful parse. Filter by file, severity, component or rule, and follow `pagination.next_cursor` for more results. `truncated: true` with `diagnostic_page_limit` means another page is available.
+
+Reference, implementation and document-symbol listings default to 100 rows and also stop at a response byte budget. Follow `pagination.next_cursor` with the same query to retrieve the complete `total_count`; a reparse or server restart invalidates these cursors. Use `detail: "compact"` for shorter responses: fields under `shared` apply to every row, and each row supplies its remaining fields. `detail: "full"` is the default. Reference `include_declaration: true` adds a row labeled `declaration`; `skipped_dynamic` counts unresolved expressions across the whole environment.
 
 ### Compile and exercise a world
 

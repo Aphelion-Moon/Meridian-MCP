@@ -114,7 +114,7 @@ impl ServerHandler for MeridianServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
 			.with_server_info(Implementation::new("meridian-mcp", env!("CARGO_PKG_VERSION")))
-			.with_instructions("Call dm_parse_environment before DreamMaker analysis. Use dm_search_context for discovery, verify exact symbols with inspection tools, and reparse after changes. MCP analysis does not replace repository builds.")
+			.with_instructions("Use text search for literal/file discovery and cross-language exploration. Call dm_parse_environment before tools that inspect parsed DreamMaker source, and reparse after changes. With a loaded snapshot, inspect known symbols directly; use dm_search_context for ranked discovery. For language listings, use detail=compact and follow pagination.next_cursor when complete results are needed. MCP analysis does not replace repository builds.")
     }
 
     async fn list_tools(

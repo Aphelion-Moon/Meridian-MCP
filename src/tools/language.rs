@@ -1,12 +1,80 @@
 use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::path::Path;
 
-use crate::index::{ReferenceHit, SymbolId};
+use crate::index::{ReferenceHit, ReferenceKind, SymbolId};
 use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
-use crate::result::{json_success, ToolMetadata};
+use crate::spaceman::language::ResolvedReference;
 use crate::state::ServerState;
+use dreammaker::objtree::{ObjectTree, SymbolId as UpstreamSymbolId};
+use dreammaker::Location;
+
+mod page;
+use page::Page;
+
+fn member_name(args: &Value) -> Result<Option<&str>> {
+    args.get("member_name")
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|name| !name.is_empty())
+                .ok_or_else(|| anyhow!("member_name must be a non-empty string"))
+        })
+        .transpose()
+}
+
+fn resolve_symbol(
+    objtree: &ObjectTree,
+    owner: &str,
+    member: Option<&str>,
+) -> Result<(SymbolId, UpstreamSymbolId, Location)> {
+    let ty = objtree
+        .find(owner)
+        .ok_or_else(|| anyhow!("Type not found: {owner}"))?;
+    let Some(member) = member else {
+        return Ok((
+            SymbolId::Type {
+                path: ty.path.as_str().into(),
+            },
+            ty.id,
+            ty.location,
+        ));
+    };
+    // Resolve both kinds along semantic ancestors, rather than scanning every
+    // declaration in the repository to recover an already known owner.
+    let variable = ty.iter_parent_types().find_map(|parent| {
+        let declaration = parent.get().vars.get(member)?.declaration.as_ref()?;
+        Some((parent.get().path.as_str(), declaration))
+    });
+    let procedure = ty.iter_parent_types().find_map(|parent| {
+        let declaration = parent.get().procs.get(member)?.declaration.as_ref()?;
+        Some((parent.get().path.as_str(), declaration))
+    });
+    match (variable, procedure) {
+        (Some(_), Some(_)) => Err(anyhow!(
+            "Ambiguous member {owner}/{member}: both variable and procedure declarations exist"
+        )),
+        (Some((owner, declaration)), None) => Ok((
+            SymbolId::Var {
+                owner: owner.into(),
+                name: member.into(),
+            },
+            declaration.id,
+            declaration.location,
+        )),
+        (None, Some((owner, declaration))) => Ok((
+            SymbolId::Proc {
+                owner: owner.into(),
+                name: member.into(),
+                override_index: 0,
+            },
+            declaration.id,
+            declaration.location,
+        )),
+        (None, None) => Err(anyhow!("Member not found: {owner}/{member}")),
+    }
+}
 
 pub async fn document_symbols(state: &ServerState, args: Value) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
@@ -15,26 +83,15 @@ pub async fn document_symbols(state: &ServerState, args: Value) -> Result<ToolRe
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("Missing file_path argument"))?;
     let maximum = ServerLimits::default().max_document_symbols;
-    let limit = args
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(maximum)
-        .min(maximum);
+    let page = Page::new(&snapshot, &args, json!(["document_symbols", file]), maximum)?;
     let symbols = snapshot.language_index.document_symbols(Path::new(file));
-    let truncated = symbols.len() > limit;
-    let symbols = symbols.iter().take(limit).collect::<Vec<_>>();
-    let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
-    metadata.truncated = truncated;
-    if truncated {
-        metadata
-            .truncation_reasons
-            .push("document_symbol_limit".to_owned());
-    }
-    Ok(json_success(
-        metadata,
-        json!({ "count": symbols.len(), "symbols": symbols }),
-    ))
+    page.respond(
+        &snapshot,
+        "symbols",
+        symbols.iter(),
+        symbols.len(),
+        Map::new(),
+    )
 }
 
 pub async fn find_implementations(state: &ServerState, args: Value) -> Result<ToolResult> {
@@ -43,28 +100,37 @@ pub async fn find_implementations(state: &ServerState, args: Value) -> Result<To
         .get("type_path")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("Missing type_path argument"))?;
-    let member = args.get("member_name").and_then(Value::as_str);
-    let maximum = ServerLimits::default().max_reference_results;
-    let limit = args
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(maximum)
-        .min(maximum);
-    let implementations = snapshot.language_index.implementations(owner, member);
-    let truncated = implementations.len() > limit;
-    let implementations = implementations.into_iter().take(limit).collect::<Vec<_>>();
-    let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
-    metadata.truncated = truncated;
-    if truncated {
-        metadata
-            .truncation_reasons
-            .push("implementation_limit".to_owned());
+    let member = member_name(&args)?;
+    let (symbol, _, _) = resolve_symbol(&snapshot.objtree, owner, member)?;
+    if !snapshot.language_index.hierarchy_is_valid() {
+        return Err(anyhow!("Cannot query implementations of an invalid semantic type hierarchy; inspect parser diagnostics."));
     }
-    Ok(json_success(
-        metadata,
-        json!({ "count": implementations.len(), "implementations": implementations }),
-    ))
+    let maximum = ServerLimits::default().max_reference_results;
+    let page = Page::new(
+        &snapshot,
+        &args,
+        json!(["implementations", owner, member]),
+        maximum,
+    )?;
+    let implementations = snapshot
+        .language_index
+        .implementation_iter(owner, member)
+        .filter(|hit| match (&symbol, &hit.symbol) {
+            (SymbolId::Type { .. }, SymbolId::Type { .. }) => true,
+            (SymbolId::Var { owner, .. }, SymbolId::Var { .. })
+            | (SymbolId::Proc { owner, .. }, SymbolId::Proc { .. }) => {
+                hit.declaration_owner == *owner
+            }
+            _ => false,
+        });
+    let count = implementations.clone().count();
+    page.respond(
+        &snapshot,
+        "implementations",
+        implementations,
+        count,
+        Map::new(),
+    )
 }
 
 pub async fn find_references(state: &ServerState, args: Value) -> Result<ToolResult> {
@@ -73,131 +139,73 @@ pub async fn find_references(state: &ServerState, args: Value) -> Result<ToolRes
         .get("type_path")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("Missing type_path argument"))?;
-    let member = args.get("member_name").and_then(Value::as_str);
-    let ty = snapshot
-        .objtree
-        .find(owner)
-        .ok_or_else(|| anyhow!("Type not found: {owner}"))?;
-    let (symbol, upstream_symbol) = if let Some(member) = member {
-        let variable = ty.get_var_declaration(member);
-        let procedure = ty.get_proc_declaration(member);
-        match (variable, procedure) {
-            (Some(_), Some(_)) => {
-                return Err(anyhow!(
-                "Ambiguous member {owner}/{member}: both variable and procedure declarations exist"
-            ))
-            }
-            (Some(declaration), None) => {
-                let declared_in = snapshot
-                    .objtree
-                    .iter_types()
-                    .find(|candidate| {
-                        candidate.vars.values().any(|var| {
-                            var.declaration
-                                .as_ref()
-                                .is_some_and(|item| item.id == declaration.id)
-                        })
-                    })
-                    .map(|candidate| candidate.path.to_string())
-                    .unwrap_or_else(|| owner.to_owned());
-                (
-                    SymbolId::Var {
-                        owner: declared_in,
-                        name: member.to_owned(),
-                    },
-                    declaration.id,
-                )
-            }
-            (None, Some(declaration)) => {
-                let declared_in = snapshot
-                    .objtree
-                    .iter_types()
-                    .find(|candidate| {
-                        candidate.procs.values().any(|proc_value| {
-                            proc_value
-                                .declaration
-                                .as_ref()
-                                .is_some_and(|item| item.id == declaration.id)
-                        })
-                    })
-                    .map(|candidate| candidate.path.to_string())
-                    .unwrap_or_else(|| owner.to_owned());
-                (
-                    SymbolId::Proc {
-                        owner: declared_in,
-                        name: member.to_owned(),
-                        override_index: 0,
-                    },
-                    declaration.id,
-                )
-            }
-            (None, None) => return Err(anyhow!("Member not found: {owner}/{member}")),
-        }
-    } else {
-        (
-            SymbolId::Type {
-                path: ty.path.to_string(),
-            },
-            ty.id,
-        )
-    };
+    let member = member_name(&args)?;
+    let (symbol, upstream_symbol, location) = resolve_symbol(&snapshot.objtree, owner, member)?;
     let maximum = ServerLimits::default().max_reference_results;
-    let limit = args
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(maximum)
-        .min(maximum);
-    let mut references = snapshot
-        .reference_table
-        .references(upstream_symbol)
-        .iter()
-        .map(|reference| ReferenceHit {
-            symbol: symbol.clone(),
-            kind: reference.kind,
-            file: snapshot
-                .context
-                .file_path(reference.location.file)
-                .display()
-                .to_string(),
-            line: reference.location.line,
-            column: reference.location.column,
-        })
-        .collect::<Vec<_>>();
-    let skipped_dynamic = snapshot.reference_table.skipped_dynamic();
-    if !args
+    let include_declaration = args
         .get("include_declaration")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        references.retain(|hit| {
-            !snapshot
-                .language_index
-                .document_symbols(Path::new(&hit.file))
-                .iter()
-                .any(|declaration| declaration.id == hit.symbol && declaration.line == hit.line)
-        });
-    }
-    if let Some(kind) = args.get("kind").and_then(Value::as_str) {
-        references.retain(|hit| {
-            serde_json::to_value(hit.kind)
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .as_deref()
-                == Some(kind)
-        });
-    }
-    let truncated = references.len() > limit;
-    let references = references.into_iter().take(limit).collect::<Vec<_>>();
-    let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
-    metadata.truncated = truncated;
-    if truncated {
-        metadata
-            .truncation_reasons
-            .push("reference_limit".to_owned());
-    }
-    Ok(json_success(
-        metadata,
-        json!({ "count": references.len(), "skipped_dynamic": skipped_dynamic, "references": references }),
-    ))
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| anyhow!("include_declaration must be a boolean"))
+        })
+        .transpose()?
+        .unwrap_or(false);
+    let kind = args
+        .get("kind")
+        .map(|value| match value.as_str() {
+            Some("call") => Ok(ReferenceKind::Call),
+            Some("read") => Ok(ReferenceKind::Read),
+            Some("write") => Ok(ReferenceKind::Write),
+            Some("type_path") => Ok(ReferenceKind::TypePath),
+            Some("macro_expansion") => Ok(ReferenceKind::MacroExpansion),
+            Some("declaration") => Ok(ReferenceKind::Declaration),
+            _ => Err(anyhow!("Invalid reference kind")),
+        })
+        .transpose()?;
+    let page = Page::new(
+        &snapshot,
+        &args,
+        json!(["references", owner, member, kind, include_declaration]),
+        maximum,
+    )?;
+    let uses = snapshot.reference_table.references(upstream_symbol);
+    let declaration = include_declaration.then_some(ResolvedReference {
+        location,
+        kind: ReferenceKind::Declaration,
+    });
+    let split = if include_declaration {
+        uses.partition_point(|hit| hit.location < location)
+    } else {
+        0
+    };
+    let matching = uses[..split]
+        .iter()
+        .copied()
+        .chain(declaration)
+        .chain(uses[split..].iter().copied())
+        .filter(|hit| kind.is_none_or(|kind| hit.kind == kind));
+    let count = matching.clone().count();
+    let references = matching.map(|reference| ReferenceHit {
+        symbol: symbol.clone(),
+        kind: reference.kind,
+        file: snapshot
+            .context
+            .file_path(reference.location.file)
+            .display()
+            .to_string(),
+        line: reference.location.line,
+        column: reference.location.column,
+    });
+    let skipped_dynamic = snapshot.reference_table.skipped_dynamic();
+    page.respond(
+        &snapshot,
+        "references",
+        references,
+        count,
+        Map::from_iter([
+            ("skipped_dynamic".into(), json!(skipped_dynamic)),
+            ("skipped_dynamic_scope".into(), json!("environment")),
+        ]),
+    )
 }

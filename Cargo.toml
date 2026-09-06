@@ -14,7 +14,7 @@ dmi = { version = "=0.1.0", git = "https://github.com/SpaceManiac/SpacemanDMM", 
 dmm-tools = { version = "=0.1.0", git = "https://github.com/SpaceManiac/SpacemanDMM", rev = "351ddc0ffb2439876d4565ce5130bb6b027ee605", features = ["png", "gif"] }
 
 # MCP/JSON-RPC handling
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
 rayon = "1.10"

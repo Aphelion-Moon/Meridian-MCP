@@ -1,0 +1,998 @@
+{
+  "identity": {
+    "baseline": {
+      "binary_sha256": "94c7dd9f9a5f88299bd079441ce579772a2ad8fb75e14a0c5f900286a85721a9",
+      "build": {
+        "build_id": "ca3862be43c37402c8371ecbff7be614bbe7ced8465858396cda81b3cb23d55a",
+        "complete": true,
+        "executable_sha256": "94c7dd9f9a5f88299bd079441ce579772a2ad8fb75e14a0c5f900286a85721a9",
+        "profile": "release",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "d8f671dd78bad1470874423b93e2d72dc2bc59a6",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      }
+    },
+    "candidate": {
+      "binary_sha256": "c654d93b19cb32530dc499a5fe1ecd550d35d3db8b46b712ac00a4b46f5e92aa",
+      "build": {
+        "build_id": "ea603cda1fe5501b824096e78d3ab4b146308ac233a3eb807e395e503213392d",
+        "complete": true,
+        "executable_sha256": "c654d93b19cb32530dc499a5fe1ecd550d35d3db8b46b712ac00a4b46f5e92aa",
+        "profile": "release",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "288cf49eb94d6c2b18fb09b663a581ed68de6b0a",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      }
+    }
+  },
+  "source_before": {
+    "head": "7462a6942b2e71a3ea13c00169f65f575cb281b7",
+    "status": ""
+  },
+  "source_after": {
+    "head": "7462a6942b2e71a3ea13c00169f65f575cb281b7",
+    "status": ""
+  },
+  "rounds": 3,
+  "repeats_per_query": 5,
+  "arms": {
+    "baseline": {
+      "cold_parse_ms": [
+        27681.018400005996,
+        28356.364300008863,
+        28214.64599999308
+      ],
+      "parsed_memory": [
+        {
+          "WorkingSetSize": 1864912896,
+          "PeakWorkingSetSize": 1868177408,
+          "PrivateUsage": 2001223680
+        },
+        {
+          "WorkingSetSize": 1865265152,
+          "PeakWorkingSetSize": 1868447744,
+          "PrivateUsage": 2001035264
+        },
+        {
+          "WorkingSetSize": 1865302016,
+          "PeakWorkingSetSize": 1868521472,
+          "PrivateUsage": 2001338368
+        }
+      ],
+      "parse_snapshot": {
+        "duration_ms": 27680,
+        "environment": "<rift>\\tgstation.dme",
+        "error_count": 127,
+        "indexed_symbols": 452780,
+        "retrieval": {
+          "dense": {
+            "status": "not_configured"
+          },
+          "lexical": {
+            "algorithm": "bm25",
+            "documents": 452780,
+            "status": "ready"
+          },
+          "semantic_chunk_schema_version": 1
+        },
+        "reused": false,
+        "spacemandmm_local_patch": "meridian-read-policy-v2",
+        "spacemandmm_local_patch_sha256": "9c634bdc169e3305c6e2845e5a38f2e1f59224a462e0f56969ff422a8657c20e\n",
+        "spacemandmm_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+        "state_generation": 1,
+        "success": true,
+        "timings_ms": {
+          "analysis_indexes": 6007,
+          "dreamchecker": 3384,
+          "fingerprint": 1270,
+          "preprocess_parse": 13862,
+          "queue_wait": 0,
+          "search_documents": 3131,
+          "total": 27680
+        },
+        "total_types": 65165,
+        "warning_count": 0
+      },
+      "natural_exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    "candidate": {
+      "cold_parse_ms": [
+        25306.516399999964,
+        29980.37230000773,
+        31618.162899991148
+      ],
+      "parsed_memory": [
+        {
+          "WorkingSetSize": 1821196288,
+          "PeakWorkingSetSize": 1825259520,
+          "PrivateUsage": 1950433280
+        },
+        {
+          "WorkingSetSize": 1821487104,
+          "PeakWorkingSetSize": 1833930752,
+          "PrivateUsage": 1951571968
+        },
+        {
+          "WorkingSetSize": 1824960512,
+          "PeakWorkingSetSize": 1838698496,
+          "PrivateUsage": 1954013184
+        }
+      ],
+      "parse_snapshot": {
+        "duration_ms": 25305,
+        "environment": "<rift>\\tgstation.dme",
+        "error_count": 127,
+        "indexed_symbols": 452780,
+        "retrieval": {
+          "dense": {
+            "status": "not_configured"
+          },
+          "lexical": {
+            "algorithm": "bm25",
+            "documents": 452780,
+            "status": "ready"
+          },
+          "semantic_chunk_schema_version": 1
+        },
+        "reused": false,
+        "spacemandmm_local_patch": "meridian-read-policy-v2",
+        "spacemandmm_local_patch_sha256": "9c634bdc169e3305c6e2845e5a38f2e1f59224a462e0f56969ff422a8657c20e\n",
+        "spacemandmm_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+        "state_generation": 1,
+        "success": true,
+        "timings_ms": {
+          "analysis_indexes": 6256,
+          "dreamchecker": 3396,
+          "fingerprint": 1312,
+          "preprocess_parse": 11176,
+          "queue_wait": 0,
+          "search_documents": 3142,
+          "total": 25305
+        },
+        "total_types": 65165,
+        "warning_count": 0
+      },
+      "natural_exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "spell-implementations",
+      "tool": "dm_find_implementations",
+      "arguments": {
+        "type_path": "/datum/action/cooldown/spell",
+        "member_name": "can_cast_spell"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 28,
+          "median_ms": 3.4887999936472625,
+          "samples_ms": [
+            67.96509999549016,
+            2.7125000051455572,
+            3.6047999892616645,
+            2.7460999990580603,
+            2.8486000082921237,
+            70.84780000150204,
+            4.3883000034838915,
+            3.2528000010643154,
+            2.9643000016221777,
+            3.275099996244535,
+            82.63820000865962,
+            3.4887999936472625,
+            3.912500003934838,
+            3.7257000076351687,
+            3.3127999922726303
+          ],
+          "characters": 18136,
+          "bytes": 18136,
+          "pages": 1,
+          "portable_rows_sha256": "91baaefb6debf3cf4bc125f066d87f375a5ec88380a35467dbda6134b7e89be8"
+        },
+        "candidate_full": {
+          "count": 28,
+          "median_ms": 0.8095999946817756,
+          "samples_ms": [
+            68.3848000044236,
+            0.642999992123805,
+            0.7509999995818362,
+            0.8710000111022964,
+            0.8095999946817756,
+            81.26600000832696,
+            0.6679999933112413,
+            0.833099998999387,
+            0.8884999988367781,
+            0.7796999998390675,
+            68.30990000162274,
+            0.7782000029692426,
+            0.7787999929860234,
+            0.8534999942639843,
+            0.7845999934943393
+          ],
+          "characters": 18261,
+          "bytes": 18261,
+          "pages": 1,
+          "portable_rows_sha256": "91baaefb6debf3cf4bc125f066d87f375a5ec88380a35467dbda6134b7e89be8"
+        },
+        "candidate_compact": {
+          "count": 28,
+          "median_ms": 0.7716999971307814,
+          "samples_ms": [
+            0.7640999974682927,
+            0.6776000082027167,
+            1.0996000055456534,
+            0.7771999953547493,
+            0.7264000014401972,
+            0.6739000091329217,
+            0.8145000028889626,
+            0.7871999987401068,
+            0.7716999971307814,
+            0.6578000029549003,
+            0.8460999961243942,
+            0.7936000038171187,
+            0.6675000040559098,
+            0.7010999979684129,
+            0.814300001366064
+          ],
+          "characters": 13384,
+          "bytes": 13384,
+          "pages": 1,
+          "portable_rows_sha256": "91baaefb6debf3cf4bc125f066d87f375a5ec88380a35467dbda6134b7e89be8"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "vending-implementations",
+      "tool": "dm_find_implementations",
+      "arguments": {
+        "type_path": "/obj/machinery/vending",
+        "member_name": "attackby"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 0,
+          "median_ms": 2.7242000069236383,
+          "samples_ms": [
+            2.6005999970948324,
+            2.6947000005748123,
+            2.1948999929009005,
+            2.974500006530434,
+            2.315599995199591,
+            2.445399994030595,
+            2.4283999955514446,
+            3.2759000023361295,
+            2.805700001772493,
+            2.579299994977191,
+            2.7242000069236383,
+            2.90990000939928,
+            2.903299988247454,
+            2.841099994839169,
+            2.7556999993976206
+          ],
+          "characters": 650,
+          "bytes": 650,
+          "pages": 1,
+          "portable_rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "candidate_full": {
+          "count": 0,
+          "median_ms": 0.34690000757109374,
+          "samples_ms": [
+            0.302100001135841,
+            0.27910000062547624,
+            0.42039999971166253,
+            0.49340000259689987,
+            0.3012999950442463,
+            0.37910000537522137,
+            0.3304999991087243,
+            0.305800000205636,
+            0.3904999903170392,
+            0.48010000318754464,
+            0.4786000063177198,
+            0.3417000116314739,
+            0.31459999445360154,
+            0.34690000757109374,
+            0.3811000060522929
+          ],
+          "characters": 774,
+          "bytes": 774,
+          "pages": 1,
+          "portable_rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "candidate_compact": {
+          "count": 0,
+          "median_ms": 0.35960000241175294,
+          "samples_ms": [
+            0.38380001205950975,
+            0.367300002835691,
+            0.30789998709224164,
+            0.39509999623987824,
+            0.30520001018885523,
+            0.2964000013889745,
+            0.43759999971371144,
+            0.2933999930974096,
+            0.41879998752847314,
+            0.30519999563694,
+            0.38610000046901405,
+            0.4082999948877841,
+            0.3206999972462654,
+            0.35960000241175294,
+            0.3539000026648864
+          ],
+          "characters": 666,
+          "bytes": 666,
+          "pages": 1,
+          "portable_rows_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "airlock-references",
+      "tool": "dm_find_references",
+      "arguments": {
+        "type_path": "/obj/machinery/door/airlock",
+        "member_name": "safe"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 18,
+          "median_ms": 0.7496000034734607,
+          "samples_ms": [
+            0.8347999973921105,
+            0.7496000034734607,
+            0.6857999978819862,
+            0.7825000066077337,
+            0.7849000103306025,
+            0.6164000078570098,
+            0.6489999941550195,
+            0.7608999876538292,
+            0.7173000049078837,
+            0.7073999877320603,
+            0.8710999973118305,
+            0.8296000014524907,
+            0.6898999999975786,
+            0.7591999892611057,
+            0.7350999949267134
+          ],
+          "characters": 6107,
+          "bytes": 6107,
+          "pages": 1,
+          "portable_rows_sha256": "2d1f78659ed1be4d88a8fe68ade88b9af9c3f46c5f25ed6d655f1ba390be9e8a"
+        },
+        "candidate_full": {
+          "count": 18,
+          "median_ms": 0.47060000360943377,
+          "samples_ms": [
+            0.4321999876992777,
+            0.6998000026214868,
+            0.5876999930478632,
+            0.4991000023437664,
+            0.5417000065790489,
+            0.41620001138653606,
+            0.46919999294914305,
+            0.4675999953178689,
+            0.5040999967604876,
+            0.47060000360943377,
+            0.4935000033583492,
+            0.3896999987773597,
+            0.4461000062292442,
+            0.42810000013560057,
+            0.5075999943073839
+          ],
+          "characters": 6274,
+          "bytes": 6274,
+          "pages": 1,
+          "portable_rows_sha256": "2d1f78659ed1be4d88a8fe68ade88b9af9c3f46c5f25ed6d655f1ba390be9e8a"
+        },
+        "candidate_compact": {
+          "count": 18,
+          "median_ms": 0.45200000749900937,
+          "samples_ms": [
+            0.4270999925211072,
+            0.3924999909941107,
+            0.5043000128353015,
+            0.5357000045478344,
+            0.5214999982854351,
+            0.5424999981187284,
+            0.4369000089354813,
+            0.4594000056385994,
+            0.4234999942127615,
+            0.32529998861718923,
+            0.4673999937949702,
+            0.46800001291558146,
+            0.4149000014876947,
+            0.45200000749900937,
+            0.41530000453349203
+          ],
+          "characters": 3432,
+          "bytes": 3432,
+          "pages": 1,
+          "portable_rows_sha256": "2d1f78659ed1be4d88a8fe68ade88b9af9c3f46c5f25ed6d655f1ba390be9e8a"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "hydroponics-references",
+      "tool": "dm_find_references",
+      "arguments": {
+        "type_path": "/obj/machinery/hydroponics",
+        "member_name": "waterlevel"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 20,
+          "median_ms": 2.714399990509264,
+          "samples_ms": [
+            2.72689999837894,
+            2.499299996998161,
+            2.8125999961048365,
+            2.3919999948702753,
+            2.5833999970927835,
+            2.650299997185357,
+            2.4249999987659976,
+            2.595500001916662,
+            2.7649999974528328,
+            2.704200000152923,
+            3.514800002449192,
+            2.8348000050755218,
+            2.9239999857963994,
+            3.639999995357357,
+            2.714399990509264
+          ],
+          "characters": 7087,
+          "bytes": 7087,
+          "pages": 1,
+          "portable_rows_sha256": "642f3078ace0d24bcf59622ea098e9e305fcc191063d716781574cd2165f6c06"
+        },
+        "candidate_full": {
+          "count": 20,
+          "median_ms": 0.48519999836571515,
+          "samples_ms": [
+            0.4071000003023073,
+            0.567299997783266,
+            0.5993999948259443,
+            0.48519999836571515,
+            0.7073000015225261,
+            0.4954999894835055,
+            0.4295000107958913,
+            0.4825000069104135,
+            0.5811000009998679,
+            0.43629998981487006,
+            0.5548999906750396,
+            0.47500000800937414,
+            0.4592000041157007,
+            0.509100005729124,
+            0.4552999889710918
+          ],
+          "characters": 7254,
+          "bytes": 7254,
+          "pages": 1,
+          "portable_rows_sha256": "642f3078ace0d24bcf59622ea098e9e305fcc191063d716781574cd2165f6c06"
+        },
+        "candidate_compact": {
+          "count": 20,
+          "median_ms": 0.4273000085959211,
+          "samples_ms": [
+            0.42949999624397606,
+            0.4363000043667853,
+            0.4189999890513718,
+            0.41429999691899866,
+            0.643899998976849,
+            0.36070001078769565,
+            0.42409999878145754,
+            0.42979999852832407,
+            0.4273000085959211,
+            0.33769999572541565,
+            0.48719999904278666,
+            0.454399996669963,
+            0.4017000028397888,
+            0.47300000733230263,
+            0.3532999980961904
+          ],
+          "characters": 3855,
+          "bytes": 3855,
+          "pages": 1,
+          "portable_rows_sha256": "642f3078ace0d24bcf59622ea098e9e305fcc191063d716781574cd2165f6c06"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "vending-references",
+      "tool": "dm_find_references",
+      "arguments": {
+        "type_path": "/obj/machinery/vending",
+        "member_name": "vend"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 2,
+          "median_ms": 0.5244999920250848,
+          "samples_ms": [
+            0.5795000033685938,
+            0.49530000251252204,
+            0.5478999955812469,
+            0.528200005646795,
+            0.5347999976947904,
+            0.5153999954927713,
+            0.5244999920250848,
+            0.6224999960977584,
+            0.5210000090301037,
+            0.5004999984521419,
+            0.4718000127468258,
+            0.48830000741872936,
+            0.7676999957766384,
+            0.5736000020988286,
+            0.45619999582413584
+          ],
+          "characters": 1344,
+          "bytes": 1344,
+          "pages": 1,
+          "portable_rows_sha256": "8568c14fd5cab68e723f886f10a12e15c9ef0df5ea92fa83db09f7165aeeec70"
+        },
+        "candidate_full": {
+          "count": 2,
+          "median_ms": 0.29799999902024865,
+          "samples_ms": [
+            0.24790001043584198,
+            0.28410000959411263,
+            0.3809000045293942,
+            0.3856000112136826,
+            0.5455000064102933,
+            0.29799999902024865,
+            0.28049999673385173,
+            0.21109999215696007,
+            0.3294999914942309,
+            0.28780000866390765,
+            0.3226000117138028,
+            0.3294000052846968,
+            0.18829999316949397,
+            0.3345000004628673,
+            0.24300000222865492
+          ],
+          "characters": 1510,
+          "bytes": 1510,
+          "pages": 1,
+          "portable_rows_sha256": "8568c14fd5cab68e723f886f10a12e15c9ef0df5ea92fa83db09f7165aeeec70"
+        },
+        "candidate_compact": {
+          "count": 2,
+          "median_ms": 0.3026999911526218,
+          "samples_ms": [
+            0.29039999935775995,
+            0.3698999935295433,
+            0.5093000072520226,
+            0.31289999606087804,
+            0.3026999911526218,
+            0.23859999782871455,
+            0.3311999898869544,
+            0.2631999959703535,
+            0.3176000027451664,
+            0.2517000102670863,
+            0.30440000409726053,
+            0.30250000418163836,
+            0.22480000916402787,
+            0.3662999952211976,
+            0.26359999901615083
+          ],
+          "characters": 982,
+          "bytes": 982,
+          "pages": 1,
+          "portable_rows_sha256": "8568c14fd5cab68e723f886f10a12e15c9ef0df5ea92fa83db09f7165aeeec70"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "storage-descendants",
+      "tool": "dm_find_implementations",
+      "arguments": {
+        "type_path": "/obj/item/storage/backpack"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 188,
+          "median_ms": 19.891300005838275,
+          "samples_ms": [
+            19.5155999972485,
+            19.04550001199823,
+            19.42919999419246,
+            19.701099998201244,
+            19.35639999283012,
+            20.525200001429766,
+            19.73780000116676,
+            19.891300005838275,
+            25.289199998951517,
+            19.284199996036477,
+            21.08970000699628,
+            21.314600002369843,
+            35.15949999564327,
+            20.95220000774134,
+            20.927899997332133
+          ],
+          "characters": 111368,
+          "bytes": 111368,
+          "pages": 1,
+          "portable_rows_sha256": "0d6912c759f9bd934f3cfa305a4e1b1a27ac7fba4a2400105e44df6497cef092"
+        },
+        "candidate_full": {
+          "count": 188,
+          "median_ms": 2.5899000029312447,
+          "samples_ms": [
+            2.6184000016655773,
+            2.5864999915938824,
+            2.5547999975970015,
+            3.14250000519678,
+            3.276000003097579,
+            2.2615000052610412,
+            2.410900007816963,
+            2.5852999970084056,
+            2.310099996975623,
+            2.6360000047134236,
+            2.8233000048203394,
+            2.334000004339032,
+            3.163499990478158,
+            2.5959999911719933,
+            2.5899000029312447
+          ],
+          "characters": 111494,
+          "bytes": 111494,
+          "pages": 1,
+          "portable_rows_sha256": "0d6912c759f9bd934f3cfa305a4e1b1a27ac7fba4a2400105e44df6497cef092"
+        },
+        "candidate_compact": {
+          "count": 188,
+          "median_ms": 2.241700000013225,
+          "samples_ms": [
+            2.3249000078067183,
+            2.2942000068724155,
+            2.165800004149787,
+            2.3744000063743442,
+            2.3032000026432797,
+            2.6763999921968207,
+            2.1834000071976334,
+            2.704400001675822,
+            2.0807999972021207,
+            2.6766999944811687,
+            2.1455999958561733,
+            2.0268999942345545,
+            2.241700000013225,
+            2.089799992972985,
+            2.068500005407259
+          ],
+          "characters": 92395,
+          "bytes": 92395,
+          "pages": 1,
+          "portable_rows_sha256": "0d6912c759f9bd934f3cfa305a4e1b1a27ac7fba4a2400105e44df6497cef092"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "vending-document",
+      "tool": "dm_document_symbols",
+      "arguments": {
+        "file_path": "code/modules/vending/vendor/inventory.dm"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 10,
+          "median_ms": 0.7411999977193773,
+          "samples_ms": [
+            0.8406999986618757,
+            0.7301000005099922,
+            0.8163000020431355,
+            0.8370999858016148,
+            0.8024999988265336,
+            0.7411999977193773,
+            0.8049000025494024,
+            0.8539000118616968,
+            0.6589999975403771,
+            0.7369999948423356,
+            0.7266000029630959,
+            0.7140999950934201,
+            0.7492000004276633,
+            0.49669999862089753,
+            0.6231000006664544
+          ],
+          "characters": 5814,
+          "bytes": 5814,
+          "pages": 1,
+          "portable_rows_sha256": "af8efb532e5d373a11645de357c54361815ee1666d65e25dbd284ff6166ab2cc"
+        },
+        "candidate_full": {
+          "count": 10,
+          "median_ms": 0.6582999922102317,
+          "samples_ms": [
+            0.9316000068793073,
+            0.6582999922102317,
+            0.7502999942516908,
+            0.6071999960113317,
+            0.6626999966101721,
+            0.6761000113328919,
+            0.6119000026956201,
+            0.5862999969394878,
+            0.6286999996518716,
+            0.716800001100637,
+            0.6304000125965104,
+            0.6491000094683841,
+            0.760499999159947,
+            0.6403000006685033,
+            0.6608000112464651
+          ],
+          "characters": 5939,
+          "bytes": 5939,
+          "pages": 1,
+          "portable_rows_sha256": "af8efb532e5d373a11645de357c54361815ee1666d65e25dbd284ff6166ab2cc"
+        },
+        "candidate_compact": {
+          "count": 10,
+          "median_ms": 0.6416999967768788,
+          "samples_ms": [
+            0.47459999041166157,
+            0.9207999974023551,
+            0.5939999973634258,
+            0.7368000078713521,
+            0.6052999960957095,
+            0.6228000129340217,
+            0.68450000253506,
+            0.5543000006582588,
+            0.7610000029671937,
+            0.5482999986270443,
+            0.621700004558079,
+            0.6834999949205667,
+            0.6416999967768788,
+            0.7571000023745,
+            0.7872999995015562
+          ],
+          "characters": 2683,
+          "bytes": 2683,
+          "pages": 1,
+          "portable_rows_sha256": "af8efb532e5d373a11645de357c54361815ee1666d65e25dbd284ff6166ab2cc"
+        }
+      },
+      "baseline_equivalent_set": true,
+      "added_rows": [],
+      "removed_rows": []
+    },
+    {
+      "name": "spells-document",
+      "tool": "dm_document_symbols",
+      "arguments": {
+        "file_path": "code/modules/spells/spell.dm"
+      },
+      "views": {
+        "baseline_full": {
+          "count": 34,
+          "median_ms": 0.9944000048562884,
+          "samples_ms": [
+            0.9944000048562884,
+            0.9259000071324408,
+            0.9589999972376972,
+            1.0032999998657033,
+            1.003199999104254,
+            0.9801999985938892,
+            1.021600008243695,
+            0.8888000011211261,
+            1.0114000033354387,
+            0.8346000104211271,
+            1.1052999907406047,
+            0.9643999947002158,
+            1.0464999941177666,
+            1.0458000033395365,
+            0.9433000086573884
+          ],
+          "characters": 18163,
+          "bytes": 18163,
+          "pages": 1,
+          "portable_rows_sha256": "7fc37db1d2397799a0b706c4d770a8193765c38ab7ff80e1318f46605502b7b6"
+        },
+        "candidate_full": {
+          "count": 42,
+          "median_ms": 0.9904000035021454,
+          "samples_ms": [
+            0.9085000056074932,
+            1.0000000038417056,
+            1.0212000051978976,
+            1.0347000061301515,
+            0.869399998919107,
+            1.0442000057082623,
+            0.9682999952929094,
+            0.9307000000262633,
+            0.9904000035021454,
+            0.9777000086614862,
+            1.185000000987202,
+            0.9699999936856329,
+            0.9669999999459833,
+            1.0822000040207058,
+            1.2018999987049028
+          ],
+          "characters": 22213,
+          "bytes": 22213,
+          "pages": 1,
+          "portable_rows_sha256": "f2db7f98544d6fa12426852915304df1db115e0f4320ac0395f09e150e811445"
+        },
+        "candidate_compact": {
+          "count": 42,
+          "median_ms": 0.9256999910576269,
+          "samples_ms": [
+            0.7372999971266836,
+            1.1189000069862232,
+            0.9333000052720308,
+            0.8062000124482438,
+            0.8234000124502927,
+            0.8987000037450343,
+            0.9576000011293218,
+            0.8864999981597066,
+            0.9278999932575971,
+            0.901399995200336,
+            0.9327000007033348,
+            0.8568000048398972,
+            0.9256999910576269,
+            1.0737999982666224,
+            0.9553000127198175
+          ],
+          "characters": 12905,
+          "bytes": 12905,
+          "pages": 1,
+          "portable_rows_sha256": "f2db7f98544d6fa12426852915304df1db115e0f4320ac0395f09e150e811445"
+        }
+      },
+      "baseline_equivalent_set": false,
+      "added_rows": [
+        {
+          "column": 14,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "button_icon",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 47,
+          "name": "button_icon",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 14,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "check_flags",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 51,
+          "name": "check_flags",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 20,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "button_icon_state",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 48,
+          "name": "button_icon_state",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 21,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "overlay_icon_state",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 49,
+          "name": "overlay_icon_state",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 24,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "background_icon_state",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 46,
+          "name": "background_icon_state",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 28,
+          "declaration_owner": "/datum/action/cooldown",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "active_overlay_icon_state",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 50,
+          "name": "active_overlay_icon_state",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 7,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "desc",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 45,
+          "name": "desc",
+          "owner": "/datum/action/cooldown/spell"
+        },
+        {
+          "column": 7,
+          "declaration_owner": "/datum/action",
+          "file": "<rift>\\code\\modules\\spells\\spell.dm",
+          "id": {
+            "kind": "var",
+            "name": "name",
+            "owner": "/datum/action/cooldown/spell"
+          },
+          "implementation_owner": "/datum/action/cooldown/spell",
+          "kind": "var",
+          "line": 44,
+          "name": "name",
+          "owner": "/datum/action/cooldown/spell"
+        }
+      ],
+      "removed_rows": []
+    }
+  ],
+  "previous_candidate_equivalence": {
+    "binary_sha256": "8079d4ae49912f54e9460aebac1ea4ae29b2abe48aaa2f9969542e120b05d08a",
+    "all_full_row_hashes_equal": true
+  }
+}

@@ -224,6 +224,8 @@ impl AnalysisBuild {
 }
 
 pub struct AnalysisSnapshot {
+    /// Distinguishes snapshots even across separate ServerState instances.
+    pub(crate) instance_id: u64,
     pub environment_path: PathBuf,
     pub context: Arc<AnalysisContext>,
     pub objtree: Arc<ObjectTree>,
@@ -244,8 +246,10 @@ pub struct AnalysisSnapshot {
 
 impl AnalysisSnapshot {
     pub(crate) fn from_build(build: AnalysisBuild, generation: u64) -> Self {
+        static NEXT_INSTANCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let total_types = build.objtree.iter_types().count();
         Self {
+            instance_id: NEXT_INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             environment_path: build.environment_path,
             context: Arc::new(build.context),
             objtree: Arc::new(build.objtree),
