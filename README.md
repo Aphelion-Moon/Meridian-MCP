@@ -99,6 +99,8 @@ After building, use `dm_run` → `dm_wait_for_output` → `dm_topic` / `dm_statu
 
 Launch options and readiness regexes are validated before starting a process. Invalid options return `invalid_input`; flags such as `require_verified_provenance` must be JSON booleans. Output waits accept `timeout_ms: 0` for an immediate check and cap longer waits at five minutes.
 
+For `dm_compile`, `working_directory` also resolves relative DME paths. Malformed options are rejected before compilation. `success` requires a DMB as well as a successful compiler exit; check `dmb_updated` and provenance separately for freshness and verified inputs.
+
 DreamDaemon binds to `127.0.0.1`. Set `working_directory` to resolve a relative DMB and run the game from that directory; otherwise it runs from the DMB's directory. Additional `daemon_args` cannot override the DMB, port, directory or bind address. World parameters passed with `-params` remain supported.
 
 `dm_topic` uses one timeout for the complete request, from 1 to 60,000 ms (default 5,000). Status and stop remain available while it waits; stopping its runtime cancels the pending request.

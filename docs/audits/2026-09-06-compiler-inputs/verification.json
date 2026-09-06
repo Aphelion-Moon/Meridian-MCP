@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "base_revision": "66d6f9d",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "src/tools/compile.rs": "cf82056f83d6702822ad41a1f47ad87391a094112f3dfd09de8c36c1977b36d9",
+    "src/tools/compile/arguments.rs": "08caa2b2bd3d1b8cab7f15497fd5cdecf4357b830bc67cccf9a13607bec3f8eb",
+    "src/tools/mod.rs": "4348b2096b40c9cadc7dbf6a9399636f76916c614ea8cae35edb99a434ce57ae",
+    "tests/compiler_inputs.rs": "73bf38fb7a751668491c4d2ffd82e1a775eb9980b39becc87efb9c95cbbb0542"
+  },
+  "gates": {
+    "windows": {
+      "passed": 444,
+      "failed": 0,
+      "ignored": 5,
+      "log_sha256": "c389a72d29912a73d4bb228847d821cc6454f98d10325d87da2f9df7e38bcbfe",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "6f96c51179d0e521c7b9ef27f76c9bd9ceddf3251992d5df93ee6905e30f63a8"
+    },
+    "linux": {
+      "passed": 437,
+      "failed": 0,
+      "ignored": 6,
+      "log_sha256": "705a34be3e44cda4d61138a35cb35c2bfc984c12387612aade98e291fb940e7b",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "70c1ed6b603031c3d31ea08cad3b868a872b287249e84b952049226deb919c22"
+    }
+  },
+  "focused": {
+    "passed": 16,
+    "failed": 0,
+    "ignored": 0,
+    "log_sha256": "da5bd3520b582a6cee3f2bbd7d94a6d44eba2b8a61f47837d565ff20afb9e191"
+  },
+  "before": {
+    "passed": 0,
+    "failed": 4,
+    "ignored": 0,
+    "log_sha256": "f112ca83ddd3815fc78f460f83e76b17df293f22ecc8c8b0c7c288dd8cb6b2d1"
+  },
+  "missing_attempt_before": {
+    "passed": 0,
+    "failed": 1,
+    "ignored": 0,
+    "log_sha256": "4f6757adce54f85f0554185c4533b247149a3ba43b682b6197a019f90302504a"
+  },
+  "malformed_requests_observed_starting_compiler": 15,
+  "native": {
+    "baseline": "baseline.json",
+    "candidate": "candidate.json",
+    "candidate_binary_sha256": "a706227b7058f3c719ddb287a109b3c313d5500cf8bb005020a23d6837c0f224",
+    "verified_fresh_dmb_cases": 3,
+    "invalid_request_created_dmb": false,
+    "natural_mcp_exit_code": 0,
+    "probe_sha256_lf": "b2f00e07d73a598cc5723d8e450d36bfb94973715bbf0aee96e171fa2851b183"
+  },
+  "response_followup": {
+    "baseline": "response-baseline.json",
+    "candidate": "response-candidate.json",
+    "status": "reproduced_unfixed",
+    "candidate_output_bytes": 1050806,
+    "transport_limit_bytes": 1048576,
+    "fixture_source_sha256_lf": "1fdecd2cd88e2c41925d825900c07d9054aeb13706960bf6bb6fccff43ec5b85"
+  },
+  "boundaries": [
+    "Linux qualification used local WSL 1, not hosted native Ubuntu.",
+    "Native compiler evidence uses a small owned BYOND 516.1687 Windows fixture.",
+    "Artifact existence does not validate arbitrary DMB contents; freshness and input provenance remain separate.",
+    "No latency, memory or token savings were measured in this batch.",
+    "The earlier intermittent WSL ownership-fixture failure remains unexplained.",
+    "Compiler response overflow remains unfixed; broader artifact/inventory review and release handoff remain active.",
+    "Hosted CI, live debugger/Tracy and connected-MCP replacement remain separate gates."
+  ]
+}

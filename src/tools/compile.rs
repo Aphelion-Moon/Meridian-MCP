@@ -7,6 +7,9 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tracing::info;
 
+mod arguments;
+use arguments::CompileOptions;
+
 use super::ToolExecutionContext;
 use crate::artifact::{ArtifactSnapshot, FileIdentity};
 use crate::build_provenance::{
@@ -236,26 +239,39 @@ pub async fn compile(
     state: &ServerState,
     args: Value,
 ) -> Result<ToolResult> {
-    let dme_path = args
-        .get("dme_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing dme_path argument"))?;
-
-    let requested_path = PathBuf::from(dme_path);
-    let requested_working_directory = args
-        .get("working_directory")
-        .and_then(|value| value.as_str())
-        .map(PathBuf::from);
+    let CompileOptions {
+        dme_path,
+        compiler_path,
+        working_directory: requested_working_directory,
+        fixture_manifest_path,
+        defines,
+        timeout_ms,
+        idle_timeout_ms,
+        capture_network,
+    } = match CompileOptions::parse(&args) {
+        Ok(options) => options,
+        Err(error) => {
+            return Ok(ToolResult::structured_error(
+                "invalid_input",
+                error.to_string(),
+                "Correct the named compiler argument and retry.",
+            ))
+        }
+    };
+    let requested_path = PathBuf::from(&dme_path);
     let path = resolve_requested_path(&requested_path, requested_working_directory.as_deref());
-    if !path.exists() {
-        return Ok(ToolResult::error(format!("File not found: {dme_path}")));
+    if !path.is_file() {
+        return Ok(ToolResult::structured_error(
+            "invalid_input",
+            "dme_path must be an existing regular file",
+            "Select a contained DreamMaker environment file.",
+        ));
     }
     let path = path.canonicalize()?;
     let snapshot = state.active_snapshot().await;
-    let fixture = args
-        .get("fixture_manifest_path")
-        .and_then(Value::as_str)
-        .map(|path| FixtureManifest::load(context.policy(), Path::new(path)))
+    let fixture = fixture_manifest_path
+        .as_deref()
+        .map(|path| FixtureManifest::load(context.policy(), path))
         .transpose()?;
     if let Some(fixture) = &fixture {
         if fixture.dme_path != path || fixture.dmb_path != path.with_extension("dmb") {
@@ -267,7 +283,7 @@ pub async fn compile(
         }
     }
 
-    let compiler = if let Some(compiler) = args.get("compiler_path").and_then(Value::as_str) {
+    let compiler = if let Some(compiler) = compiler_path {
         match context.policy().executable(compiler) {
             Ok(compiler) => compiler,
             Err(error) => {
@@ -308,40 +324,11 @@ pub async fn compile(
         }
     };
 
-    let timeout_ms = args
-        .get("timeout_ms")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(600_000)
-        .min(1_800_000);
-    let idle_timeout_ms = args
-        .get("idle_timeout_ms")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(DEFAULT_IDLE_TIMEOUT_MS)
-        .clamp(1_000, MAX_IDLE_TIMEOUT_MS);
-
     let working_directory = requested_working_directory
         .map(|directory| resolve_requested_path(&directory, None))
         .map(|directory| directory.canonicalize())
         .transpose()?
         .or_else(|| path.parent().map(PathBuf::from));
-
-    let defines: Vec<String> = args
-        .get("defines")
-        .and_then(|value| value.as_array())
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(|value| value.as_str())
-                .map(|define| {
-                    if define.starts_with("-D") {
-                        define.to_string()
-                    } else {
-                        format!("-D{define}")
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
 
     info!(
         "Compiling {} with {:?} (timeout {} ms)",
@@ -355,8 +342,14 @@ pub async fn compile(
         .unwrap_or_else(|| spawn_path.parent().unwrap_or(Path::new(".")));
     let dme_argument = compiler_dme_argument(&spawn_path, compiler_working_directory);
     let arguments: Vec<OsString> = defines
-        .into_iter()
-        .map(OsString::from)
+        .iter()
+        .map(|define| {
+            OsString::from(if define.starts_with("-D") {
+                define.clone()
+            } else {
+                format!("-D{define}")
+            })
+        })
         .chain(std::iter::once(OsString::from(&dme_argument)))
         .collect();
     let dmb_path = path.with_extension("dmb");
@@ -364,10 +357,6 @@ pub async fn compile(
         .parent()
         .ok_or_else(|| anyhow!("DreamMaker environment has no project root"))?;
     let artifact_before = ArtifactSnapshot::capture(project_root, &dmb_path)?;
-    let capture_network = args
-        .get("capture_network")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     let prepared = PreparedBuild::capture(
         context.policy(),
         snapshot.as_deref(),
@@ -411,9 +400,10 @@ pub async fn compile(
 
     let process_succeeded =
         execution.termination == TerminationReason::Exited && execution.exit_code == Some(0);
-    let success = compile_succeeded(process_succeeded, errors.len());
+    let compiler_succeeded = compile_succeeded(process_succeeded, errors.len());
     let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path)?;
     let dmb_exists = artifact_after.exists;
+    let success = compiler_succeeded && dmb_exists;
     let dmb_updated = artifact_after.exists
         && (!artifact_before.exists
             || artifact_before.sha256 != artifact_after.sha256
@@ -429,7 +419,9 @@ pub async fn compile(
         &artifact_after,
         success,
         dmb_updated,
-        if timed_out {
+        if compiler_succeeded && !dmb_exists {
+            "artifact_missing"
+        } else if timed_out {
             "compile_timed_out"
         } else if idle {
             "compile_idle_timed_out"
@@ -440,6 +432,8 @@ pub async fn compile(
 
     let result = json!({
         "success": success,
+        "compiler_succeeded": compiler_succeeded,
+        "artifact_error": (compiler_succeeded && !dmb_exists).then_some("Compiler exited successfully without producing a DMB."),
         "timed_out": timed_out,
         "idle": idle,
         "termination": execution.termination,
@@ -456,7 +450,7 @@ pub async fn compile(
         "artifact_after": artifact_after,
         "compiler": compiler.display().to_string(),
         "working_directory": working_directory.map(|directory| directory.display().to_string()),
-        "defines": args.get("defines").cloned().unwrap_or_else(|| json!([])),
+        "defines": defines,
         "errors": errors,
         "warnings": warnings,
         "stdout": stdout,
@@ -550,7 +544,7 @@ fn record_compile_provenance(
         }));
     }
 
-    if artifact_after.exists || fixture.is_some() {
+    if artifact_after.exists || fixture.is_some() || !success {
         let code = if success {
             verification_reason.unwrap_or("artifact_not_fresh")
         } else {

@@ -1,0 +1,69 @@
+{
+  "binary_sha256": "5bc1d998b77a2399ce154d16e8d3d1e4eb93f1a5cdc82f09d03b291b53cf6876",
+  "byond_version": "5.0.516.1687",
+  "build": {
+    "build_id": "5fb7d13c6aca07a08c86f6f728c65c229cb0d6ce52ac3cfd57f71f93eeaaf1c8",
+    "complete": true,
+    "executable_sha256": "5bc1d998b77a2399ce154d16e8d3d1e4eb93f1a5cdc82f09d03b291b53cf6876",
+    "profile": "debug",
+    "schema": 1,
+    "source_dirty": true,
+    "source_revision": "628b8b9f368fb5380b5604cb567ca9716ddc3c37",
+    "target": "x86_64-pc-windows-msvc",
+    "version": "0.1.0"
+  },
+  "cases": [
+    {
+      "case": "default",
+      "parse_error": false,
+      "is_error": false,
+      "code": null,
+      "success": true,
+      "exit_code": 0,
+      "dmb_exists": true,
+      "dmb_updated": true,
+      "provenance_status": "verified",
+      "defines": []
+    },
+    {
+      "case": "absolute_with_directory",
+      "parse_error": false,
+      "is_error": false,
+      "code": null,
+      "success": true,
+      "exit_code": 0,
+      "dmb_exists": true,
+      "dmb_updated": true,
+      "provenance_status": "verified",
+      "defines": []
+    },
+    {
+      "case": "relative_with_directory",
+      "parse_error": false,
+      "is_error": true,
+      "code": "path_not_found",
+      "success": null,
+      "exit_code": null,
+      "dmb_exists": false,
+      "dmb_updated": null,
+      "provenance_status": null,
+      "defines": null
+    },
+    {
+      "case": "invalid_defines",
+      "parse_error": false,
+      "is_error": false,
+      "code": null,
+      "success": true,
+      "exit_code": 0,
+      "dmb_exists": true,
+      "dmb_updated": true,
+      "provenance_status": "unverified",
+      "defines": [
+        "FLAG",
+        42
+      ]
+    }
+  ],
+  "exit_code": 0
+}

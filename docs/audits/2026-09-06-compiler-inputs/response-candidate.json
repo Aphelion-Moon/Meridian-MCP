@@ -1,0 +1,19 @@
+{
+  "binary_sha256": "a706227b7058f3c719ddb287a109b3c313d5500cf8bb005020a23d6837c0f224",
+  "requested_stdout_bytes": 600000,
+  "requested_stderr_bytes": 600000,
+  "code": "limit_exceeded",
+  "dmb_created": true,
+  "compile_status_returned": false,
+  "reply": {
+    "code": "limit_exceeded",
+    "details": {
+      "max_output_bytes": 1048576,
+      "output_bytes": 1050806,
+      "tool": "dm_compile"
+    },
+    "message": "tool output exceeded its declared transport limit",
+    "recovery": "Narrow the request or use the tool's pagination controls."
+  },
+  "exit_code": 0
+}

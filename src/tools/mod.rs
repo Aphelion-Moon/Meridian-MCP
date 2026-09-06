@@ -511,7 +511,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 },
                 "working_directory": {
                     "type": "string",
-                    "description": "Optional working directory for the compiler process"
+                    "description": "Directory used to resolve a relative DME path and run the compiler; defaults to the DME directory"
                 },
                 "defines": {
                     "type": "array",
@@ -537,7 +537,8 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     "description": "Optional contained declarative fixture manifest"
                 }
             },
-            "required": ["dme_path"]
+            "required": ["dme_path"],
+            "additionalProperties": false
         }),
     });
 
@@ -1162,9 +1163,8 @@ fn contain_arguments(
     args: &mut Value,
 ) -> std::result::Result<(), crate::PolicyError> {
     match name {
-        "dm_parse_environment" | "dm_compile" => {
-            canonical_argument(policy, args, "dme_path", false)?
-        }
+        "dm_parse_environment" => canonical_argument(policy, args, "dme_path", false)?,
+        "dm_compile" => canonical_with_working_directory(policy, args, "dme_path", false)?,
         "dm_check_fixture_sync" => {
             canonical_argument(policy, args, "fixture_manifest_path", false)?
         }
@@ -1204,18 +1204,7 @@ fn contain_arguments(
             canonical_argument(policy, args, "left_dmm_path", false)?;
             canonical_argument(policy, args, "right_dmm_path", false)?;
         }
-        "dm_run" => {
-            if let Some(directory) = args.get("working_directory").and_then(Value::as_str) {
-                let directory = policy.read_directory(directory)?;
-                if let Some(path) = args.get("dmb_path").and_then(Value::as_str) {
-                    if std::path::Path::new(path).is_relative() {
-                        args["dmb_path"] = json!(directory.join(path));
-                    }
-                }
-                args["working_directory"] = json!(directory);
-            }
-            canonical_argument(policy, args, "dmb_path", true)?;
-        }
+        "dm_run" => canonical_with_working_directory(policy, args, "dmb_path", true)?,
         "dm_tracy_prepare" | "dm_tracy_launch" => {
             canonical_argument(policy, args, "dmb_path", true)?
         }
@@ -1232,7 +1221,6 @@ fn contain_arguments(
         _ => {}
     }
     if name == "dm_compile" {
-        canonical_optional_argument(policy, args, "working_directory")?;
         canonical_optional_argument(policy, args, "fixture_manifest_path")?;
         if let Some(path) = args.get("compiler_path").and_then(Value::as_str) {
             let path = policy.executable(path)?;
@@ -1357,6 +1345,24 @@ pub(crate) fn require_launchable_artifact(
             json!({"provenance":launch}),
         ))
     }
+}
+
+fn canonical_with_working_directory(
+    policy: &PathPolicy,
+    args: &mut Value,
+    key: &str,
+    runtime: bool,
+) -> std::result::Result<(), crate::PolicyError> {
+    if let Some(directory) = args.get("working_directory").and_then(Value::as_str) {
+        let directory = policy.read_directory(directory)?;
+        if let Some(path) = args.get(key).and_then(Value::as_str) {
+            if std::path::Path::new(path).is_relative() {
+                args[key] = json!(directory.join(path));
+            }
+        }
+        args["working_directory"] = json!(directory);
+    }
+    canonical_argument(policy, args, key, runtime)
 }
 
 fn canonical_argument(
