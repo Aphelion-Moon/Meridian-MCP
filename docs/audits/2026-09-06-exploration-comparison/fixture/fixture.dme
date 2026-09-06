@@ -1,0 +1,3 @@
+#define ENABLE_FAST 1
+#include "types.dm"
+#include "calls.dm"

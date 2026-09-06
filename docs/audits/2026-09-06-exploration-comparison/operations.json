@@ -1,0 +1,549 @@
+[
+  {
+    "case": "R1",
+    "arm": "mcp",
+    "tool": "dm_get_proc",
+    "args": {
+      "type_path": "/obj/machinery/vending",
+      "proc_name": "vend"
+    }
+  },
+  {
+    "case": "R1",
+    "arm": "mcp",
+    "tool": "dm_get_proc",
+    "args": {
+      "type_path": "/obj/machinery/vending",
+      "proc_name": "dispense"
+    }
+  },
+  {
+    "case": "R1",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "^/obj/machinery/vending/proc/vend\\(",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R2",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "-A",
+      "18",
+      "^/obj/item/storage/backpack/duffelbag\\s*$",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R1",
+    "arm": "control",
+    "read": [
+      {
+        "path": "code/modules/vending/vendor/inventory.dm",
+        "start": 147,
+        "end": 255
+      }
+    ]
+  },
+  {
+    "case": "R2",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "-A",
+      "20",
+      "^/obj/item/storage/backpack\\s*$",
+      "code/game/objects/items/storage",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R2",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "var/w_class\\b|#define WEIGHT_CLASS_BULKY\\b",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R2",
+    "arm": "mcp",
+    "tool": "dm_get_var",
+    "args": {
+      "type_path": "/obj/item/storage/backpack/duffelbag",
+      "var_name": "w_class"
+    }
+  },
+  {
+    "case": "R3",
+    "arm": "mcp",
+    "tool": "dm_find_implementations",
+    "args": {
+      "type_path": "/obj/machinery/vending",
+      "member_name": "attackby",
+      "limit": 100
+    }
+  },
+  {
+    "case": "R2",
+    "arm": "control",
+    "read": [
+      {
+        "path": "code/game/objects/items/storage/dufflebags.dm",
+        "start": 1,
+        "end": 36
+      },
+      {
+        "path": "code/game/objects/items.dm",
+        "start": 1,
+        "end": 7
+      },
+      {
+        "path": "code/game/objects/items.dm",
+        "start": 96,
+        "end": 103
+      }
+    ]
+  },
+  {
+    "case": "R2",
+    "arm": "mcp",
+    "tool": "dm_get_type",
+    "args": {
+      "type_path": "/obj/item/storage/backpack/duffelbag"
+    }
+  },
+  {
+    "case": "R2",
+    "arm": "mcp",
+    "tool": "dm_get_definition",
+    "args": {
+      "type_path": "/obj/item/storage/backpack/duffelbag",
+      "member_name": "w_class"
+    }
+  },
+  {
+    "case": "R3",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "^/obj/machinery/vending.*attackby\\(",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R4",
+    "arm": "control",
+    "rg": [
+      "--files",
+      "-g",
+      "*airlock*.dm"
+    ]
+  },
+  {
+    "case": "R2",
+    "arm": "mcp",
+    "tool": "dm_get_var",
+    "args": {
+      "type_path": "/obj/item/storage/backpack",
+      "var_name": "w_class"
+    }
+  },
+  {
+    "case": "R4",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "-i",
+      "safety|crush|obstruct|safe\\b",
+      "code/game/machinery/doors/airlock.dm",
+      "code/datums/wires/airlock.dm"
+    ]
+  },
+  {
+    "case": "R4",
+    "arm": "mcp",
+    "tool": "dm_search_context",
+    "args": {
+      "query": "airlock prevent closing on someone safety disable",
+      "limit": 3,
+      "max_source_lines": 60
+    }
+  },
+  {
+    "case": "R4",
+    "arm": "control",
+    "read": [
+      {
+        "path": "code/game/machinery/doors/airlock.dm",
+        "start": 1481,
+        "end": 1540
+      },
+      {
+        "path": "code/game/machinery/doors/airlock.dm",
+        "start": 1880,
+        "end": 1892
+      },
+      {
+        "path": "code/datums/wires/airlock.dm",
+        "start": 139,
+        "end": 147
+      },
+      {
+        "path": "code/datums/wires/airlock.dm",
+        "start": 200,
+        "end": 207
+      }
+    ]
+  },
+  {
+    "case": "R4",
+    "arm": "mcp",
+    "tool": "dm_get_proc",
+    "args": {
+      "type_path": "/obj/machinery/door/airlock",
+      "proc_name": "close"
+    }
+  },
+  {
+    "case": "R4",
+    "arm": "mcp",
+    "tool": "dm_search_context",
+    "args": {
+      "query": "safe-toggle",
+      "type_prefix": "/obj/machinery/door/airlock",
+      "kind": "proc",
+      "limit": 1,
+      "max_source_lines": 60
+    }
+  },
+  {
+    "case": "R5",
+    "arm": "mcp",
+    "tool": "dm_search_context",
+    "args": {
+      "query": "vending ui action purchase",
+      "type_prefix": "/obj/machinery/vending",
+      "kind": "proc",
+      "limit": 3,
+      "max_source_lines": 60
+    }
+  },
+  {
+    "case": "R6",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "^/datum/action/cooldown/spell.*(/proc)?/can_cast_spell\\(",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "mcp",
+    "tool": "dm_get_proc",
+    "args": {
+      "type_path": "/obj/machinery/vending",
+      "proc_name": "vend"
+    }
+  },
+  {
+    "case": "R5",
+    "arm": "hybrid",
+    "rg": [
+      "--files",
+      "tgui",
+      "-g",
+      "*Vending*"
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "control",
+    "rg": [
+      "--files",
+      "tgui",
+      "-g",
+      "*Vending*"
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "^/obj/machinery/vending/ui_act\\(",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "R6",
+    "arm": "mcp",
+    "tool": "dm_find_implementations",
+    "args": {
+      "type_path": "/datum/action/cooldown/spell",
+      "member_name": "can_cast_spell",
+      "limit": 100
+    }
+  },
+  {
+    "case": "R5",
+    "arm": "hybrid",
+    "rg": [
+      "-n",
+      "-C",
+      "6",
+      "act\\(['\"]vend",
+      "tgui/packages/tgui/interfaces/Vending.tsx"
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "-C",
+      "6",
+      "act\\(['\"]vend",
+      "tgui/packages/tgui/interfaces/Vending.tsx"
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "control",
+    "read": [
+      {
+        "path": "code/modules/vending/vendor/ui_data.dm",
+        "start": 138,
+        "end": 147
+      }
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "-A",
+      "22",
+      "^/obj/machinery/vending/proc/vend\\(",
+      "-g",
+      "*.dm"
+    ]
+  },
+  {
+    "case": "S1",
+    "arm": "mcp",
+    "tool": "dm_get_var",
+    "args": {
+      "type_path": "/datum/alias",
+      "var_name": "charge"
+    }
+  },
+  {
+    "case": "S2",
+    "arm": "control",
+    "root": "fixture",
+    "read": [
+      {
+        "path": "fixture.dme",
+        "start": 1,
+        "end": 10
+      },
+      {
+        "path": "types.dm",
+        "start": 20,
+        "end": 27
+      }
+    ]
+  },
+  {
+    "case": "S1",
+    "arm": "mcp",
+    "tool": "dm_get_type",
+    "args": {
+      "type_path": "/datum/alias"
+    }
+  },
+  {
+    "case": "S1",
+    "arm": "mcp",
+    "tool": "dm_get_proc",
+    "args": {
+      "type_path": "/datum/alias",
+      "proc_name": "reset"
+    }
+  },
+  {
+    "case": "S1",
+    "arm": "control",
+    "root": "fixture",
+    "read": [
+      {
+        "path": "fixture.dme",
+        "start": 1,
+        "end": 10
+      },
+      {
+        "path": "types.dm",
+        "start": 1,
+        "end": 19
+      }
+    ]
+  },
+  {
+    "case": "S2",
+    "arm": "mcp",
+    "tool": "dm_get_var",
+    "args": {
+      "type_path": "/datum/configured",
+      "var_name": "mode"
+    }
+  },
+  {
+    "case": "S3",
+    "arm": "mcp",
+    "tool": "dm_find_references",
+    "args": {
+      "type_path": "/datum/cell",
+      "member_name": "reset",
+      "kind": "call",
+      "limit": 100
+    }
+  },
+  {
+    "case": "S4",
+    "arm": "control",
+    "root": "fixture",
+    "rg": [
+      "--no-ignore",
+      "-n",
+      "reset\\(|parent_type|#include",
+      "-g",
+      "*.dm",
+      "-g",
+      "*.dme"
+    ]
+  },
+  {
+    "case": "S1",
+    "arm": "mcp",
+    "tool": "dm_get_var",
+    "args": {
+      "type_path": "/datum/cell/special",
+      "var_name": "charge"
+    }
+  },
+  {
+    "case": "S1",
+    "arm": "mcp",
+    "tool": "dm_get_definition",
+    "args": {
+      "type_path": "/datum/alias",
+      "member_name": "charge"
+    }
+  },
+  {
+    "case": "S3",
+    "arm": "control",
+    "root": "fixture",
+    "read": [
+      {
+        "path": "fixture.dme",
+        "start": 1,
+        "end": 10
+      },
+      {
+        "path": "calls.dm",
+        "start": 1,
+        "end": 20
+      },
+      {
+        "path": "types.dm",
+        "start": 1,
+        "end": 19
+      }
+    ]
+  },
+  {
+    "case": "S4",
+    "arm": "mcp",
+    "tool": "dm_find_implementations",
+    "args": {
+      "type_path": "/datum/cell",
+      "member_name": "reset",
+      "limit": 100
+    }
+  },
+  {
+    "case": "R7",
+    "arm": "mcp",
+    "tool": "dm_search_context",
+    "args": {
+      "query": "hydroponics tray consumes water nutrients plant growth",
+      "kind": "proc",
+      "limit": 3,
+      "max_source_lines": 60
+    }
+  },
+  {
+    "case": "R7",
+    "arm": "control",
+    "rg": [
+      "--files",
+      "-g",
+      "*hydroponic*.dm"
+    ]
+  },
+  {
+    "case": "R7",
+    "arm": "mcp",
+    "tool": "dm_get_definition",
+    "args": {
+      "type_path": "/obj/machinery/hydroponics",
+      "member_name": "process"
+    }
+  },
+  {
+    "case": "R7",
+    "arm": "control",
+    "rg": [
+      "-n",
+      "process\\(|waterlevel|nutridrain|total_volume",
+      "code/modules/hydroponics/hydroponics.dm"
+    ]
+  },
+  {
+    "case": "R7",
+    "arm": "control",
+    "read": [
+      {
+        "path": "code/modules/hydroponics/hydroponics.dm",
+        "start": 290,
+        "end": 351
+      }
+    ]
+  },
+  {
+    "case": "R5",
+    "arm": "control",
+    "read": [
+      {
+        "path": "code/modules/vending/vendor/inventory.dm",
+        "start": 170,
+        "end": 219
+      }
+    ]
+  }
+]
