@@ -1,0 +1,195 @@
+{
+  "schema": 1,
+  "base_revision": "1d63296",
+  "rust_version": "1.95.0 (59807616e 2026-04-14)",
+  "linux_environment": "Ubuntu under WSL 1; not hosted native Ubuntu",
+  "source_sha256_lf": {
+    "src/tools/runtime.rs": "11955ee38a58a51a2e78af7a448915697d00470d7fa9338cf400f337828847ca",
+    "src/tools/runtime/arguments.rs": "44eddad0ef9e2314aed64e101cd45ac27ff25207fb0cc27a6da2d6caf1f6bfe6",
+    "src/tools/mod.rs": "854e66fec7556855546163dfc3fdf9f59309c5eed02208fa0baaa07c1e493be9",
+    "src/runtime_ownership_tests.rs": "5e70cd2b91aea5a37dc6b1887e1dd054a3d775f7b04a6a9cb584a1ba7be46e9d"
+  },
+  "tests": {
+    "windows": {
+      "passed": 430,
+      "failed": 0,
+      "ignored": 5
+    },
+    "linux": {
+      "passed": 423,
+      "failed": 0,
+      "ignored": 6
+    }
+  },
+  "strict_clippy": {
+    "windows": "passed",
+    "linux": "passed"
+  },
+  "stdio": {
+    "rejected_requests": 3,
+    "code": "invalid_input",
+    "runtime_started": false,
+    "natural_exit_code": 0
+  },
+  "regressions_observed_red": [
+    "Invalid readiness regex replaced the output session and wrote the owned runtime PID marker.",
+    "Invalid require_verified_provenance waited for lifecycle access.",
+    "String output-wait regex flag was accepted."
+  ],
+  "ownership_repetition": {
+    "parallelism": 3,
+    "batches": 2,
+    "completed_modes": 42,
+    "trials": [
+      {
+        "trial": 1,
+        "exit_code": 0,
+        "elapsed_ms": 1330.703,
+        "modes": [
+          "stop",
+          "drop",
+          "eof",
+          "transport_error",
+          "no_executor",
+          "cancel",
+          "abrupt"
+        ]
+      },
+      {
+        "trial": 2,
+        "exit_code": 0,
+        "elapsed_ms": 1328.226,
+        "modes": [
+          "stop",
+          "drop",
+          "eof",
+          "transport_error",
+          "no_executor",
+          "cancel",
+          "abrupt"
+        ]
+      },
+      {
+        "trial": 3,
+        "exit_code": 0,
+        "elapsed_ms": 1339.582,
+        "modes": [
+          "stop",
+          "drop",
+          "eof",
+          "transport_error",
+          "no_executor",
+          "cancel",
+          "abrupt"
+        ]
+      },
+      {
+        "trial": 4,
+        "exit_code": 0,
+        "elapsed_ms": 1332.953,
+        "modes": [
+          "stop",
+          "drop",
+          "eof",
+          "transport_error",
+          "no_executor",
+          "cancel",
+          "abrupt"
+        ]
+      },
+      {
+        "trial": 5,
+        "exit_code": 0,
+        "elapsed_ms": 1321.636,
+        "modes": [
+          "stop",
+          "drop",
+          "eof",
+          "transport_error",
+          "no_executor",
+          "cancel",
+          "abrupt"
+        ]
+      },
+      {
+        "trial": 6,
+        "exit_code": 0,
+        "elapsed_ms": 1328.623,
+        "modes": [
+          "stop",
+          "drop",
+          "eof",
+          "transport_error",
+          "no_executor",
+          "cancel",
+          "abrupt"
+        ]
+      }
+    ],
+    "phase_samples": {
+      "cancelled runtime tree terminated": {
+        "count": 6,
+        "maximum_elapsed_ms": 43,
+        "median_elapsed_ms": 41.5
+      },
+      "cancelling launch": {
+        "count": 6,
+        "maximum_elapsed_ms": 36,
+        "median_elapsed_ms": 34.0
+      },
+      "executor created; initializing owner": {
+        "count": 42,
+        "maximum_elapsed_ms": 3,
+        "median_elapsed_ms": 3.0
+      },
+      "owner entered; creating executor": {
+        "count": 42,
+        "maximum_elapsed_ms": 0,
+        "median_elapsed_ms": 0.0
+      },
+      "owner initialized": {
+        "count": 42,
+        "maximum_elapsed_ms": 4,
+        "median_elapsed_ms": 3.0
+      },
+      "runtime PID marker observed": {
+        "count": 12,
+        "maximum_elapsed_ms": 35,
+        "median_elapsed_ms": 32.5
+      },
+      "runtime identities published": {
+        "count": 11,
+        "maximum_elapsed_ms": 36,
+        "median_elapsed_ms": 33
+      },
+      "runtime launch polled": {
+        "count": 12,
+        "maximum_elapsed_ms": 5,
+        "median_elapsed_ms": 4.0
+      },
+      "waiting for abrupt owner termination": {
+        "count": 5,
+        "maximum_elapsed_ms": 35,
+        "median_elapsed_ms": 33
+      }
+    },
+    "intermittent_failure_reproduced": false,
+    "intermittent_cause_resolved": false,
+    "production_guardian_or_deadlines_changed": false
+  },
+  "local_log_sha256": {
+    "windows_tests": "152a23d2d8bd537cbda36eb22f1009a360cf203d1064cbefadf24b7db5a9a319",
+    "linux_tests": "55600714ea1930fc9d9b18e00c073390ee68f5403f40fb3165668bf84268374e",
+    "windows_clippy": "c2ac89a4fd498acf26e077e2f558aae4025053924de98c4a63e28691c4b8b789",
+    "linux_clippy": "8b2219ddc2c70159cb4fd9137ec430aa05cc65e818519262c606b4152fc9664d",
+    "stdio": "101a24788faa3933c822cdf3be32283aa1a6170a024fdeb7fab57b15dfdb788e",
+    "invalid_options_red": "5fb5bd25b61c96328f7c712c629ca391e3cbf84c97514842dbb9d7e08fa9c689",
+    "invalid_regex_red": "4ee37c8bb3c016d54426fbcee93d60ba848b899a631ea9e91afaf2b80938a527"
+  },
+  "not_qualified": [
+    "Live BYOND behavior",
+    "Hosted CI",
+    "Connected MCP installation",
+    "New release binary"
+  ]
+}

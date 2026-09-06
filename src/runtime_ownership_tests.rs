@@ -244,6 +244,100 @@ async fn runtime_observer_does_not_retain_owner() {
     .expect("observer retained runtime ownership after state drop");
 }
 
+#[tokio::test]
+async fn invalid_readiness_regex_never_starts_the_runtime() {
+    initialize_owner();
+    let directory =
+        std::env::temp_dir().join(format!("meridian-invalid-readiness-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    assert!(Command::new("rustc")
+        .args(["+1.95.0", "--edition=2021"])
+        .arg(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/process/runtime_tree.rs")
+        )
+        .arg("-o")
+        .arg(directory.join("dreamdaemon.exe"))
+        .status()
+        .unwrap()
+        .success());
+    std::fs::copy(directory.join("dreamdaemon.exe"), directory.join("dm.exe")).unwrap();
+    std::fs::write(directory.join("fixture.dmb"), "fixture").unwrap();
+    let context = crate::tools::ToolExecutionContext::new(
+        crate::CapabilityMode::Development,
+        crate::PathPolicy::new(vec![directory.clone()], vec![directory.join("dm.exe")]).unwrap(),
+    );
+    let state = crate::state::ServerState::new();
+    let output_before = state.runtime().await.output_log.clone();
+    let marker = directory.join("started.pids");
+    let result = crate::tools::call_tool(
+        &context,
+        &state,
+        "dm_run",
+        serde_json::json!({
+            "dmb_path": directory.join("fixture.dmb"),
+            "daemon_args": ["--marker", marker],
+            "wait_for": "[",
+            "wait_regex": true
+        }),
+    )
+    .await;
+    let launched = !std::sync::Arc::ptr_eq(&output_before, &state.runtime().await.output_log);
+    let marker_written = marker.exists();
+    crate::tools::runtime::stop(&state, serde_json::json!({}))
+        .await
+        .unwrap();
+    let unverified = crate::tools::call_tool(
+        &context,
+        &state,
+        "dm_run",
+        serde_json::json!({
+            "dmb_path": directory.join("fixture.dmb"),
+            "daemon_args": ["--marker", directory.join("unverified.pids")],
+            "require_verified_provenance": true
+        }),
+    )
+    .await
+    .unwrap();
+    let unverified_started = directory.join("unverified.pids").exists();
+    let valid = crate::tools::call_tool(
+        &context,
+        &state,
+        "dm_run",
+        serde_json::json!({
+            "dmb_path": directory.join("fixture.dmb"),
+            "daemon_args": ["--marker", directory.join("valid.pids")],
+            "wait_for": "^RUNTIME_TREE_READY$",
+            "wait_regex": true,
+            "startup_timeout_ms": 3000,
+            "require_verified_provenance": false
+        }),
+    )
+    .await
+    .unwrap();
+    let valid_started = directory.join("valid.pids").exists();
+    crate::tools::runtime::stop(&state, serde_json::json!({}))
+        .await
+        .unwrap();
+    drop(state);
+    std::fs::remove_dir_all(directory).unwrap();
+    assert!(
+        !launched && !marker_written,
+        "invalid readiness regex launched a runtime: session_replaced={launched}, marker_written={marker_written}"
+    );
+    let result = result.unwrap();
+    assert_eq!(result.is_error, Some(true));
+    let crate::mcp::ToolContent::Text { text } = &result.content[0];
+    assert!(text.contains("invalid_input"), "{text}");
+    assert_eq!(unverified.is_error, Some(true));
+    assert!(!unverified_started);
+    assert_ne!(valid.is_error, Some(true));
+    assert!(valid_started);
+    let crate::mcp::ToolContent::Text { text } = &valid.content[0];
+    let valid: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(valid["readiness"]["matched"], true);
+}
+
 #[cfg(windows)]
 fn owned_process_liveness(identity: &ProcessIdentity, _offset: u64) -> Result<(), ()> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -323,6 +417,44 @@ fn fixture_command(mode: &str, marker: &std::path::Path) -> Command {
     command
 }
 
+/// Keep startup evidence outside libtest's captured output, including when the
+/// owner is killed before it can publish the process identities.
+struct FixtureTrace {
+    path: std::path::PathBuf,
+    started: Instant,
+}
+
+impl FixtureTrace {
+    fn new(marker: &std::path::Path) -> Self {
+        Self {
+            path: marker.with_extension("phase"),
+            started: Instant::now(),
+        }
+    }
+
+    fn record(&self, phase: &str) {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .unwrap();
+        writeln!(file, "{}ms {phase}", self.started.elapsed().as_millis()).unwrap();
+    }
+}
+
+fn fixture_evidence(owner: &mut std::process::Child, marker: &std::path::Path) -> String {
+    format!(
+        "owner_pid={} exit={:?} marker={} pids={} phases:\n{}",
+        owner.id(),
+        owner.try_wait(),
+        marker.exists(),
+        marker.with_extension("pids").exists(),
+        std::fs::read_to_string(marker.with_extension("phase"))
+            .unwrap_or_else(|error| format!("unavailable: {error}")),
+    )
+}
+
 #[test]
 #[ignore]
 fn fixture() {
@@ -347,8 +479,12 @@ fn fixture() {
         let _ = leaf.wait();
         return;
     }
+    let trace = FixtureTrace::new(&marker);
+    trace.record("owner entered; creating executor");
     let executor = tokio::runtime::Runtime::new().unwrap();
+    trace.record("executor created; initializing owner");
     initialize_owner();
+    trace.record("owner initialized");
     if mode == "cancel" || mode == "abrupt" {
         executor.block_on(async {
             let directory =
@@ -360,22 +496,30 @@ fn fixture() {
             );
             let state = crate::state::ServerState::new();
             let pids = marker.with_extension("pids");
-            let mut launch = Box::pin(crate::tools::runtime::run(
-                &context,
-                &state,
-                serde_json::json!({
-                    "dmb_path": directory.join("fixture.dmb"),
-                    "daemon_args": ["--marker", pids],
-                    "wait_for": "NEVER_READY",
-                    "startup_timeout_ms": 300000
-                }),
-            ));
+            let mut launch = Box::pin(async {
+                trace.record("runtime launch polled");
+                crate::tools::runtime::run(
+                    &context,
+                    &state,
+                    serde_json::json!({
+                        "dmb_path": directory.join("fixture.dmb"),
+                        "daemon_args": ["--marker", pids],
+                        "wait_for": "NEVER_READY",
+                        "startup_timeout_ms": 300000
+                    }),
+                )
+                .await
+            });
             let observe = async {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 while !pids.exists() {
-                    assert!(Instant::now() < deadline);
+                    assert!(
+                        Instant::now() < deadline,
+                        "runtime PID marker not published"
+                    );
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
+                trace.record("runtime PID marker observed");
                 let identities: Vec<_> = std::fs::read_to_string(&pids)
                     .unwrap()
                     .split_whitespace()
@@ -384,6 +528,7 @@ fn fixture() {
                     })
                     .collect();
                 std::fs::write(&marker, serde_json::to_vec(&identities).unwrap()).unwrap();
+                trace.record("runtime identities published");
                 identities
             };
             let identities = tokio::select! {
@@ -391,8 +536,10 @@ fn fixture() {
                 identities = observe => identities,
             };
             if mode == "abrupt" {
+                trace.record("waiting for abrupt owner termination");
                 std::future::pending::<()>().await;
             }
+            trace.record("cancelling launch");
             drop(launch);
             let deadline = Instant::now() + Duration::from_secs(3);
             while Instant::now() < deadline
@@ -409,6 +556,7 @@ fn fixture() {
                 "cancelled launch retained its tree"
             );
             assert!(!state.runtime().await.is_game_running());
+            trace.record("cancelled runtime tree terminated");
         });
         return;
     }
@@ -696,6 +844,8 @@ fn owned_runtime_lifecycle_keeps_unrelated_sentinel_alive() {
             std::process::id()
         ));
         let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_file(marker.with_extension("pids"));
+        let _ = std::fs::remove_file(marker.with_extension("phase"));
         let mut sentinel = FixtureChild(fixture_command("leaf", &marker).spawn().unwrap());
         let mut owner = FixtureChild(
             fixture_command(mode, &marker)
@@ -706,18 +856,32 @@ fn owned_runtime_lifecycle_keeps_unrelated_sentinel_alive() {
         let deadline = Instant::now() + Duration::from_secs(8);
         if mode == "abrupt" {
             while !marker.exists() {
-                assert!(Instant::now() < deadline);
+                assert!(
+                    owner.try_wait().unwrap().is_none(),
+                    "{mode}: owner exited before startup marker: {}",
+                    fixture_evidence(&mut owner, &marker)
+                );
+                assert!(
+                    Instant::now() < deadline,
+                    "{mode}: startup marker timed out: {}",
+                    fixture_evidence(&mut owner, &marker)
+                );
                 std::thread::sleep(Duration::from_millis(10));
             }
             owner.kill().unwrap();
         }
         while owner.try_wait().unwrap().is_none() {
-            assert!(Instant::now() < deadline);
+            assert!(
+                Instant::now() < deadline,
+                "{mode}: owner exit timed out: {}",
+                fixture_evidence(&mut owner, &marker)
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(
             owner.wait().unwrap().success() || mode == "abrupt",
-            "owner fixture {mode} failed"
+            "owner fixture {mode} failed: {}",
+            fixture_evidence(&mut owner, &marker)
         );
         let identities: Vec<ProcessIdentity> =
             serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
@@ -742,6 +906,8 @@ fn owned_runtime_lifecycle_keeps_unrelated_sentinel_alive() {
         );
         assert!(sentinel_alive);
         eprintln!("mode={mode}: owned identities terminated, unrelated sentinel remained alive: {identities:?}");
+        eprintln!("mode={mode}: {}", fixture_evidence(&mut owner, &marker));
+        std::fs::remove_file(marker.with_extension("phase")).unwrap();
         std::fs::remove_file(marker).unwrap();
         let _ = std::fs::remove_file(std::env::temp_dir().join(format!(
             "meridian-owned-tree-{}-{mode}.pids",

@@ -783,6 +783,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 },
                 "timeout_ms": {
                     "type": "integer",
+                    "minimum": 0,
                     "description": "Maximum wait in milliseconds (default: 30000, capped at 300000)"
                 }
             },

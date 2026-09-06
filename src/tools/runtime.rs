@@ -13,6 +13,9 @@ use tracing::info;
 
 use crate::process_environment::minimal_runtime_environment;
 
+mod arguments;
+use arguments::{OutputPattern, RunOptions, WaitOptions};
+
 const DEFAULT_OUTPUT_WAIT_TIMEOUT_MS: u64 = 30_000;
 const MAX_OUTPUT_WAIT_TIMEOUT_MS: u64 = 300_000;
 const OUTPUT_READ_CHUNK_BYTES: usize = 8 * 1024;
@@ -118,13 +121,17 @@ pub async fn run(
     state: &ServerState,
     args: Value,
 ) -> Result<ToolResult> {
+    let options = match RunOptions::parse(&args) {
+        Ok(options) => options,
+        Err(error) => return Ok(invalid_arguments(error)),
+    };
     let lifecycle = state.lifecycle().await;
     if state.debugger().await.is_some() {
         return Err(anyhow!(
             "a debugger session is active; stop it before launching DreamDaemon"
         ));
     }
-    run_internal(context, state, args, None, Some(lifecycle)).await
+    run_internal(context, state, options, None, Some(lifecycle)).await
 }
 
 pub(crate) async fn run_profiled_with_lifecycle(
@@ -133,21 +140,43 @@ pub(crate) async fn run_profiled_with_lifecycle(
     args: Value,
     profiler_port: u16,
 ) -> Result<ToolResult> {
+    let options = match RunOptions::parse(&args) {
+        Ok(options) => options,
+        Err(error) => return Ok(invalid_arguments(error)),
+    };
     if state.debugger().await.is_some() {
         return Err(anyhow!(
             "a debugger session is active; stop it before launching Tracy"
         ));
     }
-    run_internal(context, state, args, Some(profiler_port), None).await
+    run_internal(context, state, options, Some(profiler_port), None).await
+}
+
+fn invalid_arguments(error: anyhow::Error) -> ToolResult {
+    crate::result::structured_error(
+        crate::result::ToolErrorCode::InvalidInput,
+        error.to_string(),
+        Some("Correct the named runtime argument and retry.".to_owned()),
+        json!({}),
+    )
 }
 
 async fn run_internal(
     context: &super::ToolExecutionContext,
     server_state: &ServerState,
-    args: Value,
+    options: RunOptions,
     profiler_port: Option<u16>,
     lifecycle: Option<tokio::sync::MutexGuard<'_, ()>>,
 ) -> Result<ToolResult> {
+    let RunOptions {
+        dmb_path,
+        port,
+        working_directory: requested_working_directory,
+        daemon_args: mut extra_args,
+        readiness,
+        startup_timeout_ms,
+        require_verified,
+    } = options;
     let active_snapshot = if profiler_port.is_none() {
         server_state.active_snapshot().await
     } else {
@@ -163,25 +192,7 @@ async fn run_internal(
 
     finalize_standard_integrity(&mut state, "natural_exit").await?;
 
-    let dmb_path = args
-        .get("dmb_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing dmb_path argument"))?;
-
-    let port = u16::try_from(super::bounded_u64(&args, "port", 1337, 1, 65_535)?)?;
-    let startup_timeout_ms = super::bounded_u64(
-        &args,
-        "startup_timeout_ms",
-        DEFAULT_OUTPUT_WAIT_TIMEOUT_MS,
-        1,
-        MAX_OUTPUT_WAIT_TIMEOUT_MS,
-    )?;
-
-    let requested_path = PathBuf::from(dmb_path);
-    let requested_working_directory = args
-        .get("working_directory")
-        .and_then(|value| value.as_str())
-        .map(PathBuf::from);
+    let requested_path = PathBuf::from(&dmb_path);
     let path = if requested_path.is_absolute() {
         requested_path
     } else if let Some(working_directory) = &requested_working_directory {
@@ -201,30 +212,10 @@ async fn run_internal(
         )
     })?;
 
-    let mut extra_args: Vec<String> = args
-        .get("daemon_args")
-        .and_then(|value| value.as_array())
-        .map(|values| {
-            values
-                .iter()
-                .map(|value| {
-                    value
-                        .as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| anyhow!("daemon_args must contain only strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
     if profiler_port.is_some() {
         extra_args.extend(["-params".to_owned(), "tracy".to_owned()]);
     }
 
-    let require_verified = args
-        .get("require_verified_provenance")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     let launch_provenance =
         match super::require_launchable_artifact(context, &path, require_verified) {
             Ok(provenance) => provenance,
@@ -371,13 +362,8 @@ async fn run_internal(
     });
     drop(state);
 
-    if let Some(pattern) = args.get("wait_for").and_then(|value| value.as_str()) {
-        let use_regex = args
-            .get("wait_regex")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let wait_result =
-            wait_for_output_value(&observation, pattern, use_regex, startup_timeout_ms).await?;
+    if let Some(pattern) = &readiness {
+        let wait_result = wait_for_output_value(&observation, pattern, startup_timeout_ms).await?;
         result["readiness"] = wait_result;
         if !readiness_succeeded(&result["readiness"]) {
             let _lifecycle = server_state.lifecycle().await;
@@ -540,16 +526,11 @@ fn push_captured_output_line(
 
 async fn wait_for_output_value(
     output_log: &OutputLog,
-    pattern: &str,
-    use_regex: bool,
+    pattern: &OutputPattern,
     timeout_ms: u64,
 ) -> Result<Value> {
     let timeout_ms = timeout_ms.min(MAX_OUTPUT_WAIT_TIMEOUT_MS);
     let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
-    let regex = use_regex
-        .then(|| regex::Regex::new(pattern))
-        .transpose()
-        .map_err(|error| anyhow!("Invalid output regex: {error}"))?;
     let mut changes = output_log
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -574,9 +555,7 @@ async fn wait_for_output_value(
             )
         };
         let text = output.join("\n");
-        let matched = regex
-            .as_ref()
-            .map_or_else(|| text.contains(pattern), |regex| regex.is_match(&text));
+        let matched = pattern.matches(&text);
         let recent_output = output
             .into_iter()
             .rev()
@@ -588,8 +567,8 @@ async fn wait_for_output_value(
         if matched {
             return Ok(json!({
                 "matched": true,
-                "pattern": pattern,
-                "regex": use_regex,
+                "pattern": pattern.text,
+                "regex": pattern.is_regex(),
                 "timed_out": false,
                 "recent_output": recent_output
             }));
@@ -598,8 +577,8 @@ async fn wait_for_output_value(
         if !running && drained {
             return Ok(json!({
                 "matched": false,
-                "pattern": pattern,
-                "regex": use_regex,
+                "pattern": pattern.text,
+                "regex": pattern.is_regex(),
                 "timed_out": false,
                 "process_exited": true,
                 "last_exit_code": exit_code,
@@ -610,8 +589,8 @@ async fn wait_for_output_value(
         if tokio::time::Instant::now() >= deadline {
             return Ok(json!({
                 "matched": false,
-                "pattern": pattern,
-                "regex": use_regex,
+                "pattern": pattern.text,
+                "regex": pattern.is_regex(),
                 "timed_out": true,
                 "process_exited": false,
                 "recent_output": recent_output
@@ -634,11 +613,20 @@ pub(crate) async fn wait_for_literal_output(
     state.observe_runtime(&mut runtime);
     let output = Arc::clone(&runtime.output_log);
     drop(runtime);
-    wait_for_output_value(&output, pattern, false, timeout_ms).await
+    wait_for_output_value(
+        &output,
+        &OutputPattern::new(pattern.to_owned(), false, "pattern")?,
+        timeout_ms,
+    )
+    .await
 }
 
 /// Wait until DreamDaemon output contains a literal or regular-expression marker.
 pub async fn wait_for_output(server_state: &ServerState, args: Value) -> Result<ToolResult> {
+    let options = match WaitOptions::parse(&args) {
+        Ok(options) => options,
+        Err(error) => return Ok(invalid_arguments(error)),
+    };
     let mut state = server_state.runtime().await;
     let running = state.is_game_running();
     let has_runtime_diagnostics =
@@ -654,24 +642,11 @@ pub async fn wait_for_output(server_state: &ServerState, args: Value) -> Result<
         ));
     }
 
-    let pattern = args
-        .get("pattern")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| anyhow!("Missing pattern argument"))?;
-    let use_regex = args
-        .get("regex")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
-    let timeout_ms = args
-        .get("timeout_ms")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(DEFAULT_OUTPUT_WAIT_TIMEOUT_MS);
-
     server_state.observe_runtime(&mut state);
     let output = Arc::clone(&state.output_log);
     let provenance = state.launch_provenance.clone();
     drop(state);
-    let result = wait_for_output_value(&output, pattern, use_regex, timeout_ms).await?;
+    let result = wait_for_output_value(&output, &options.pattern, options.timeout_ms).await?;
     let mut state = server_state.runtime().await;
     if !Arc::ptr_eq(&output, &state.output_log) {
         let mut result = result;
@@ -714,6 +689,83 @@ mod tests {
     use crate::state::push_output_line;
     use std::fs::OpenOptions;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn invalid_launch_options_are_rejected_before_lifecycle_access() {
+        let state = ServerState::new();
+        let root = std::env::temp_dir();
+        let context = crate::tools::ToolExecutionContext::new(
+            crate::CapabilityMode::Development,
+            crate::PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+        );
+        let lifecycle = state.lifecycle().await;
+        for (key, value) in [
+            ("require_verified_provenance", json!("true")),
+            ("require_verified_provenance", Value::Null),
+            ("wait_regex", json!("false")),
+            ("wait_regex", Value::Null),
+            ("wait_for", json!(false)),
+            ("wait_for", Value::Null),
+            ("working_directory", json!(7)),
+            ("working_directory", Value::Null),
+            ("daemon_args", json!("-close")),
+            ("daemon_args", json!(["-close", 4])),
+            ("daemon_args", Value::Null),
+            ("startup_timeout_ms", json!(0)),
+            ("port", json!(65536)),
+            ("unknown_launch_option", json!(true)),
+        ] {
+            let mut args = json!({"dmb_path":root.join("unused-invalid-launch.dmb")});
+            args[key] = value;
+            let outcome =
+                tokio::time::timeout(Duration::from_millis(100), run(&context, &state, args))
+                    .await
+                    .unwrap_or_else(|_| panic!("invalid {key} waited for runtime lifecycle access"))
+                    .unwrap();
+            assert_eq!(outcome.is_error, Some(true), "{key}");
+            let ToolContent::Text { text } = &outcome.content[0];
+            assert!(
+                text.contains("invalid_input") && text.contains(key),
+                "{text}"
+            );
+        }
+        drop(lifecycle);
+    }
+
+    #[tokio::test]
+    async fn invalid_output_wait_options_are_rejected_with_retained_output() {
+        let state = ServerState::new();
+        push_output_line(&state.runtime().await.output_log, "fixture ready".into());
+        for (key, value) in [
+            ("regex", json!("false")),
+            ("regex", Value::Null),
+            ("timeout_ms", json!("10")),
+            ("timeout_ms", json!(-1)),
+            ("timeout_ms", json!(1.5)),
+            ("timeout_ms", Value::Null),
+            ("pattern", json!(42)),
+            ("pattern", Value::Null),
+        ] {
+            let mut args = json!({"pattern":"fixture ready", "timeout_ms":0});
+            args[key] = value;
+            let outcome = wait_for_output(&state, args).await.unwrap();
+            assert_eq!(outcome.is_error, Some(true), "invalid {key} was accepted");
+            let ToolContent::Text { text } = &outcome.content[0];
+            assert!(
+                text.contains("invalid_input") && text.contains(key),
+                "{text}"
+            );
+        }
+        for timeout in [0, MAX_OUTPUT_WAIT_TIMEOUT_MS, u64::MAX] {
+            let outcome = wait_for_output(
+                &state,
+                json!({"pattern":"fixture ready", "regex":true, "timeout_ms":timeout}),
+            )
+            .await
+            .unwrap();
+            assert_ne!(outcome.is_error, Some(true));
+        }
+    }
 
     #[cfg(windows)]
     #[test]

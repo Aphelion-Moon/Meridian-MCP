@@ -97,6 +97,8 @@ Reference, implementation and document-symbol listings default to 100 rows and a
 
 After building, use `dm_run` → `dm_wait_for_output` → `dm_topic` / `dm_status` → `dm_stop`. Topic requests need a test handler supplied by the project. See [build provenance and runtime integrity](#operational-details) for stale-artifact checks.
 
+Launch options and readiness regexes are validated before starting a process. Invalid options return `invalid_input`; flags such as `require_verified_provenance` must be JSON booleans. Output waits accept `timeout_ms: 0` for an immediate check and cap longer waits at five minutes.
+
 ### Inspect icons and maps
 
 Use `dm_dmi_info` before comparing or extracting DMI states. `dm_find_dmi_duplicates` looks across contained scopes for exact matches plus cropped, palette-only, mirrored, rotated, and scaled copies. `dm_audit_icons` checks statically resolvable inherited `icon` and `icon_state` references. Generated PNGs are written only by the explicit development tools and only to contained paths.
