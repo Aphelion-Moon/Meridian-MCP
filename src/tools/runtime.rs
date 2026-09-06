@@ -15,6 +15,8 @@ use crate::process_environment::minimal_runtime_environment;
 mod arguments;
 use arguments::{OutputPattern, RunOptions, WaitOptions};
 
+#[cfg(all(test, any(windows, target_os = "linux")))]
+mod launch_tests;
 #[cfg(test)]
 mod topic_tests;
 
@@ -85,12 +87,21 @@ pub(crate) fn find_dreamdaemon_for_compilers(compilers: &[PathBuf]) -> Option<Pa
     find_dreamdaemon()
 }
 
-fn build_dreamdaemon_args(dmb_path: &Path, port: u16, extra_args: &[String]) -> Vec<String> {
+fn build_dreamdaemon_args(
+    dmb_path: &Path,
+    working_directory: &Path,
+    port: u16,
+    extra_args: &[String],
+) -> Vec<String> {
     let mut arguments = vec![
         dmb_path.display().to_string(),
         port.to_string(),
         "-trusted".to_string(),
         "-logself".to_string(),
+        "-ip".to_string(),
+        "127.0.0.1".to_string(),
+        "-cd".to_string(),
+        working_directory.display().to_string(),
     ];
     arguments.extend(extra_args.iter().cloned());
     arguments
@@ -208,12 +219,21 @@ async fn run_internal(
     }
     let path = path.canonicalize()?;
     let spawn_path = normalize_spawn_path(&path);
-    let working_directory = spawn_path.parent().ok_or_else(|| {
+    let artifact_directory = spawn_path.parent().ok_or_else(|| {
         anyhow!(
             "DMB file has no working directory: {}",
             spawn_path.display()
         )
     })?;
+    let working_directory = requested_working_directory
+        .as_ref()
+        .map(|directory| {
+            directory
+                .canonicalize()
+                .map(|path| normalize_spawn_path(&path))
+        })
+        .transpose()?
+        .unwrap_or_else(|| artifact_directory.to_owned());
 
     if profiler_port.is_some() {
         extra_args.extend(["-params".to_owned(), "tracy".to_owned()]);
@@ -235,10 +255,9 @@ async fn run_internal(
     state.clear_runtime_diagnostics();
     state.integrity_summary = None;
 
-    // Start DreamDaemon. The DMB path is canonicalized and the daemon runs from its parent so
-    // relative config, log, and map paths resolve against the game checkout rather than the MCP
-    // server's installation directory.
-    let daemon_args = build_dreamdaemon_args(&spawn_path, port, &extra_args);
+    // DreamDaemon changes directory itself unless -cd is supplied. Set both
+    // the process and engine directories so relative game inputs agree.
+    let daemon_args = build_dreamdaemon_args(&spawn_path, &working_directory, port, &extra_args);
     let log_path = spawn_path.with_extension("log");
     let log_start_offset = std::fs::metadata(&log_path)
         .map(|metadata| metadata.len())
@@ -249,7 +268,7 @@ async fn run_internal(
                 .as_ref()
                 .filter(|snapshot| snapshot.environment_path.with_extension("dmb") == path)
                 .and_then(|snapshot| snapshot.environment_path.parent())
-                .unwrap_or(working_directory)
+                .unwrap_or(artifact_directory)
                 .to_owned();
             let session = crate::runtime_integrity::RuntimeIntegritySession::create(
                 store,
@@ -264,7 +283,7 @@ async fn run_internal(
     let mut command = Command::new(&dreamdaemon);
     command
         .args(&daemon_args)
-        .current_dir(working_directory)
+        .current_dir(&working_directory)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(profiler_port) = profiler_port {
@@ -844,6 +863,7 @@ mod tests {
     fn daemon_arguments_preserve_extra_runtime_arguments() {
         let arguments = build_dreamdaemon_args(
             PathBuf::from("tgstation.test.dmb").as_path(),
+            Path::new("game checkout"),
             1337,
             &[
                 "-close".to_string(),
@@ -859,6 +879,10 @@ mod tests {
                 "1337",
                 "-trusted",
                 "-logself",
+                "-ip",
+                "127.0.0.1",
+                "-cd",
+                "game checkout",
                 "-close",
                 "-params",
                 "log-directory=ci",

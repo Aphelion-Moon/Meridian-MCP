@@ -129,6 +129,18 @@ impl PathPolicy {
         self.require_contained(canonical)
     }
 
+    pub fn read_directory(&self, path: impl AsRef<Path>) -> Result<PathBuf, PolicyError> {
+        let canonical = self.read_path(path)?;
+        if !canonical.is_dir() {
+            return Err(self.error(
+                "invalid_input",
+                canonical,
+                "working_directory must be a directory",
+            ));
+        }
+        Ok(canonical)
+    }
+
     pub fn output_path(
         &self,
         path: impl AsRef<Path>,

@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "base_revision": "628b8b9",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "src/path_policy.rs": "0c9c1db53f010bd0b3cc61959f1b1ffbfd9f85e0c683448dd323ed142f9e942f",
+    "src/tools/mod.rs": "9bd85f5511f2a6c1f3cf9a5265044a5ea4ac29fde2d23724196e607182120765",
+    "src/tools/runtime.rs": "a0ae7fe24b76d90baa333d2f5d61e9224e695f56ea1400c52bbc7d4c9fb8b0d5",
+    "src/tools/runtime/arguments.rs": "7784b1dc34927b38798162d05bf879536816a1eb6a83aa68212412b48df4d079",
+    "src/tools/runtime/launch_tests.rs": "8210cf72d2d13a9360ec5afb21002d603eadf1487d7ce04783d6b730d1b6259c"
+  },
+  "windows": {
+    "passed": 439,
+    "failed": 0,
+    "ignored": 5,
+    "tests_log_sha256": "6cbab257e0456ed7a0930b322cad5113e5d9f01c4267faaadf523382159f9b67",
+    "strict_clippy": "passed",
+    "clippy_log_sha256": "f8a087e76fe9691fb2c5028ac697cedaaa07cb8e29d6d51d5f28317485c8014a"
+  },
+  "linux_wsl1": {
+    "passed": 432,
+    "failed": 0,
+    "ignored": 6,
+    "tests_log_sha256": "09a600246d4aff6ea22933730bab6599b903141ce3d3cc433bd1826e8bcbc348",
+    "strict_clippy": "passed",
+    "clippy_log_sha256": "4b54d6c8adededaaef4e9e558aa6be25fd694160b2f3d40bdf3cd0cff5e100a1"
+  },
+  "focused": {
+    "before": {
+      "passed": 0,
+      "failed": 4,
+      "log_sha256": "54bcfa3fdd6ba681e2f3725b7c9088d9ab008937a77549f0f2b5c16a2358a508"
+    },
+    "after": {
+      "passed": 4,
+      "failed": 0,
+      "log_sha256": "5021230a3a1be09dafcda09c8f639ab8faf74a7ede619431e875831387120c5e"
+    }
+  },
+  "native": {
+    "baseline": "baseline.json",
+    "candidate": "candidate.json",
+    "probe_sha256_lf": "07817e7c99bb987784249a4a8b794428220acc0808b2fa9fa37cf6095b7e0a2a",
+    "baseline_binary_sha256": "ff73d27996d77ea97ff806f0a6b6a91afe3977581812dff7dfc4b7da11f449fa",
+    "candidate_binary_sha256": "5bc1d998b77a2399ce154d16e8d3d1e4eb93f1a5cdc82f09d03b291b53cf6876",
+    "fixture_source_sha256": "6b688d150a32f94d10bebd2296b133ff4abfddae16c8fd9f3680475e9bb86b64",
+    "identical_parameter_output": true,
+    "exact_pong_responses": 4,
+    "passed_launch_cases": 4,
+    "observed_listener_addresses": [
+      "127.0.0.1"
+    ],
+    "natural_mcp_exit_code": 0
+  },
+  "followup": "compile-followup.json records a reproduced relative-DME dispatch failure, still unfixed.",
+  "boundaries": [
+    "The Linux suite ran under WSL 1, not hosted native Ubuntu.",
+    "Native engine evidence is Windows BYOND 516.1687 with the owned small fixture.",
+    "The shared Tracy launch builder changed; live Tracy capture and separate auxtools launch are not qualified here.",
+    "Observed loopback listeners do not establish isolation for arbitrary game networking.",
+    "No latency, memory or token savings were measured in this batch.",
+    "The earlier intermittent WSL ownership-fixture failure remains unexplained.",
+    "Release packaging, hosted CI and connected-MCP replacement remain separate gates."
+  ]
+}

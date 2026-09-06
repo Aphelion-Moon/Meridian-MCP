@@ -64,6 +64,12 @@ impl RunOptions {
         let dmb_path = required_string(args, "dmb_path")?;
         let port = u16::try_from(crate::tools::bounded_u64(args, "port", 1337, 1, 65_535)?)?;
         let working_directory = optional_string(args, "working_directory")?.map(PathBuf::from);
+        if working_directory
+            .as_ref()
+            .is_some_and(|directory| !directory.is_dir())
+        {
+            return Err(anyhow!("working_directory must be an existing directory"));
+        }
         let daemon_args = match args.get("daemon_args") {
             None => Vec::new(),
             Some(Value::Array(values)) => values
@@ -77,6 +83,7 @@ impl RunOptions {
                 .collect::<Result<_>>()?,
             Some(_) => return Err(anyhow!("daemon_args must be an array of strings")),
         };
+        validate_daemon_args(&daemon_args)?;
         let use_regex = optional_bool(args, "wait_regex")?;
         let readiness = optional_string(args, "wait_for")?
             .map(|pattern| OutputPattern::new(pattern, use_regex, "wait_for"))
@@ -99,6 +106,47 @@ impl RunOptions {
             require_verified,
         })
     }
+}
+
+fn validate_daemon_args(arguments: &[String]) -> Result<()> {
+    let mut values = arguments.iter();
+    while let Some(argument) = values.next() {
+        anyhow::ensure!(
+            !argument.contains('\0'),
+            "daemon_args must not contain NUL bytes"
+        );
+        let text = argument.trim();
+        let flag_end =
+            text.find(|character: char| character.is_ascii_whitespace() || character == '=');
+        let flag = text[..flag_end.unwrap_or(text.len())].to_ascii_lowercase();
+        let option = flag.trim_start_matches('-');
+        anyhow::ensure!(
+            !matches!(option, "ip" | "port" | "ports" | "cd"),
+            "daemon_args cannot override {flag}; use port or working_directory, with the fixed loopback listener"
+        );
+        // BYOND consumes the next token as data for these options. A parameter
+        // value such as "-ip" or "9999" is not another launch option.
+        if matches!(flag.as_str(), "-params" | "-log" | "-home" | "-suid") {
+            if flag_end.is_none() {
+                let value = values
+                    .next()
+                    .ok_or_else(|| anyhow!("daemon_args {flag} requires a value"))?;
+                anyhow::ensure!(
+                    !value.contains('\0'),
+                    "daemon_args must not contain NUL bytes"
+                );
+            }
+            continue;
+        }
+        anyhow::ensure!(
+            !text.chars().all(|character| character.is_ascii_digit())
+                && text.parse::<i64>().is_err()
+                && !matches!(flag.as_str(), "any" | "none")
+                && !text.to_ascii_lowercase().ends_with(".dmb"),
+            "daemon_args cannot supply a positional DMB or port; use dmb_path and port"
+        );
+    }
+    Ok(())
 }
 
 pub(super) struct WaitOptions {

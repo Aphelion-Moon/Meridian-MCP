@@ -738,7 +738,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "daemon_args": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional additional DreamDaemon arguments, appended after the standard trusted/logging arguments"
+                    "description": "Additional DreamDaemon options. DMB, port, working directory and loopback binding are managed; use -params for world parameters."
                 },
                 "wait_for": {
                     "type": "string",
@@ -1204,7 +1204,19 @@ fn contain_arguments(
             canonical_argument(policy, args, "left_dmm_path", false)?;
             canonical_argument(policy, args, "right_dmm_path", false)?;
         }
-        "dm_run" | "dm_tracy_prepare" | "dm_tracy_launch" => {
+        "dm_run" => {
+            if let Some(directory) = args.get("working_directory").and_then(Value::as_str) {
+                let directory = policy.read_directory(directory)?;
+                if let Some(path) = args.get("dmb_path").and_then(Value::as_str) {
+                    if std::path::Path::new(path).is_relative() {
+                        args["dmb_path"] = json!(directory.join(path));
+                    }
+                }
+                args["working_directory"] = json!(directory);
+            }
+            canonical_argument(policy, args, "dmb_path", true)?;
+        }
+        "dm_tracy_prepare" | "dm_tracy_launch" => {
             canonical_argument(policy, args, "dmb_path", true)?
         }
         "dm_debug_launch" => canonical_argument(policy, args, "dmb_path", true)?,
@@ -1229,9 +1241,6 @@ fn contain_arguments(
     }
     if name == "rift_compile" {
         canonical_optional_argument(policy, args, "fixture_manifest_path")?;
-    }
-    if name == "dm_run" {
-        canonical_optional_argument(policy, args, "working_directory")?;
     }
     if name == "dm_render_map" {
         let output = args

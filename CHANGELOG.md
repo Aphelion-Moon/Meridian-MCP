@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Honor the runtime working directory for both relative DMB resolution and engine execution. Bind standard and profiled DreamDaemon launches explicitly to loopback, reject conflicting launch arguments, and retain artifact-source integrity monitoring when a custom directory is used.
 - Make Topic I/O asynchronous, apply one deadline to the whole exchange, and cancel pending requests with their runtime. Validate Topic arguments before runtime access so status and stop stay responsive.
 - Release search-index vector growth capacity after construction and store singleton lookup IDs inline, preserving indexed content and response formats. Added an opt-in storage probe and matched response-equivalence benchmark.
 - Validate runtime launch options and readiness regexes before process creation, returning structured `invalid_input` errors. Output waits reject incorrectly typed flags/timeouts while retaining zero-time polling and the five-minute cap. Ownership fixtures now retain startup phase and child-exit evidence on failure.
