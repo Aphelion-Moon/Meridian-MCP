@@ -545,7 +545,14 @@ fn member_symbol(type_path: &str, kind: &str, name: &str) -> String {
 }
 
 fn normalize_path_text(path: &str) -> String {
-    path.replace('\\', "/").to_ascii_lowercase()
+    #[cfg(windows)]
+    {
+        path.replace('\\', "/").to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_owned()
+    }
 }
 
 fn resolve_context_file(

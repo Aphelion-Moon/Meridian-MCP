@@ -27,6 +27,7 @@ impl BuildScriptFixture {
         let status = self
             .command("cargo")
             .args(["build", "--quiet"])
+            .env("CARGO_TARGET_DIR", self.root.join("target"))
             .env_remove("MERIDIAN_BUILD_DIRTY")
             .env_remove("MERIDIAN_BUILD_REVISION")
             .status()

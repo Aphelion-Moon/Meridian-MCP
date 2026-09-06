@@ -404,9 +404,16 @@ impl LanguageIndex {
 }
 
 fn normalize_path(path: &Path) -> PathBuf {
-    let text = path
-        .to_string_lossy()
-        .replace('\\', "/")
-        .to_ascii_lowercase();
-    PathBuf::from(text)
+    #[cfg(windows)]
+    {
+        PathBuf::from(
+            path.to_string_lossy()
+                .replace('\\', "/")
+                .to_ascii_lowercase(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_path_buf()
+    }
 }

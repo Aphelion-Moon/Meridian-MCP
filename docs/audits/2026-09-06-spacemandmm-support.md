@@ -4,6 +4,8 @@ This initial audit covers upstream revision `351ddc0ffb2439876d4565ce5130bb6b027
 
 The subsequent [language-query audit and measurements](2026-09-06-language-queries/README.md) cover semantic descendants, variable assignments, declaration references, bounded compact pages and index storage. The broader [follow-up workplan](2026-09-06-functional-performance-followup.md) tracks remaining work.
 
+The [source-identity follow-up](2026-09-06-source-identity.md) repairs case-sensitive file collisions in symbol and search results. It records Windows qualification, partial local Linux qualification and an unresolved intermittent WSL 1 guardian failure; it does not replace native Ubuntu CI.
+
 Meridian integrates the parser, checker, icon and map libraries, packages the documentation generator, and supplies typed source and debugger tools. **This is agent-facing integration, not complete LSP/editor or legacy extools parity.** Registry coverage means every audited entry has an explicit disposition; excluded entries do not count as implemented functionality.
 
 ## Findings and repairs
