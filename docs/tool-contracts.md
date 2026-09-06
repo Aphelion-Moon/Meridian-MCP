@@ -36,7 +36,7 @@ Generated from `src/contracts.rs`; do not edit by hand.
 | `dm_get_definition` | Analysis | Provisional | memory | - | 262144 | Locate an exact parsed definition. |
 | `dm_get_proc` | Analysis | Provisional | read | - | 1048576 | Inspect exact proc implementations and source excerpts. |
 | `dm_get_type` | Analysis | Provisional | memory | - | 1048576 | Inspect an exact DreamMaker type. |
-| `dm_get_var` | Analysis | Provisional | memory | - | 262144 | Inspect an exact DreamMaker variable. |
+| `dm_get_var` | Analysis | Provisional | memory | - | 262144 | Inspect a DreamMaker variable through semantic inheritance, with value and declaration ownership. |
 | `dm_list_render_passes` | Analysis | Provisional | memory | - | 262144 | List pinned SpacemanDMM render-pass behavior. |
 | `dm_list_types` | Analysis | Provisional | memory | - | 1048576 | List parsed types under an optional prefix. |
 | `dm_map_info` | Analysis | Provisional | read | - | 1048576 | Read DMM/TGM dimensions and atom statistics. |

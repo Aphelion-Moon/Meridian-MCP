@@ -113,6 +113,8 @@ Windows and Ubuntu have separate test evidence; macOS is unsupported and unteste
 
 See [compatibility and evidence](docs/compatibility.md) for support definitions, tested versions and remaining integration gates. A passing fixture does not establish full-game compatibility.
 
+The [SpacemanDMM support audit](docs/audits/2026-09-06-spacemandmm-support.md) maps the pinned parser, checker, language, icon, map, documentation and debugger capabilities to MCP tools and explains the editor and legacy-backend exclusions.
+
 ## Complete tool reference
 
 Analysis tools are read-only. Development mode adds compilation, file generation and runtime control. Full builds, debugging and Tracy need additional startup settings. See [tool contracts](docs/tool-contracts.md) for each tool's permissions, side effects, limits and support status.

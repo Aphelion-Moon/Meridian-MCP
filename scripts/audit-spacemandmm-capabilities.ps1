@@ -74,6 +74,7 @@ foreach ($record in $registry.capabilities) {
 	}
 }
 
+$auditScope = 'registry and vendor integrity only; upstream source comparison not run'
 if ($UpstreamPath) {
 	$resolvedUpstream = (Resolve-Path -LiteralPath $UpstreamPath).Path
 	$safeDirectory = $resolvedUpstream.Replace('\', '/')
@@ -86,67 +87,22 @@ if ($UpstreamPath) {
 		Add-AuditError "Upstream checkout is $actualRevision, expected $expectedRevision."
 	}
 
-	$workspaceManifest = Get-Content -LiteralPath (Join-Path $resolvedUpstream 'Cargo.toml')
-	$workspaceMembers = foreach ($line in $workspaceManifest) {
-		if ($line.TrimStart().StartsWith('#')) {
-			continue
-		}
-		if ($line -match '"crates/([^\"]+)"') {
-			$Matches[1]
-		}
-	}
-	foreach ($member in $workspaceMembers) {
-		$token = "workspace:$member"
-		if (-not $evidence.Contains($token)) {
-			Add-AuditError "Unmapped active workspace member $member; expected evidence $token."
-		}
-	}
+    & git -c "safe.directory=$safeDirectory" -C $resolvedUpstream diff --quiet HEAD --
+    if ($LASTEXITCODE -ne 0) {
+        Add-AuditError 'Upstream tracked sources differ from the pinned commit.'
+    }
+    . (Join-Path $PSScriptRoot 'spacemandmm-surface.ps1')
+    $sources = Read-SpacemanSources $resolvedUpstream
+    $surface = @(Get-SpacemanSurface $sources)
+    foreach ($errorMessage in @(Get-SpacemanCoverageErrors $surface @($evidence))) {
+        Add-AuditError $errorMessage
+    }
+    $localWire = [IO.File]::ReadAllText((Join-Path $repoRoot 'src/spaceman/debugger.rs'))
+    foreach ($errorMessage in @(Get-SpacemanWireErrors $sources.wire $localWire)) {
+        Add-AuditError $errorMessage
+    }
+    $auditScope = "$($surface.Count) source capabilities and debugger wire layouts"
 
-	$languageServer = Get-Content -LiteralPath (Join-Path $resolvedUpstream 'crates\dm-langserver\src\main.rs') -Raw
-	$languageCapabilities = [ordered]@{
-		'definition_provider' = 'language:definition'
-		'workspace_symbol_provider' = 'language:workspace_symbol'
-		'document_symbol_provider' = 'language:document_symbol'
-		'references_provider' = 'language:references'
-		'implementation_provider' = 'language:implementation'
-		'type_definition_provider' = 'language:type_definition'
-		'document_link_provider' = 'language:document_link'
-		'color_provider' = 'language:document_color'
-		'folding_range_provider' = 'language:folding_range'
-	}
-	foreach ($capability in $languageCapabilities.GetEnumerator()) {
-		if ($languageServer -match [regex]::Escape($capability.Key) -and -not $evidence.Contains($capability.Value)) {
-			Add-AuditError "Unmapped language capability $($capability.Key); expected evidence $($capability.Value)."
-		}
-	}
-
-	$dmmCli = Get-Content -LiteralPath (Join-Path $resolvedUpstream 'crates\dmm-tools-cli\src\main.rs') -Raw
-	foreach ($command in @('list-passes', 'minimap', 'diff-maps', 'map-info', 'RenderMany')) {
-		if ($dmmCli -notmatch [regex]::Escape($command)) {
-			Add-AuditError "Expected DMM CLI command $command is absent from the pinned source."
-			continue
-		}
-		$token = "dmm-cli:$command"
-		if (-not $evidence.Contains($token)) {
-			Add-AuditError "Unmapped DMM CLI command $command; expected evidence $token."
-		}
-	}
-
-	$auxtoolsTypes = Get-Content -LiteralPath (Join-Path $resolvedUpstream 'crates\dm-langserver\src\debugger\auxtools_types.rs') -Raw
-	foreach ($request in @(
-		'Disconnect', 'Configured', 'StdDef', 'Eval', 'CurrentInstruction', 'BreakpointSet',
-		'BreakpointUnset', 'CatchRuntimes', 'LineNumber', 'Offset', 'Stacks', 'StackFrames',
-		'Scopes', 'Variables', 'Continue', 'Pause'
-	)) {
-		if ($auxtoolsTypes -notmatch "(?m)^\s{4}$request(?:\s*\{|,)") {
-			Add-AuditError "Expected auxtools request $request is absent from the pinned source."
-			continue
-		}
-		$token = "debugger-request:$request"
-		if (-not $evidence.Contains($token)) {
-			Add-AuditError "Unmapped auxtools request $request; expected evidence $token."
-		}
-	}
 }
 
 if ($errors.Count -gt 0) {
@@ -154,5 +110,5 @@ if ($errors.Count -gt 0) {
 }
 
 if ($Check) {
-	Write-Output "Capability audit passed for $($registry.capabilities.Count) records at $expectedRevision."
+	Write-Output "Capability audit passed for $($registry.capabilities.Count) records at $expectedRevision ($auditScope)."
 }

@@ -208,7 +208,7 @@ static CONTRACTS: &[ToolContract] = &[
     ),
     contract!(
         "dm_get_var",
-        "Inspect an exact DreamMaker variable.",
+        "Inspect a DreamMaker variable through semantic inheritance, with value and declaration ownership.",
         Analysis,
         MEMORY,
         Provisional,

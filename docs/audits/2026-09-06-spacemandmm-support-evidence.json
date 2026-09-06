@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-06",
+  "scope": "Local Windows source audit and functional checks; uncommitted working-tree repairs",
+  "meridian_mcp_base_revision": "0445bac0f1984053486f0e3af3f9c6da91a9e49c",
+  "spacemandmm_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+  "local_patch": "meridian-read-policy-v2",
+  "rust": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "capability_audit": {
+    "result": "passed",
+    "source_entries": 128,
+    "registry_records": 50,
+    "upstream_serialized_types_compared": 12,
+    "regression_assertions": 143,
+    "exclusions_are_implementations": false
+  },
+  "rust_checks": {
+    "format": "passed",
+    "clippy_all_targets_all_features_deny_warnings": "passed",
+    "full_test_rerun": { "passed": 406, "failed": 0, "ignored": 4 },
+    "initial_attempts": [
+      "Build ran out of disk space; disposable repository incremental cache removed.",
+      "Existing Windows runtime lifecycle cancellation test failed with IdentityUnavailable; isolated and full reruns passed."
+    ]
+  },
+  "documentation_stdio": {
+    "result": "passed",
+    "mcp_profile": "debug",
+    "helper_sha256": "0c6f8733550163e38f3dc5382f527113c27c912e65a1e3c169fa5cc7f944ff68",
+    "checks": ["generated type and member HTML", "configured index page", "unchanged sources", "overwrite rejected", "clean MCP exit"]
+  },
+  "meridian_rift_analysis": {
+    "result": "passed",
+    "revision": "7462a6942b2e71a3ea13c00169f65f575cb281b7",
+    "clean_before_and_after": true,
+    "platform": "Microsoft Windows 10.0.19045 X64",
+    "mcp_profile": "debug",
+    "variable_cases": 3,
+    "checks": ["full parse", "diagnostics", "human Initialize ownership", "variable value and declaration ownership", "DMI inspection", "map inspection", "render-pass inventory"],
+    "duffelbag_w_class": {
+      "value_owner": "/obj/item/storage/backpack",
+      "declaration_owner": "/obj/item",
+      "constant": "Float(4.0)"
+    }
+  },
+  "unrun": ["hosted Windows CI", "hosted Ubuntu CI", "fresh live BYOND debugger qualification", "release build and installation of these repairs"],
+  "codex_registration_changed": false
+}

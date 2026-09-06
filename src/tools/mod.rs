@@ -280,7 +280,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     tools.push(ToolDefinition {
         name: "dm_get_var".to_string(),
-        description: "Get detailed information about a variable including its type, initial value, and documentation.".to_string(),
+        description: "Inspect a variable through semantic inheritance, including its declared type, initial value, documentation, and separate value/declaration owners.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {

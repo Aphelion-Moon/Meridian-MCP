@@ -26,6 +26,12 @@ $requests.Add((New-Call 4 'dm_parse_environment' @{ dme_path = (Join-Path $riftR
 $requests.Add((New-Call 5 'dm_check_errors' @{}))
 $requests.Add((New-Call 6 'dm_find_implementations' @{ type_path = '/mob/living/carbon/human'; member_name = 'Initialize'; limit = 100 }))
 $id = 10
+$variableCases = @{}
+foreach ($case in $manifest.vars) {
+	$variableCases[$id] = $case
+	$requests.Add((New-Call $id 'dm_get_var' @{ type_path = $case.type_path; var_name = $case.name }))
+	$id++
+}
 foreach ($relative in $manifest.dmis) {
 	$requests.Add((New-Call $id 'dm_dmi_info' @{ dmi_path = (Join-Path $riftRoot $relative) }))
 	$id++
@@ -51,6 +57,15 @@ foreach ($responseId in @(1, 2, 3, 4, 5, 6) + (10..$lastId)) {
 	}
 }
 $tools = (Get-McpResponse -Responses $session.Responses -Id 2).result.tools.name
+foreach ($caseId in $variableCases.Keys) {
+	$case = $variableCases[$caseId]
+	$body = (Get-McpResponse -Responses $session.Responses -Id $caseId).result.content[0].text | ConvertFrom-Json
+	if ($body.name -ne $case.name) { throw "Variable lookup failed for $($case.type_path)/$($case.name)." }
+	foreach ($field in @('value_owner', 'declaration_owner', 'constant')) {
+		if ($case.PSObject.Properties[$field] -and $body.$field -cne $case.$field) { throw "Unexpected $field for $($case.type_path)/$($case.name)." }
+	}
+	if ($case.PSObject.Properties['inherited_from'] -and $body.declaration_owner -cne $case.inherited_from) { throw "Wrong variable declaration owner for $($case.name)." }
+}
 foreach ($forbidden in @('rift_compile', 'dm_debug_launch')) {
 	if ($tools -contains $forbidden) { throw "$forbidden must not be advertised by the Ubuntu analysis gate." }
 }
@@ -68,6 +83,7 @@ $evidence = [ordered]@{
 	manifest_schema_version = $manifest.schema_version
 	effective_root_sources = $rootSources
 	proc_ownership_query = [ordered]@{ type_path = '/mob/living/carbon/human'; member_name = 'Initialize'; result = 'passed' }
+	variable_ownership_queries = [ordered]@{ cases = $variableCases.Count; result = 'passed' }
 	last_request_id = $lastId
 }
 $evidenceFile = [IO.Path]::GetFullPath($EvidencePath)

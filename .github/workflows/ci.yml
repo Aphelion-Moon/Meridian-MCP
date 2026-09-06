@@ -57,7 +57,10 @@ jobs:
         run: ./scripts/build-spacemandmm-helpers.ps1 -UpstreamPath ./integration/SpacemanDMM -OutputDirectory ./integration -ManifestPath ./integration/helpers-manifest.json
       - name: Audit SpacemanDMM capability registry
         shell: pwsh
-        run: ./scripts/audit-spacemandmm-capabilities.ps1 -Check
+        run: ./scripts/audit-spacemandmm-capabilities.ps1 -Check -UpstreamPath ./integration/SpacemanDMM
+      - name: Test SpacemanDMM capability drift detection
+        shell: pwsh
+        run: ./scripts/test-spacemandmm-capabilities.ps1 -UpstreamPath ./integration/SpacemanDMM
       - name: Test Meridian compatibility evidence validation
         shell: pwsh
         run: ./scripts/test-meridian-evidence-validation.ps1
@@ -72,6 +75,9 @@ jobs:
         run: cargo test --locked --test repository_roots --test proc_resolution --test build_provenance --test runtime_integrity --test native_evidence_readers --test native_evidence_timeline --test native_evidence_summary --test native_evidence_comparison
       - run: cargo test --locked --all-features
       - run: cargo build --locked --release
+      - name: SpacemanDMM documentation stdio fixture
+        shell: pwsh
+        run: ./scripts/test-spacemandmm-docs.ps1 -BinaryPath '${{ matrix.binary }}' -HelperManifestPath ./integration/helpers-manifest.json
       - name: Installed stdio MCP protocol smoke
         shell: pwsh
         run: ./test_mcp.ps1 -SkipBuild -BinaryPath '${{ matrix.binary }}' -Mode development

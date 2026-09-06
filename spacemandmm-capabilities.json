@@ -56,7 +56,7 @@
       "targets": ["dm_check_errors"],
       "platforms": ["all"],
       "verification": "DreamChecker diagnostic fixture gate",
-      "evidence": ["workspace:dreamchecker"],
+      "evidence": ["workspace:dreamchecker", "dreamchecker-option:-e", "dreamchecker-option:--json"],
       "rationale": null
     },
     {
@@ -118,12 +118,12 @@
       "id": "crate.dap_types",
       "category": "workspace",
       "upstream_component": "dap-types",
-      "disposition": "direct",
+      "disposition": "superseded",
       "targets": ["internal:debugger_protocol"],
       "platforms": ["windows"],
       "verification": "portable debugger protocol model tests",
       "evidence": ["workspace:dap-types"],
-      "rationale": null
+      "rationale": "Meridian owns its typed MCP debugger model and mirrors the auxtools wire types. The dap-types crate is not linked; DAP editor transport is replaced by MCP."
     },
     {
       "id": "crate.interval_tree",
@@ -166,18 +166,18 @@
       "targets": ["dm_get_type", "dm_list_types", "dm_get_proc", "dm_get_var"],
       "platforms": ["all"],
       "verification": "exact type and member fixture queries",
-      "evidence": ["language:query_object_tree"],
+      "evidence": ["language:query_object_tree", "lsp-request:QueryObjectTree"],
       "rationale": null
     },
     {
       "id": "language.definition",
       "category": "language",
-      "upstream_component": "dm-langserver definition and type definition",
+      "upstream_component": "dm-langserver definition",
       "disposition": "mcp_native",
       "targets": ["dm_get_definition"],
       "platforms": ["all"],
       "verification": "definition fixture gate",
-      "evidence": ["language:definition", "language:type_definition"],
+      "evidence": ["language:definition", "lsp-request:GotoDefinition", "lsp-provider:definition_provider"],
       "rationale": null
     },
     {
@@ -188,7 +188,7 @@
       "targets": ["dm_search_symbols", "dm_document_symbols"],
       "platforms": ["all"],
       "verification": "macro and nested declaration fixture gate",
-      "evidence": ["language:workspace_symbol", "language:document_symbol"],
+      "evidence": ["language:workspace_symbol", "language:document_symbol", "lsp-request:WorkspaceSymbol", "lsp-request:DocumentSymbolRequest", "lsp-provider:workspace_symbol_provider", "lsp-provider:document_symbol_provider"],
       "rationale": null
     },
     {
@@ -199,7 +199,7 @@
       "targets": ["dm_find_references"],
       "platforms": ["all"],
       "verification": "read write call and type reference fixture gate",
-      "evidence": ["language:references"],
+      "evidence": ["language:references", "lsp-request:References", "lsp-provider:references_provider"],
       "rationale": null
     },
     {
@@ -210,7 +210,7 @@
       "targets": ["dm_find_implementations", "dm_get_proc"],
       "platforms": ["all"],
       "verification": "override and inheritance fixture gate",
-      "evidence": ["language:implementation"],
+      "evidence": ["language:implementation", "lsp-request:GotoImplementation", "lsp-provider:implementation_provider"],
       "rationale": null
     },
     {
@@ -221,8 +221,8 @@
       "targets": ["dm_get_type", "dm_get_proc", "dm_get_var", "dm_search_symbols", "dm_search_context", "dm_document_symbols"],
       "platforms": ["all"],
       "verification": "exact inspection and deterministic search fixture gates",
-      "evidence": ["language:hover", "language:completion", "language:signature_help"],
-      "rationale": "Exact MCP queries replace cursor-position and completion-session wrappers."
+      "evidence": ["language:hover", "language:completion", "language:signature_help", "lsp-request:HoverRequest", "lsp-request:Completion", "lsp-request:SignatureHelpRequest", "lsp-provider:hover_provider", "lsp-provider:completion_provider", "lsp-provider:signature_help_provider"],
+      "rationale": "Exact symbol inspection, source and search provide agent-facing equivalents. Cursor-local inference, completion ranking and active-parameter selection are not implemented."
     },
     {
       "id": "language.diagnostics",
@@ -243,7 +243,7 @@
       "targets": ["dm_parse_environment"],
       "platforms": ["all"],
       "verification": "failed reparse preserves prior generation fixture gate",
-      "evidence": ["language:reparse"],
+      "evidence": ["language:reparse", "lsp-notification:Reparse", "lsp-notification:DidChangeConfiguration"],
       "rationale": null
     },
     {
@@ -254,7 +254,7 @@
       "targets": [],
       "platforms": ["all"],
       "verification": "capability audit confirms exclusion",
-      "evidence": ["language:text_document_sync"],
+      "evidence": ["language:text_document_sync", "lsp-notification:DidOpenTextDocument", "lsp-notification:DidCloseTextDocument", "lsp-notification:DidChangeTextDocument", "lsp-provider:text_document_sync"],
       "rationale": "Meridian-MCP indexes canonical files on disk and does not own editor buffers."
     },
     {
@@ -265,7 +265,7 @@
       "targets": [],
       "platforms": ["all"],
       "verification": "capability audit confirms each presentation-only exclusion",
-      "evidence": ["language:folding_range", "language:document_color", "language:color_presentation", "language:document_link", "language:set_trace"],
+      "evidence": ["language:folding_range", "language:document_color", "language:color_presentation", "language:document_link", "language:set_trace", "lsp-request:FoldingRangeRequest", "lsp-request:DocumentColor", "lsp-request:ColorPresentationRequest", "lsp-request:DocumentLinkRequest", "lsp-provider:folding_range_provider", "lsp-provider:color_provider", "lsp-provider:document_link_provider", "lsp-notification:SetTrace", "lsp-notification:SetTraceVsc"],
       "rationale": "Presentation-only editor behavior is not relevant to agent analysis."
     },
     {
@@ -320,7 +320,7 @@
       "targets": ["dm_map_info", "dm_find_on_map"],
       "platforms": ["all"],
       "verification": "owned DMM bounds dictionary and coordinate fixture gates",
-      "evidence": ["dmm-cli:map-info"],
+      "evidence": ["dmm-cli:map-info", "dmm-command:MapInfo"],
       "rationale": null
     },
     {
@@ -331,7 +331,7 @@
       "targets": ["dm_diff_maps"],
       "platforms": ["all"],
       "verification": "structured coordinate and model diff fixture gate",
-      "evidence": ["dmm-cli:diff-maps"],
+      "evidence": ["dmm-cli:diff-maps", "dmm-command:DiffMaps"],
       "rationale": null
     },
     {
@@ -342,7 +342,7 @@
       "targets": ["dm_list_render_passes", "dm_render_map"],
       "platforms": ["all"],
       "verification": "render pass inventory and bounded minimap fixture gates",
-      "evidence": ["dmm-cli:list-passes", "dmm-cli:minimap"],
+      "evidence": ["dmm-cli:list-passes", "dmm-cli:minimap", "dmm-command:ListPasses", "dmm-command:Minimap"],
       "rationale": null
     },
     {
@@ -353,7 +353,7 @@
       "targets": ["dm_render_maps"],
       "platforms": ["all"],
       "verification": "bounded typed batch rendering fixture gate",
-      "evidence": ["dmm-cli:RenderMany"],
+      "evidence": ["dmm-cli:RenderMany", "dmm-command:RenderMany"],
       "rationale": "A typed bounded request replaces arbitrary CLI JSON."
     },
     {
@@ -364,8 +364,8 @@
       "targets": ["dm_generate_docs"],
       "platforms": ["all"],
       "verification": "fixed-revision helper checksum and HTML fixture gate",
-      "evidence": ["dmdoc:generate"],
-      "rationale": "The exact binary-oriented upstream package is built and packaged as a fixed helper."
+      "evidence": ["dmdoc:generate", "dmdoc-option:-e", "dmdoc-option:--output", "dmdoc-option:--index"],
+      "rationale": "The fixed helper generates HTML. Index customization uses dmdoc.index_file in SpacemanDMM.toml; arbitrary command-line overrides are not exposed."
     },
     {
       "id": "debugger.launch",
@@ -375,18 +375,18 @@
       "targets": ["dm_debug_launch"],
       "platforms": ["windows"],
       "verification": "owned DreamSeeker launch and configuration integration gate",
-      "evidence": ["debugger:initialize", "debugger:configuration_done", "debugger:launch"],
+      "evidence": ["debugger:initialize", "debugger:configuration_done", "debugger:launch", "lsp-request:StartDebugger", "dap-request:Initialize", "dap-request:ConfigurationDone", "dap-request:LaunchVsc"],
       "rationale": null
     },
     {
       "id": "debugger.auxtools_request_table",
       "category": "debugger",
       "upstream_component": "auxtools request protocol",
-      "disposition": "direct",
+      "disposition": "mcp_native",
       "targets": ["internal:debugger_protocol"],
       "platforms": ["windows"],
-      "verification": "capability audit compares the pinned request enum with registered evidence",
-      "evidence": ["debugger-request:Disconnect", "debugger-request:Configured", "debugger-request:StdDef", "debugger-request:Eval", "debugger-request:CurrentInstruction", "debugger-request:BreakpointSet", "debugger-request:BreakpointUnset", "debugger-request:CatchRuntimes", "debugger-request:LineNumber", "debugger-request:Offset", "debugger-request:Stacks", "debugger-request:StackFrames", "debugger-request:Scopes", "debugger-request:Variables", "debugger-request:Continue", "debugger-request:Pause"],
+      "verification": "source inventory, all serialized enum and struct layouts, portable wire tests and owned live fixture",
+      "evidence": ["debugger-request:Disconnect", "debugger-request:Configured", "debugger-request:StdDef", "debugger-request:Eval", "debugger-request:CurrentInstruction", "debugger-request:BreakpointSet", "debugger-request:BreakpointUnset", "debugger-request:CatchRuntimes", "debugger-request:LineNumber", "debugger-request:Offset", "debugger-request:Stacks", "debugger-request:StackFrames", "debugger-request:Scopes", "debugger-request:Variables", "debugger-request:Continue", "debugger-request:Pause", "aux-request:Disconnect", "aux-request:Configured", "aux-request:StdDef", "aux-request:Eval", "aux-request:CurrentInstruction", "aux-request:BreakpointSet", "aux-request:BreakpointUnset", "aux-request:CatchRuntimes", "aux-request:LineNumber", "aux-request:Offset", "aux-request:Stacks", "aux-request:StackFrames", "aux-request:Scopes", "aux-request:Variables", "aux-request:Continue", "aux-request:Pause", "aux-response:Ack", "aux-response:StdDef", "aux-response:Eval", "aux-response:CurrentInstruction", "aux-response:BreakpointSet", "aux-response:BreakpointUnset", "aux-response:LineNumber", "aux-response:Offset", "aux-response:Stacks", "aux-response:StackFrames", "aux-response:Scopes", "aux-response:Variables", "aux-response:Disconnect", "aux-response:Notification", "aux-response:BreakpointHit"],
       "rationale": null
     },
     {
@@ -397,7 +397,7 @@
       "targets": [],
       "platforms": ["windows"],
       "verification": "debugger policy rejects arbitrary attach",
-      "evidence": ["debugger:attach"],
+      "evidence": ["debugger:attach", "dap-request:AttachVsc"],
       "rationale": "Attach could target a process or listener not owned by Meridian-MCP."
     },
     {
@@ -408,7 +408,7 @@
       "targets": ["dm_debug_set_breakpoints", "dm_debug_set_function_breakpoints", "dm_debug_set_exception_breakpoints"],
       "platforms": ["windows"],
       "verification": "portable protocol and live owned-session breakpoint gates",
-      "evidence": ["debugger:set_breakpoints", "debugger:set_function_breakpoints", "debugger:set_exception_breakpoints", "debugger:catch_runtimes"],
+      "evidence": ["debugger:set_breakpoints", "debugger:set_function_breakpoints", "debugger:set_exception_breakpoints", "debugger:catch_runtimes", "dap-request:SetBreakpoints", "dap-request:SetFunctionBreakpoints", "dap-request:SetExceptionBreakpoints", "aux-breakpointsetresult:Success", "aux-breakpointsetresult:Failed"],
       "rationale": null
     },
     {
@@ -419,7 +419,7 @@
       "targets": ["dm_debug_threads", "dm_debug_stack_trace", "dm_debug_scopes", "dm_debug_variables", "dm_debug_evaluate", "dm_debug_exception_info", "dm_debug_source"],
       "platforms": ["windows"],
       "verification": "portable protocol and live stack scope variable evaluation gates",
-      "evidence": ["debugger:threads", "debugger:stacks", "debugger:stack_frames", "debugger:scopes", "debugger:variables", "debugger:eval", "debugger:source"],
+      "evidence": ["debugger:threads", "debugger:stacks", "debugger:stack_frames", "debugger:scopes", "debugger:variables", "debugger:eval", "debugger:source", "dap-request:Threads", "dap-request:StackTrace", "dap-request:Scopes", "dap-request:Variables", "dap-request:Evaluate", "dap-request:ExceptionInfo", "dap-request:Source"],
       "rationale": null
     },
     {
@@ -430,7 +430,7 @@
       "targets": ["dm_debug_wait_for_event"],
       "platforms": ["windows"],
       "verification": "bounded event queue and live breakpoint event gate",
-      "evidence": ["debugger:event_breakpoint", "debugger:event_pause", "debugger:event_step", "debugger:event_runtime", "debugger:event_output", "debugger:event_termination"],
+      "evidence": ["debugger:event_breakpoint", "debugger:event_pause", "debugger:event_step", "debugger:event_runtime", "debugger:event_output", "debugger:event_termination", "aux-breakpointreason:Breakpoint", "aux-breakpointreason:Step", "aux-breakpointreason:Pause", "aux-breakpointreason:Runtime"],
       "rationale": null
     },
     {
@@ -441,7 +441,7 @@
       "targets": ["dm_debug_control"],
       "platforms": ["windows"],
       "verification": "typed action schema and live control gate",
-      "evidence": ["debugger:continue", "debugger:pause", "debugger:step_in", "debugger:step_over", "debugger:step_out"],
+      "evidence": ["debugger:continue", "debugger:pause", "debugger:step_in", "debugger:step_over", "debugger:step_out", "dap-request:Continue", "dap-request:Pause", "dap-request:StepIn", "dap-request:Next", "dap-request:StepOut", "aux-continuekind:Continue", "aux-continuekind:StepOver", "aux-continuekind:StepInto", "aux-continuekind:StepOut"],
       "rationale": null
     },
     {
@@ -452,7 +452,7 @@
       "targets": ["dm_debug_stop"],
       "platforms": ["windows"],
       "verification": "owned DreamSeeker process-tree cleanup gate",
-      "evidence": ["debugger:disconnect", "debugger:terminate_debuggee"],
+      "evidence": ["debugger:disconnect", "debugger:terminate_debuggee", "dap-request:Disconnect"],
       "rationale": null
     },
     {
@@ -463,7 +463,7 @@
       "targets": [],
       "platforms": ["windows"],
       "verification": "capability audit records current auxtools unsupported response",
-      "evidence": ["debugger:disassemble_unsupported"],
+      "evidence": ["debugger:disassemble_unsupported", "dap-request:Disassemble"],
       "rationale": "Disassembly belongs to the legacy extools backend and current auxtools reports it unsupported."
     },
     {
@@ -508,18 +508,51 @@
       "platforms": ["windows"],
       "verification": "owned runtime readiness output Topic and shutdown fixture gates",
       "evidence": ["meridian:runtime"],
-		"rationale": "The existing DreamDaemon lifecycle is independent of debugger-owned DreamSeeker."
-	},
-	{
-		"id": "meridian.server_status",
-		"category": "existing_meridian",
-		"upstream_component": "Meridian-MCP immutable startup and session state",
-		"disposition": "mcp_native",
-		"targets": ["dm_server_status"],
-		"platforms": ["all"],
-		"verification": "owned server status policy and session-state fixture gate",
-		"evidence": ["meridian:server_status"],
-		"rationale": "The read-only status tool makes the MCP's effective authorization and current owned state directly inspectable."
-	}
+      "rationale": "The existing DreamDaemon lifecycle is independent of debugger-owned DreamSeeker."
+    },
+    {
+      "id": "meridian.server_status",
+      "category": "existing_meridian",
+      "upstream_component": "Meridian-MCP immutable startup and session state",
+      "disposition": "mcp_native",
+      "targets": ["dm_server_status"],
+      "platforms": ["all"],
+      "verification": "owned server status policy and session-state fixture gate",
+      "evidence": ["meridian:server_status", "dmdoc-option:-V", "dmdoc-option:--version", "dreamchecker-option:-V", "dreamchecker-option:--version"],
+      "rationale": "The read-only status tool makes the MCP's effective authorization and current owned state directly inspectable."
+    },
+    {
+      "id": "language.type_definition",
+      "category": "language",
+      "upstream_component": "dm-langserver type definition",
+      "disposition": "superseded",
+      "targets": ["dm_get_var", "dm_get_type", "dm_get_definition"],
+      "platforms": ["all"],
+      "verification": "variable_resolution semantic declaration tests and exact type definition tests",
+      "evidence": ["language:type_definition", "lsp-request:GotoTypeDefinition", "lsp-provider:type_definition_provider"],
+      "rationale": "Inspect the declared variable type, then query that exact type. Cursor-local expression type inference is not exposed."
+    },
+    {
+      "id": "language.editor_transport",
+      "category": "language",
+      "upstream_component": "dm-langserver LSP lifecycle and cancellation",
+      "disposition": "excluded",
+      "targets": [],
+      "platforms": ["all"],
+      "verification": "source-derived request and notification inventory",
+      "evidence": ["lsp-request:Initialize", "lsp-request:Shutdown", "lsp-notification:Initialized", "lsp-notification:Cancel"],
+      "rationale": "LSP lifecycle and request IDs belong to editor sessions. Meridian serves MCP through rmcp, not the LSP transport."
+    },
+    {
+      "id": "crate.cli_only_switches",
+      "category": "workspace",
+      "upstream_component": "dmdoc and dreamchecker CLI-only switches",
+      "disposition": "excluded",
+      "targets": [],
+      "platforms": ["all"],
+      "verification": "source-derived CLI argument inventory",
+      "evidence": ["dmdoc-option:--dry-run", "dreamchecker-option:--parse-only", "dreamchecker-option:-c"],
+      "rationale": "Documentation dry-run and checker-only parse/config overrides are not MCP inputs. MCP parses and checks together and discovers SpacemanDMM.toml from the environment."
+    }
   ]
 }

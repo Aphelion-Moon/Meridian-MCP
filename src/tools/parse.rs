@@ -579,23 +579,49 @@ pub async fn get_var(state: &ServerState, args: Value) -> Result<ToolResult> {
         .ok_or_else(|| anyhow!("Missing var_name argument"))?;
 
     match objtree.find(type_path) {
-        Some(ty) => match ty.vars.get(var_name) {
-            Some(var) => {
-                let file_path = get_file_path(context, var.value.location.file);
+        Some(ty) => match ty.get_value(var_name) {
+            Some(value) => {
+                let value_owner = ty
+                    .iter_parent_types()
+                    .find(|owner| owner.vars.contains_key(var_name))
+                    .expect("resolved variable must have a value owner");
+                let declaration = ty.get_var_declaration(var_name);
+                let declaration_owner = ty.iter_parent_types().find(|owner| {
+                    owner
+                        .vars
+                        .get(var_name)
+                        .is_some_and(|var| var.declaration.is_some())
+                });
+                let file_path = get_file_path(context, value.location.file);
+                // An override often changes only the value; retain declaration docs.
+                let documentation = if value.docs.is_empty() {
+                    declaration_owner
+                        .and_then(|owner| owner.vars.get(var_name).map(|var| var.value.docs.text()))
+                        .unwrap_or_default()
+                } else {
+                    value.docs.text()
+                };
 
                 let result = json!({
                     "name": var_name,
                     "type_path": type_path,
-                    "declared": var.declaration.is_some(),
-                    "declared_type": var.declaration.as_ref().map(|declaration| declaration.var_type.to_string()),
-                    "documentation": var.value.docs.text(),
-                    "constant": var.value.constant.as_ref().map(|c| format!("{c:?}")),
-                    "has_expression": var.value.expression.is_some(),
+                    "declared": ty.vars.get(var_name).is_some_and(|var| var.declaration.is_some()),
+                    "declared_type": declaration.map(|declaration| declaration.var_type.to_string()),
+                    "value_owner": value_owner.path,
+                    "declaration_owner": declaration_owner.map(|owner| owner.path.clone()),
+                    "inherited": value_owner.path != ty.path,
+                    "documentation": documentation,
+                    "constant": value.constant.as_ref().map(|c| format!("{c:?}")),
+                    "has_expression": value.expression.is_some(),
                     "location": format!("{}:{}:{}",
                         file_path,
-                        var.value.location.line,
-                        var.value.location.column
-                    )
+                        value.location.line,
+                        value.location.column
+                    ),
+                    "declaration_location": declaration.map(|declaration| format!("{}:{}:{}",
+                        get_file_path(context, declaration.location.file),
+                        declaration.location.line, declaration.location.column)),
+                    "state_generation": snapshot.generation,
                 });
 
                 Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))

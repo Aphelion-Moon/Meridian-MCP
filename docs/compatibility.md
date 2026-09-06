@@ -19,6 +19,8 @@
 
 Update this table only from fresh, reproducible evidence. Never infer platform support from another operating system.
 
+For the upstream feature mapping, repaired inheritance behavior, and explicit exclusions, see the [SpacemanDMM support audit](audits/2026-09-06-spacemandmm-support.md). Registry coverage is not a claim of full editor parity or completed platform qualification.
+
 ## Named Meridian-Rift gate
 
 The scheduled/manual workflow keeps three claims independent. `windows-meridian-compatibility` runs on the explicitly pinned Windows Server 2022 image, drives the release binary through stdio MCP, parses the real `tgstation.dme`, runs the versioned lookup/definition/search manifest, records direct and full-build artifacts, then runs the small owned auxtools protocol fixture and owned Tracy live fixture. The auxtools gate does not boot Meridian-Rift because full-game initialization time is not debugger wire compatibility; the preceding real-repository gates still prove Meridian-Rift compilation and analysis. The fixed image remains part of the live-hook compatibility baseline. `prototype-parser-compatibility` proves that the freshly built MCP/SpacemanDMM stack parses 65,537 declared fixture leaves and resolves the first, boundary, and last paths on Windows and Ubuntu. `prototype-runtime-compatibility` starts compact 50,000-leaf control and 65,537-leaf boundary worlds under BYOND 516.1687. A synthetic failure cannot skip the Windows product gates.

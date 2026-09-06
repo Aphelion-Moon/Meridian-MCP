@@ -17,6 +17,17 @@ cargo +1.95.0 deny check
 
 The suite covers owned DreamMaker and DMM fixtures, parse generations, complete registered-input reuse, exact lookup and source excerpts, lexical retrieval judgments, semantic chunk identities, map coordinates and PNG output, path containment, executable allowlisting, overwrite policy, mode inventories, runtime buffering, readiness, `Topic()` framing, generated contract drift, and documentation links.
 
+The [SpacemanDMM support audit](docs/audits/2026-09-06-spacemandmm-support.md) also requires source comparison and helper execution. Set `SPACEMANDMM_SOURCE` to the exact pinned upstream checkout and `MERIDIAN_MCP_HELPER_MANIFEST` to its verified helper manifest, then run:
+
+```powershell
+./scripts/audit-spacemandmm-capabilities.ps1 -Check -UpstreamPath $env:SPACEMANDMM_SOURCE
+./scripts/test-spacemandmm-capabilities.ps1 -UpstreamPath $env:SPACEMANDMM_SOURCE
+./scripts/test-spacemandmm-docs.ps1 -BinaryPath ./target/release/meridian-mcp.exe -HelperManifestPath $env:MERIDIAN_MCP_HELPER_MANIFEST
+cargo +1.95.0 test --locked --test variable_resolution
+```
+
+Use `./target/release/meridian-mcp` on Linux. CI runs the source inventory, mutation checks and documentation stdio fixture on Windows and Ubuntu. Omitting `-UpstreamPath` checks only the registry and vendored-file integrity. The real Meridian-Rift analysis gates also check inherited variable values and declaration ownership.
+
 The audit regressions use small owned inputs and deterministic worker/process barriers. Run the focused ownership gates after building the actual server executable, because Unix tests launch its private guardian entry point:
 
 ```powershell

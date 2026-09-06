@@ -440,7 +440,10 @@ try {
 			'dm_get_var' {
 				Assert-True ($payload.name -eq $case.name) "Var lookup failed for $($case.type_path)/$($case.name)."
 				if ($case.PSObject.Properties['file_suffix']) { Assert-True (Test-PathSuffix (Get-LocationPath $payload.location) $case.file_suffix) "Unexpected var file for $($case.name)." }
-				if ($case.PSObject.Properties['inherited_from']) { Assert-True ($payload.declared -eq $false) "Expected inherited var $($case.name)." }
+				if ($case.PSObject.Properties['inherited_from']) { Assert-True ($payload.declaration_owner -ceq $case.inherited_from) "Expected inherited var declaration $($case.name)." }
+				foreach ($field in @('value_owner', 'declaration_owner', 'constant')) {
+					if ($case.PSObject.Properties[$field]) { Assert-True ($payload.$field -ceq $case.$field) "Unexpected $field for $($case.type_path)/$($case.name)." }
+				}
 			}
 			'dm_list_types' {
 				$paths = @($payload.types | ForEach-Object { $_.path })

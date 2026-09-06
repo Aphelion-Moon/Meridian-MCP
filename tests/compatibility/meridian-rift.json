@@ -59,6 +59,14 @@
       "type_path": "/obj/item/bedsheet",
       "name": "w_class",
       "inherited_from": "/obj/item"
+    },
+    {
+      "type_path": "/obj/item/storage/backpack/duffelbag",
+      "name": "w_class",
+      "inherited_from": "/obj/item",
+      "value_owner": "/obj/item/storage/backpack",
+      "declaration_owner": "/obj/item",
+      "constant": "Float(4.0)"
     }
   ],
   "type_lists": [
