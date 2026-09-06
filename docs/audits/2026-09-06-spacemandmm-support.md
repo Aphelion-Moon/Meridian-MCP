@@ -6,6 +6,8 @@ The subsequent [language-query audit and measurements](2026-09-06-language-queri
 
 The [source-identity follow-up](2026-09-06-source-identity.md) repairs case-sensitive file collisions in symbol and search results. It records Windows qualification, partial local Linux qualification and an unresolved intermittent WSL 1 guardian failure; it does not replace native Ubuntu CI.
 
+The [source-excerpt follow-up](2026-09-06-source-excerpts/README.md) covers parser-based physical boundaries, source budgets, snapshot metadata and decoding, using the separately identified `meridian-read-policy-v3` local patch.
+
 Meridian integrates the parser, checker, icon and map libraries, packages the documentation generator, and supplies typed source and debugger tools. **This is agent-facing integration, not complete LSP/editor or legacy extools parity.** Registry coverage means every audited entry has an explicit disposition; excluded entries do not count as implemented functionality.
 
 ## Findings and repairs

@@ -83,6 +83,8 @@ An unchanged environment reuses its snapshot. Reuse checks file paths, sizes and
 
 Search uses lexical BM25 ranking; embeddings and vector search are not configured. For a known symbol, use exact lookup. Procedure results distinguish the **implementation owner** (executable body) from the **declaration owner** (declaration metadata).
 
+To reduce response size, set `include_source: false` on `dm_get_proc` or `dm_search_context`. Otherwise, `max_source_lines` accepts 1–200 lines (defaults: 80 for inspection, 40 for search). Excerpts report their snapshot boundaries and truncation; see the [source-excerpt audit](docs/audits/2026-09-06-source-excerpts/README.md).
+
 Implementation listings cover the requested type and its semantic descendants. Use `dm_get_proc` to inspect an inherited body outside that subtree, or query its declaration owner for the wider implementation family.
 
 Diagnostics come from the last successful parse. Filter by file, severity, component or rule, and follow `pagination.next_cursor` for more results. `truncated: true` with `diagnostic_page_limit` means another page is available.

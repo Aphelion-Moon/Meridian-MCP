@@ -7,7 +7,7 @@ use dreammaker::Context;
 use foldhash::{HashMap, HashMapExt};
 
 use crate::proc_resolution::ProcResolver;
-use crate::source::IndexedSource;
+use crate::source::{IndexedSource, SourceExcerpt, DEFAULT_PROC_SOURCE_LINES, MAX_SOURCE_LINES};
 
 const BM25_K1: f64 = 1.2;
 const BM25_B: f64 = 0.75;
@@ -46,7 +46,7 @@ pub(crate) struct SearchDocument {
     pub(crate) line: u32,
     pub(crate) column: u32,
     pub(crate) docs: String,
-    pub(crate) source: Option<String>,
+    pub(crate) source: Option<SourceExcerpt>,
     pub(crate) parameters: Vec<String>,
     pub(crate) override_index: Option<usize>,
     pub(crate) override_count: Option<usize>,
@@ -144,7 +144,7 @@ impl SearchIndex {
         owner: &str,
         name: &str,
         override_index: usize,
-    ) -> Option<&str> {
+    ) -> Option<&SourceExcerpt> {
         self.exact_symbols
             .get(&member_symbol(owner, "proc", name).to_lowercase())?
             .iter()
@@ -156,11 +156,11 @@ impl SearchIndex {
                     && document.override_index == Some(override_index)
             })?
             .source
-            .as_deref()
+            .as_ref()
     }
 
     pub(crate) fn source_line_limit(&self) -> usize {
-        INDEX_SOURCE_LINES
+        DEFAULT_PROC_SOURCE_LINES
     }
 }
 
@@ -253,11 +253,16 @@ impl SearchDocuments {
                         line: location.line,
                         column: u32::from(location.column),
                         docs: value.docs.text().trim().to_string(),
-                        source: source_cache.source_declaration(
-                            &file,
-                            location.line,
-                            INDEX_SOURCE_LINES,
-                        ),
+                        source: (value.header_location.file == location.file)
+                            .then(|| {
+                                source_cache.source_declaration(
+                                    &file,
+                                    value.header_location,
+                                    value.body_range.as_ref().map(|range| range.end),
+                                    MAX_SOURCE_LINES,
+                                )
+                            })
+                            .flatten(),
                         parameters: value
                             .parameters
                             .iter()
@@ -515,11 +520,12 @@ fn weighted_terms(document: &SearchDocument) -> HashMap<String, u32> {
         2,
     );
     add_weighted_terms(&mut terms, &document.file, 2);
-    add_weighted_terms(
-        &mut terms,
-        document.source.as_deref().unwrap_or_default(),
-        1,
-    );
+    if let Some(source) = &document.source {
+        // The query display budget does not expand the lexical indexing budget.
+        for line in source.text.lines().take(INDEX_SOURCE_LINES) {
+            add_weighted_terms(&mut terms, line, 1);
+        }
+    }
     terms
 }
 
@@ -595,12 +601,20 @@ impl<'a> SourceCache<'a> {
         self.files.get(file).and_then(Option::as_ref)
     }
 
-    fn source_line(&mut self, file: &Path, line: u32) -> Option<String> {
-        self.source(file)?.line(line).map(str::to_owned)
+    fn source_line(&mut self, file: &Path, line: u32) -> Option<SourceExcerpt> {
+        self.source(file)?
+            .line(line)
+            .map(|text| SourceExcerpt::line(text, line))
     }
 
-    fn source_declaration(&mut self, file: &Path, line: u32, max_lines: usize) -> Option<String> {
-        self.source(file)?.declaration(line, max_lines)
+    fn source_declaration(
+        &mut self,
+        file: &Path,
+        start: dreammaker::Location,
+        end: Option<dreammaker::Location>,
+        max_lines: usize,
+    ) -> Option<SourceExcerpt> {
+        self.source(file)?.declaration(start, end, max_lines)
     }
 }
 
@@ -633,7 +647,7 @@ mod tests {
             line: 1,
             column: 1,
             docs: docs.to_string(),
-            source: Some(source.to_string()),
+            source: Some(SourceExcerpt::line(source.to_string(), 1)),
             parameters: Vec::new(),
             override_index: None,
             override_count: None,
@@ -934,8 +948,8 @@ mod tests {
         assert!(proc_hit
             .document
             .source
-            .as_deref()
-            .is_some_and(|source| source.contains("target_temperature")));
+            .as_ref()
+            .is_some_and(|source| source.text.contains("target_temperature")));
         assert_eq!(proc_hit.document.parameters, ["target_temperature"]);
         assert_eq!(proc_hit.document.override_index, Some(1));
         assert_eq!(proc_hit.document.override_count, Some(1));

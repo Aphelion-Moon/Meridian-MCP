@@ -1,7 +1,7 @@
 # SpacemanDMM local read-policy patch
 
 Baseline: SpaceManiac/SpacemanDMM revision `351ddc0ffb2439876d4565ce5130bb6b027ee605`.
-Local delta identity: `meridian-read-policy-v2`.
+Local delta identity: `meridian-read-policy-v3`.
 
 Only the `dreammaker` and `dmm-tools` crate directories are vendored. The upstream LICENSE is retained verbatim beside them. Existing upstream author and source notices remain intact. Adjacent crates remain exact-revision Git dependencies; no registry versions or upstream revision were upgraded. Package manifests expand the inherited edition 2024 and Rust 1.95 metadata and replace sibling paths with exact-revision dependencies. The root Cargo patch unifies dreamchecker's dreammaker types with the local crate.
 
@@ -17,6 +17,8 @@ Only the `dreammaker` and `dmm-tools` crate directories are vendored. The upstre
 
 These are canonicalization-before-open checks, matching the project's PathPolicy contract. They are not OS-handle-based protection against an adversary concurrently replacing directories between canonicalization and open.
 
+Version 3 also retains the parser's existing procedure-header start location in `ProcValue.header_location`. This adds one `Location` per implementation without enabling the complete editor annotation tree. Meridian uses it with the existing body range to keep physical source excerpts within their own declarations, including multiple procedures on one line. It does not alter parsing or name resolution. Source excerpts remain physical source, with explicit file-boundary fallback when a body range leaves the declaring file.
+
 ## Review and renewal
 
 Compare the vendored files against the exact baseline and review `local-delta.patch`; do not edit Cargo's cache. Keep upstream helper/CI pins unchanged for this patch. Re-run containment, snapshot, map, DMI, stdio, and the repository's full Rust qualification before promoting compatibility. Any upstream revision change requires the normal dependency-update matrix and a fresh delta/hash.
@@ -27,6 +29,8 @@ Changed baseline files:
 - `dreammaker/src/error.rs`
 - `dreammaker/src/lexer.rs`
 - `dreammaker/src/lib.rs`
+- `dreammaker/src/objtree.rs`
+- `dreammaker/src/parser.rs`
 - `dreammaker/src/preprocessor.rs`
 - `dmm-tools/Cargo.toml`
 - `dmm-tools/src/icon_cache.rs`

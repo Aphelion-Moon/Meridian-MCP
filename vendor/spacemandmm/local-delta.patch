@@ -100,6 +100,35 @@
  }
 +
 +pub use error::ReadPolicy;
+--- a/dreammaker/src/objtree.rs
++++ b/dreammaker/src/objtree.rs
+@@ -101,6 +101,8 @@
+ #[derive(Debug, Clone, GetSize)]
+ pub struct ProcValue {
+     pub location: Location,
++    /// Start of this implementation's physical header, before its parameter list.
++    pub header_location: Location,
+     pub parameters: Box<[Parameter]>,
+     pub docs: DocCollection,
+     pub code: Option<Block>,
+@@ -1256,6 +1258,7 @@
+ 
+         let value = ProcValue {
+             location,
++            header_location: location,
+             parameters: parameters.into(),
+             docs: Default::default(),
+             code,
+--- a/dreammaker/src/parser.rs
++++ b/dreammaker/src/parser.rs
+@@ -1272,6 +1272,7 @@
+             Some(body_start..self.location),
+         ) {
+             Ok((idx, proc)) => {
++                proc.header_location = entry_start;
+                 proc.docs.extend(docs);
+                 // manually performed for borrowck reasons
+                 if let Some(dest) = self.annotations.as_mut() {
 --- a/dreammaker/src/preprocessor.rs
 +++ b/dreammaker/src/preprocessor.rs
 @@ -678,13 +678,18 @@

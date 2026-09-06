@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "spacemandmm_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
-  "local_patch": "meridian-read-policy-v2",
+  "local_patch": "meridian-read-policy-v3",
   "local_patch_provenance": "vendor/spacemandmm/README.md",
   "capabilities": [
     {

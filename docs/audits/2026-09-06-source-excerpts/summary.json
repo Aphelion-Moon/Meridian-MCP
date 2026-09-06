@@ -1,0 +1,186 @@
+{
+  "arms": {
+    "baseline": {
+      "parse_median_ms": 32197.755700006383,
+      "parse_samples_ms": [
+        41163.28730000532,
+        32197.755700006383,
+        31408.710399991833
+      ],
+      "private_median_bytes": 1952804864,
+      "working_set_median_bytes": 1823563776
+    },
+    "candidate": {
+      "parse_median_ms": 33027.76529999392,
+      "parse_samples_ms": [
+        33027.76529999392,
+        32208.70589998958,
+        47636.52000000002
+      ],
+      "private_median_bytes": 1965281280,
+      "working_set_median_bytes": 1834676224
+    }
+  },
+  "characters": {
+    "baseline_exact": 52318,
+    "candidate_exact": 59840,
+    "candidate_exact_omit": 19565,
+    "baseline_search": 23103,
+    "candidate_search": 25264,
+    "candidate_search_omit": 10555,
+    "candidate_search_200": 37589
+  },
+  "queries": [
+    {
+      "case": "vending-vend",
+      "baseline_exact_chars": 4892,
+      "candidate_exact_chars": 4760,
+      "metadata_chars": 1097,
+      "candidate_exact_ms": 0.47300000733230263,
+      "candidate_search_ms": 0.3826999891316518,
+      "search_200_spans": [
+        73
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "vending-dispense",
+      "baseline_exact_chars": 2589,
+      "candidate_exact_chars": 2537,
+      "metadata_chars": 1383,
+      "candidate_exact_ms": 0.4704000020865351,
+      "candidate_search_ms": 0.3330000035930425,
+      "search_200_spans": [
+        22
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "airlock-close",
+      "baseline_exact_chars": 5158,
+      "candidate_exact_chars": 5162,
+      "metadata_chars": 1440,
+      "candidate_exact_ms": 0.5519999976968393,
+      "candidate_search_ms": 0.37740000698249787,
+      "search_200_spans": [
+        60
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "hydroponics-process",
+      "baseline_exact_chars": 7169,
+      "candidate_exact_chars": 7587,
+      "metadata_chars": 2821,
+      "candidate_exact_ms": 0.5684000061592087,
+      "candidate_search_ms": 0.364200008334592,
+      "search_200_spans": [
+        166
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "spell-check",
+      "baseline_exact_chars": 4627,
+      "candidate_exact_chars": 4513,
+      "metadata_chars": 864,
+      "candidate_exact_ms": 0.3868000057991594,
+      "candidate_search_ms": 0.32839999767020345,
+      "search_200_spans": [
+        72
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "backpack-initialize",
+      "baseline_exact_chars": 8668,
+      "candidate_exact_chars": 12014,
+      "metadata_chars": 4512,
+      "candidate_exact_ms": 0.6677000055788085,
+      "candidate_search_ms": 0.3420999855734408,
+      "search_200_spans": [
+        3
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "atmos-fire",
+      "baseline_exact_chars": 4942,
+      "candidate_exact_chars": 5285,
+      "metadata_chars": 1378,
+      "candidate_exact_ms": 0.42150000808760524,
+      "candidate_search_ms": 0.3718000079970807,
+      "search_200_spans": [
+        124
+      ],
+      "search_200_truncated": [
+        false
+      ]
+    },
+    {
+      "case": "human-initialize",
+      "baseline_exact_chars": 14273,
+      "candidate_exact_chars": 17982,
+      "metadata_chars": 6070,
+      "candidate_exact_ms": 0.8168000058503821,
+      "candidate_search_ms": 0.4887999966740608,
+      "search_200_spans": [
+        38,
+        12,
+        8
+      ],
+      "search_200_truncated": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "case": "vending dispense product",
+      "ranking_identical": false,
+      "added_symbols": [
+        "/obj/machinery/vending/proc/freebie"
+      ],
+      "removed_symbols": [
+        "/obj/machinery/vending/proc/vend"
+      ]
+    },
+    {
+      "case": "airlock close crush",
+      "ranking_identical": false,
+      "added_symbols": [],
+      "removed_symbols": []
+    },
+    {
+      "case": "hydroponics water nutrients",
+      "ranking_identical": true,
+      "added_symbols": [],
+      "removed_symbols": []
+    },
+    {
+      "case": "spell casting requirements",
+      "ranking_identical": false,
+      "added_symbols": [
+        "/datum/action/cooldown/spell/touch/proc/cast_on_hand_hit"
+      ],
+      "removed_symbols": [
+        "/datum/action/cooldown/spell/void/var/spell_requirements"
+      ]
+    }
+  ],
+  "source_availability_preserved_rows": 35,
+  "source_files_checked": 22,
+  "recorded_queries": 1080
+}

@@ -261,7 +261,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     tools.push(ToolDefinition {
         name: "dm_get_proc".to_string(),
-        description: "Get detailed information about a procedure including parameters, body location, and documentation.".to_string(),
+        description: "Inspect a procedure's parameters, ownership, documentation and bounded snapshot source. Set include_source=false for metadata only; excerpts report their physical boundaries and truncation.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -272,6 +272,16 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "proc_name": {
                     "type": "string",
                     "description": "Name of the procedure"
+                },
+                "include_source": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "max_source_lines": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": crate::source::MAX_SOURCE_LINES,
+                    "default": crate::source::DEFAULT_PROC_SOURCE_LINES
                 }
             },
             "required": ["type_path", "proc_name"]
@@ -386,13 +396,13 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 },
                 "include_source": {
                     "type": "boolean",
-                    "description": "Include bounded source excerpts (default: true)"
+                    "description": "Include physical snapshot excerpts with boundaries and truncation (default: true); false returns metadata only"
                 },
                 "max_source_lines": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 200,
-                    "description": "Maximum source lines per result (default: 40)"
+                    "description": "Maximum source lines per result, up to the 200-line snapshot budget (default: 40)"
                 }
             },
             "required": ["query"]

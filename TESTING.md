@@ -2,6 +2,8 @@
 
 Run checks from the repository root with PowerShell 7 on Windows or Linux.
 
+Linux test runs require a native `pwsh` executable on `PATH`; several Rust tests invoke the maintained PowerShell scripts.
+
 ## Rust and contract gates
 
 The checked-in `rust-toolchain.toml` pins Rust 1.95.0 with rustfmt and Clippy, matching CI and the pinned SpacemanDMM workspace MSRV. Do not override that toolchain when reproducing a CI failure; confirm the verbose compiler identity before trusting a local green result.

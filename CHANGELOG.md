@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added bounded source controls to exact procedure inspection and explicit snapshot/truncation metadata to inspection and search. Fixed sibling/same-line procedure excerpts and BOM/Latin-1 decoding; search now rejects invalid filters, flags and limits.
 - Added deterministic `dm_search_context` ranking over parsed DreamMaker symbols, documentation, source excerpts, and file paths.
 - Added provenance, source-authority, compatibility, dependency, and security records.
 - Added independent Windows/Ubuntu over-64K parser evidence and Ubuntu/Windows control-versus-boundary DreamDaemon evidence.

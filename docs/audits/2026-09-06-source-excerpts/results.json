@@ -1,0 +1,4793 @@
+{
+  "identity": {
+    "baseline": {
+      "binary_sha256": "c654d93b19cb32530dc499a5fe1ecd550d35d3db8b46b712ac00a4b46f5e92aa",
+      "build": {
+        "build_id": "ea603cda1fe5501b824096e78d3ab4b146308ac233a3eb807e395e503213392d",
+        "complete": true,
+        "executable_sha256": "c654d93b19cb32530dc499a5fe1ecd550d35d3db8b46b712ac00a4b46f5e92aa",
+        "profile": "release",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "288cf49eb94d6c2b18fb09b663a581ed68de6b0a",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      }
+    },
+    "candidate": {
+      "binary_sha256": "9f17ed47707caa8ec9649f057fc38ed27f272fd84e8b986fbb98fbf43dcfc0ee",
+      "build": {
+        "build_id": "4df60f0c7ec9ff4aa5bb197636d7f55279627ef7614e7472f0683aac83ab8770",
+        "complete": true,
+        "executable_sha256": "9f17ed47707caa8ec9649f057fc38ed27f272fd84e8b986fbb98fbf43dcfc0ee",
+        "profile": "release",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "954faa4ffa09fba273b99b7527e2dac8760ca709",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      }
+    }
+  },
+  "source_before": {
+    "head": "7462a6942b2e71a3ea13c00169f65f575cb281b7",
+    "status": ""
+  },
+  "source_after": {
+    "head": "7462a6942b2e71a3ea13c00169f65f575cb281b7",
+    "status": ""
+  },
+  "source_files_sha256": {
+    "code/modules/vending/vendor/inventory.dm": "40aeed9e5d5047a841fab4ae3999499c48d51a6e35467f5e267b54c1d85e881d",
+    "code/game/machinery/doors/airlock.dm": "74e33a1d1cbaf46fdcb6612f58a0072ef3e411ddc3bf324c2758ef577d983d9c",
+    "code/game/machinery/doors/door.dm": "0144ef53ba2df2a9d9a33353cea2fb639f50bf5fe60856b33cf76e490c7e9ef6",
+    "code/modules/hydroponics/hydroponics.dm": "2ead5f0a297c8708a734d173e6c3180b0cf1d2c8c2ad14b08fd946156449c222",
+    "code/game/machinery/_machinery.dm": "1655c39b22e2298588954fd0207c5aebe8e3d778c637c1afb00633fbdb969c30",
+    "code/controllers/subsystem/processing/processing.dm": "669e09877bbbe23dc992fbff411dc1db9386661b75bc1e8f7531bcadce8dd1b6",
+    "code/modules/spells/spell.dm": "d863d47b78602ac3999323139528843de7860f209181bc6827694fe0063a7b34",
+    "code/game/objects/items/storage/backpack.dm": "7f4c48ee215e3f52618468a7110e40463e363d9f850363107816777d0ffaae54",
+    "code/game/objects/items/storage/storage.dm": "7983c88126b4288b7dc8a8273a2bb61cb1c65ac6cae255900185cc4dd350b6cb",
+    "code/game/objects/items.dm": "db8128a35f4e56b7cf8281d706184d6a1552ea419e5f13d9f53eeb6f0b1d8f19",
+    "code/game/objects/objs.dm": "f5d977e3b88b14b3aa34dbdc7875d9ccc9bbc3589c0a486f893230c310b2fd7d",
+    "code/game/atoms_movable.dm": "887863a42bbe6592b8d3e820512ed1f40ede7e65af4680d030e2a1fa80564db8",
+    "code/game/atom/atoms_initializing_EXPENSIVE.dm": "fd7f627b895903d34311659f14693a305e94cdbc1d2034c02980d73d629773f5",
+    "code/controllers/subsystem/air.dm": "2604a36823cf8208689666a32d7046c4af5f1189e3d8269d060b5e0faf512d42",
+    "code/controllers/subsystem.dm": "8b0fa0a45df9e15aff4d30549c6f12f191eb2f9030062ab98403bd195b1adf8a",
+    "code/modules/mob/living/carbon/human/human.dm": "bbef3f0c5a4310054aab11e3a280a152e700a61f548ff7eccab328f93b012f0c",
+    "modular_nova/master_files/code/modules/mob/living/carbon/human/human.dm": "541b0574237d8920fef74d29070ee9b94a658450aa195e52b76d0c680b41cea6",
+    "modular_nova/modules/blooper/atoms_movable.dm": "af64adcb3498600b7a84f4bef5c96867cf7c1830b8f262cc5713314e78ceb5a4",
+    "code/modules/mob/living/carbon/carbon.dm": "264b1306bb386ce498889ae32ba3767c0bbe1a9811a0c7da47fc73c8892e451c",
+    "code/modules/mob/living/living.dm": "8384626f74a575eb7119531a54e76e87a2f317447d32a9c10c468ce3410777ed",
+    "code/modules/mob/mob.dm": "3717eb0e3a52ae7a13f46686c715c1e180f5cdb53268e789bef5cbb57ed3bb93",
+    "modular_nova/master_files/code/modules/mob/mob.dm": "a173d66f203ad00a08bd9305040570650a0039f54d9e6c9a1a07c72a1ab6ff21"
+  },
+  "rounds": 3,
+  "repeats": 5,
+  "arms": {
+    "baseline": {
+      "parse_ms": [
+        41163.28730000532,
+        32197.755700006383,
+        31408.710399991833
+      ],
+      "parsed_memory": [
+        {
+          "WorkingSetSize": 1823563776,
+          "PeakWorkingSetSize": 1833619456,
+          "PrivateUsage": 1952165888
+        },
+        {
+          "WorkingSetSize": 1824997376,
+          "PeakWorkingSetSize": 1839083520,
+          "PrivateUsage": 1954467840
+        },
+        {
+          "WorkingSetSize": 1822789632,
+          "PeakWorkingSetSize": 1830379520,
+          "PrivateUsage": 1952804864
+        }
+      ],
+      "parse_snapshot": {
+        "duration_ms": 41155,
+        "environment": "<rift>\\tgstation.dme",
+        "error_count": 127,
+        "indexed_symbols": 452780,
+        "retrieval": {
+          "dense": {
+            "status": "not_configured"
+          },
+          "lexical": {
+            "algorithm": "bm25",
+            "documents": 452780,
+            "status": "ready"
+          },
+          "semantic_chunk_schema_version": 1
+        },
+        "reused": false,
+        "spacemandmm_local_patch": "meridian-read-policy-v2",
+        "spacemandmm_local_patch_sha256": "9c634bdc169e3305c6e2845e5a38f2e1f59224a462e0f56969ff422a8657c20e\n",
+        "spacemandmm_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+        "state_generation": 1,
+        "success": true,
+        "timings_ms": {
+          "analysis_indexes": 8283,
+          "dreamchecker": 4326,
+          "fingerprint": 1494,
+          "preprocess_parse": 23075,
+          "queue_wait": 0,
+          "search_documents": 3935,
+          "total": 41155
+        },
+        "total_types": 65165,
+        "warning_count": 0
+      },
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "invalid_inputs_rejected": [
+        0,
+        0,
+        0
+      ]
+    },
+    "candidate": {
+      "parse_ms": [
+        33027.76529999392,
+        32208.70589998958,
+        47636.52000000002
+      ],
+      "parsed_memory": [
+        {
+          "WorkingSetSize": 1833721856,
+          "PeakWorkingSetSize": 1838125056,
+          "PrivateUsage": 1963659264
+        },
+        {
+          "WorkingSetSize": 1834676224,
+          "PeakWorkingSetSize": 1849462784,
+          "PrivateUsage": 1966116864
+        },
+        {
+          "WorkingSetSize": 1835282432,
+          "PeakWorkingSetSize": 1845039104,
+          "PrivateUsage": 1965281280
+        }
+      ],
+      "parse_snapshot": {
+        "duration_ms": 33027,
+        "environment": "<rift>\\tgstation.dme",
+        "error_count": 127,
+        "indexed_symbols": 452780,
+        "retrieval": {
+          "dense": {
+            "status": "not_configured"
+          },
+          "lexical": {
+            "algorithm": "bm25",
+            "documents": 452780,
+            "status": "ready"
+          },
+          "semantic_chunk_schema_version": 1
+        },
+        "reused": false,
+        "spacemandmm_local_patch": "meridian-read-policy-v3",
+        "spacemandmm_local_patch_sha256": "ad8df4cc7bb7224ca1f749ac128e09d10f5f3bda55468930f49d55da72f31546\n",
+        "spacemandmm_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+        "state_generation": 1,
+        "success": true,
+        "timings_ms": {
+          "analysis_indexes": 8581,
+          "dreamchecker": 4333,
+          "fingerprint": 1446,
+          "preprocess_parse": 14819,
+          "queue_wait": 0,
+          "search_documents": 3825,
+          "total": 33027
+        },
+        "total_types": 65165,
+        "warning_count": 0
+      },
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "invalid_inputs_rejected": [
+        3,
+        3,
+        3
+      ]
+    }
+  },
+  "queries": [
+    {
+      "case": "vending-vend",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.40780000563245267,
+          "samples_ms": [
+            0.4937000048812479,
+            0.43539999751374125,
+            0.4267000040272251,
+            0.34339999547228217,
+            0.397100011468865,
+            0.5317000031936914,
+            0.40780000563245267,
+            0.4780000017490238,
+            0.38189999759197235,
+            0.3819999983534217,
+            0.41039999632630497,
+            0.28480000037234277,
+            0.341799997841008,
+            0.4478000046219677,
+            0.3271999885328114
+          ],
+          "characters": 4892,
+          "bytes": 4892,
+          "body_sha256": "20f9b3e286c93c2a34a066da5d3380f5bfa516a4fd82dd481876417fd808d22f",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm:147:33",
+              "override_index": 0,
+              "owner": "/obj/machinery/vending",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.3335000074002892,
+          "samples_ms": [
+            0.4566999996313825,
+            0.4626000009011477,
+            0.3487000067252666,
+            0.2958999975817278,
+            0.24839999969117343,
+            0.4290000069886446,
+            0.3749000024981797,
+            0.312299991492182,
+            0.34889999369625,
+            0.3462000022409484,
+            0.31709999893791974,
+            0.23289999808184803,
+            0.3335000074002892,
+            0.2928000030806288,
+            0.2601000014692545
+          ],
+          "characters": 2920,
+          "bytes": 2920,
+          "body_sha256": "2c7d89cc649e682611d65ef3afce9c4ff1eae72b813e21464975c58e0c980b0a",
+          "rows": [
+            {
+              "column": 33,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 147,
+              "name": "vend",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/vending/proc/vend",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.29850000282749534,
+          "samples_ms": [
+            0.29850000282749534,
+            0.8170999935828149,
+            0.30780000088270754,
+            0.24680000205989927,
+            0.20340000628493726,
+            0.33909999183379114,
+            0.3660000074887648,
+            0.38359999598469585,
+            0.35880001087207347,
+            0.38309999217744917,
+            0.22669999452773482,
+            0.21859999105799943,
+            0.2420999953756109,
+            0.275999991572462,
+            0.2373000024817884
+          ],
+          "characters": 1168,
+          "bytes": 1168,
+          "body_sha256": "52dfca5500fb8c3fd6612e7f9296390ef884187f9f0e5e011a49b7b05e87d597",
+          "rows": [
+            {
+              "column": 33,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 147,
+              "name": "vend",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/vending/proc/vend",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.47300000733230263,
+          "samples_ms": [
+            0.47559999802615494,
+            0.4284000024199486,
+            0.5373000021791086,
+            0.567299997783266,
+            0.3096000000368804,
+            0.4819999885512516,
+            0.47300000733230263,
+            0.40290001197718084,
+            0.44010000419802964,
+            0.4743999888887629,
+            0.4307000053813681,
+            0.5996999971102923,
+            0.38139999378472567,
+            0.4658999969251454,
+            0.5724999937228858
+          ],
+          "characters": 4760,
+          "bytes": 4760,
+          "body_sha256": "32ead5081c80921761f48ec1e803601637d46a9c4a9595051f320a1c8741e586",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm:147:33",
+              "override_index": 0,
+              "owner": "/obj/machinery/vending",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 147,
+              "source_total_lines": 73,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.4098999925190583,
+          "samples_ms": [
+            0.2880000101868063,
+            0.43030000233557075,
+            0.4098999925190583,
+            1.875999994808808,
+            0.24789999588392675,
+            0.32639999699313194,
+            0.3791999915847555,
+            0.3930999955628067,
+            0.4369999951450154,
+            0.3096000000368804,
+            0.4481999931158498,
+            0.44079999497625977,
+            0.24620001204311848,
+            0.4302999877836555,
+            0.6223999953363091
+          ],
+          "characters": 1097,
+          "bytes": 1097,
+          "body_sha256": "b7db12847adbabe1fd7ad3b0d4a0a889c0a5474eb1105943da665b66de5c1bfc",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm:147:33",
+              "override_index": 0,
+              "owner": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.3826999891316518,
+          "samples_ms": [
+            0.5477999948197976,
+            0.45110000064596534,
+            0.3826999891316518,
+            0.3146999952150509,
+            0.3034999972442165,
+            0.40869999793358147,
+            0.3728000010596588,
+            0.461799994809553,
+            0.35600000410340726,
+            0.4676000098697841,
+            0.3597999893827364,
+            1.2704999971901998,
+            0.305499997921288,
+            0.27799999224953353,
+            0.49819999549072236
+          ],
+          "characters": 3184,
+          "bytes": 3184,
+          "body_sha256": "a49c6628e0703b3f4d6019fa085f08aba770897f6fccf259da840aa5cda9a110",
+          "rows": [
+            {
+              "column": 33,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 147,
+              "name": "vend",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 147,
+              "source_total_lines": 73,
+              "source_truncated": true,
+              "symbol": "/obj/machinery/vending/proc/vend",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.4191999905742705,
+          "samples_ms": [
+            0.4243000003043562,
+            0.5193000106373802,
+            0.4499000060604885,
+            0.3915999986929819,
+            0.27879999834112823,
+            0.3811000060522929,
+            0.3429999924264848,
+            0.32020000799093395,
+            0.461499992525205,
+            0.3096000000368804,
+            0.43149999692104757,
+            0.7259999983943999,
+            0.2919999969890341,
+            0.4191999905742705,
+            0.7305000035557896
+          ],
+          "characters": 4849,
+          "bytes": 4849,
+          "body_sha256": "68545d11cd80b1d510b819957df1eada1d9647314c12553dbea1895ae442dd8e",
+          "rows": [
+            {
+              "column": 33,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 147,
+              "name": "vend",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 147,
+              "source_total_lines": 73,
+              "source_truncated": false,
+              "symbol": "/obj/machinery/vending/proc/vend",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.3591000131564215,
+          "samples_ms": [
+            0.39010000182315707,
+            0.3556000010576099,
+            0.39570000080857426,
+            0.36359998921398073,
+            0.2589999930933118,
+            0.36160000308882445,
+            0.26220000290777534,
+            0.3591000131564215,
+            0.3273999900557101,
+            0.2575999969849363,
+            0.40269999590236694,
+            0.6735000060871243,
+            0.21850000484846532,
+            0.2928999892901629,
+            0.36639999598264694
+          ],
+          "characters": 1260,
+          "bytes": 1260,
+          "body_sha256": "03192d670a19075f6141c78006a4f86674180d092c81c53f629b2536e8ed416d",
+          "rows": [
+            {
+              "column": 33,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 147,
+              "name": "vend",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/vending/proc/vend",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "vending-dispense",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.3367000026628375,
+          "samples_ms": [
+            0.37179999344516546,
+            0.5100999987917021,
+            0.4121999954804778,
+            0.27380000392440706,
+            0.2592000091681257,
+            0.38130000757519156,
+            0.305499997921288,
+            0.41259999852627516,
+            0.37399999564513564,
+            0.24429999757558107,
+            0.3367000026628375,
+            0.3541000041877851,
+            0.2634999982547015,
+            0.3004000027431175,
+            0.31620000663679093
+          ],
+          "characters": 2589,
+          "bytes": 2589,
+          "body_sha256": "cfe86ece9d7e4693b6e5c833dd50cd915e39ba0a62f3d68c75a29feabac79ce5",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm:230:37",
+              "override_index": 0,
+              "owner": "/obj/machinery/vending",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.2871000033337623,
+          "samples_ms": [
+            0.295600009849295,
+            0.40530000114813447,
+            0.37349999183788896,
+            0.251600009505637,
+            0.22479999461211264,
+            0.3041000018129125,
+            0.2859000087482855,
+            0.2872000040952116,
+            0.2871000033337623,
+            0.29090000316500664,
+            0.25209999876096845,
+            0.2680000034160912,
+            0.25910000840667635,
+            0.28139998903498054,
+            0.3269000008003786
+          ],
+          "characters": 2537,
+          "bytes": 2537,
+          "body_sha256": "df46e4c6bdd027591fd849892e2cac8305ce4293694392b38728bec4cd0f9078",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.27319999935571104,
+          "samples_ms": [
+            0.24049999774433672,
+            0.3778999962378293,
+            0.2674999996088445,
+            0.26470000739209354,
+            0.27319999935571104,
+            0.48880001122597605,
+            0.2734000008786097,
+            0.2666999935172498,
+            0.2840999950421974,
+            0.28160000510979444,
+            0.2268999960506335,
+            0.25120000645983964,
+            0.2449000021442771,
+            0.28229999588802457,
+            0.29599999834317714
+          ],
+          "characters": 1406,
+          "bytes": 1406,
+          "body_sha256": "1f3f0e9c232e6de569bd9a841cb2d53bfa4a2006b5bd32a4f7516f6f03e62e48",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.4704000020865351,
+          "samples_ms": [
+            0.4337999998824671,
+            0.44750000233761966,
+            0.348299989127554,
+            0.5547000037040561,
+            0.2609000075608492,
+            0.5201000021770597,
+            0.3252000024076551,
+            0.5653999978676438,
+            0.5454000056488439,
+            0.4675999953178689,
+            1.2369000032776967,
+            1.3700999988941476,
+            0.2648000081535429,
+            0.4704000020865351,
+            0.5257000011624768
+          ],
+          "characters": 2537,
+          "bytes": 2537,
+          "body_sha256": "b3acf8564f65b4298b614f83e40547874d00cc225fb6bf04c7e149da23ee5d66",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm:230:37",
+              "override_index": 0,
+              "owner": "/obj/machinery/vending",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 230,
+              "source_total_lines": 22,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.39230000402312726,
+          "samples_ms": [
+            0.3668999997898936,
+            0.32669999927747995,
+            0.308899994706735,
+            0.4639999970095232,
+            0.23119999968912452,
+            0.3876999981002882,
+            0.3242999955546111,
+            0.4861999914282933,
+            0.31280000985134393,
+            0.45849999878555536,
+            0.6036999984644353,
+            0.5265000072540715,
+            0.4160999960731715,
+            0.44519999937620014,
+            0.39230000402312726
+          ],
+          "characters": 1383,
+          "bytes": 1383,
+          "body_sha256": "07b74136d68c2dfdb2e3d51085a00eaae73705583ff1889384247ee77713f0e9",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm:230:37",
+              "override_index": 0,
+              "owner": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.3330000035930425,
+          "samples_ms": [
+            0.3870000073220581,
+            0.2496999950380996,
+            0.32360000477638096,
+            0.4126999992877245,
+            0.23239999427460134,
+            0.3552999987732619,
+            0.32780000765342265,
+            0.4295999970054254,
+            0.2896999940276146,
+            0.3260999947087839,
+            1.69419999292586,
+            0.35119999665766954,
+            0.24219999613706023,
+            0.3330000035930425,
+            0.6753999914508313
+          ],
+          "characters": 2577,
+          "bytes": 2577,
+          "body_sha256": "e75cb6790316df137985a7c00130032446a11379cc8ee64910b925603d67dec8",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 230,
+              "source_total_lines": 22,
+              "source_truncated": false,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.3767000016523525,
+          "samples_ms": [
+            0.3149000112898648,
+            0.4408999957377091,
+            0.37650000012945384,
+            0.3769000031752512,
+            0.2125999890267849,
+            0.36469999758992344,
+            0.42189999658148736,
+            0.4084000102011487,
+            0.3767000016523525,
+            0.36269999691285193,
+            0.41619999683462083,
+            0.9264999971492216,
+            0.24519998987670988,
+            0.3912000101990998,
+            0.32619999547023326
+          ],
+          "characters": 2578,
+          "bytes": 2578,
+          "body_sha256": "e9ffc2e20d0006e1682f4ff5b492298dbde245454f4203464f8605158054b8cf",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 230,
+              "source_total_lines": 22,
+              "source_truncated": false,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.3913999971700832,
+          "samples_ms": [
+            0.3998000029241666,
+            0.2457000082358718,
+            0.3096999862464145,
+            0.41340000461786985,
+            0.2170999941881746,
+            0.4057999904034659,
+            0.25769999774638563,
+            0.3904999903170392,
+            0.26709999656304717,
+            0.42810000013560057,
+            11.697800000547431,
+            0.40099999750964344,
+            0.28199999360367656,
+            0.3913999971700832,
+            0.4813000123249367
+          ],
+          "characters": 1498,
+          "bytes": 1498,
+          "body_sha256": "1b730b65e0606968b05fc507fb0d9b60430e8939f36885c1849912b73b0d09e2",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "airlock-close",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.3735999925993383,
+          "samples_ms": [
+            0.3328000020701438,
+            0.41590000910218805,
+            0.3876999981002882,
+            0.34919999598059803,
+            0.3735999925993383,
+            0.4988000000594184,
+            0.3541000041877851,
+            0.48099999548867345,
+            0.3954999992856756,
+            0.46100000326987356,
+            0.3400999994482845,
+            0.3113999991910532,
+            0.32380000629927963,
+            0.3110999969067052,
+            0.4020000051241368
+          ],
+          "characters": 5158,
+          "bytes": 5158,
+          "body_sha256": "3bc8a50cc46919b63aa3882e8cf5598077879d6394d1521b26d81df51644b554",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\doors\\airlock.dm:1481:34",
+              "override_index": 0,
+              "owner": "/obj/machinery/door/airlock",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\doors\\door.dm:621:31",
+              "override_index": 0,
+              "owner": "/obj/machinery/door",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.28399999428074807,
+          "samples_ms": [
+            0.2936000091722235,
+            0.39310001011472195,
+            0.32190000638365746,
+            0.2773000014713034,
+            0.3144000074826181,
+            0.39770000148564577,
+            0.27329998556524515,
+            0.2830000012181699,
+            0.3201000072294846,
+            0.28399999428074807,
+            0.2575000107754022,
+            0.25610000011511147,
+            0.24370000755880028,
+            0.23429999419022352,
+            0.30189999961294234
+          ],
+          "characters": 2569,
+          "bytes": 2569,
+          "body_sha256": "2ea9efa1f7eff56aa8ffdfb01cefc8d0ea69078cece3432fc535fb495410c037",
+          "rows": [
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 12.0,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.27209999097976834,
+          "samples_ms": [
+            0.2806999982567504,
+            0.33930000790860504,
+            0.2116999967256561,
+            0.20950000907760113,
+            0.335000004270114,
+            0.3536000003805384,
+            0.25409999943803996,
+            0.37480000173673034,
+            0.27209999097976834,
+            0.2877000079024583,
+            0.21860000560991466,
+            0.2457999944454059,
+            0.23010000586509705,
+            0.21490000654011965,
+            0.2835000050254166
+          ],
+          "characters": 984,
+          "bytes": 984,
+          "body_sha256": "c72b086d1f92b46960e7bd1e3f93ef35812eb9fe7c07b587b54b5f27fdda3e98",
+          "rows": [
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 12.0,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.5519999976968393,
+          "samples_ms": [
+            0.6027999916113913,
+            0.5548999906750396,
+            0.530999997863546,
+            0.6594000005861744,
+            0.3332999913254753,
+            0.5412000027718022,
+            0.5271999980323017,
+            0.4008999967481941,
+            0.40249999437946826,
+            0.9457999985897914,
+            0.7169000018620864,
+            0.5836999916937202,
+            0.3315999929327518,
+            0.5519999976968393,
+            0.603599997702986
+          ],
+          "characters": 5162,
+          "bytes": 5162,
+          "body_sha256": "d8b149ad892b54310aeafa17047f1a1bd79923f2a2397acc24328924cbd99776",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\doors\\airlock.dm:1481:34",
+              "override_index": 0,
+              "owner": "/obj/machinery/door/airlock",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 1481,
+              "source_total_lines": 60,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\doors\\door.dm:621:31",
+              "override_index": 0,
+              "owner": "/obj/machinery/door",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 621,
+              "source_total_lines": 36,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.4067999980179593,
+          "samples_ms": [
+            0.48069999320432544,
+            0.42240000038873404,
+            0.4067999980179593,
+            0.5424999981187284,
+            0.25490000552963465,
+            0.3112999984296039,
+            0.49700000090524554,
+            0.38529999437741935,
+            0.3269000008003786,
+            0.3625000099418685,
+            0.38490000588353723,
+            0.5163000023458153,
+            0.28059999749530107,
+            0.4867999959969893,
+            0.48689999675843865
+          ],
+          "characters": 1440,
+          "bytes": 1440,
+          "body_sha256": "ee70e3db9c4af899ebc5f1d01ebede7c6732383a32723b0c7f354b597099d0ae",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\doors\\airlock.dm:1481:34",
+              "override_index": 0,
+              "owner": "/obj/machinery/door/airlock"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\doors\\door.dm:621:31",
+              "override_index": 0,
+              "owner": "/obj/machinery/door"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.37740000698249787,
+          "samples_ms": [
+            0.450999999884516,
+            0.414399997680448,
+            0.4191000043647364,
+            0.3850999928545207,
+            0.3234000032534823,
+            0.3277000068919733,
+            0.3563000063877553,
+            0.4064000095240772,
+            0.2440999960526824,
+            0.37740000698249787,
+            0.6373999931383878,
+            0.35879999632015824,
+            0.29490000451914966,
+            0.33650000113993883,
+            0.4743000026792288
+          ],
+          "characters": 2834,
+          "bytes": 2834,
+          "body_sha256": "f6a9c7984e5745bdcfd50c9af3de568bce7c3520800db08fb915d5f08524dc13",
+          "rows": [
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 1481,
+              "source_total_lines": 60,
+              "source_truncated": true,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.41000000783242285,
+          "samples_ms": [
+            0.4023999936180189,
+            0.461499992525205,
+            0.425199992605485,
+            0.40189998981077224,
+            0.24160000612027943,
+            0.29170000925660133,
+            0.49109999963548034,
+            0.414699999964796,
+            0.3856999974232167,
+            0.3012999950442463,
+            0.41000000783242285,
+            0.46549999387934804,
+            0.31850000959821045,
+            0.4748999926960096,
+            0.42389999725855887
+          ],
+          "characters": 3506,
+          "bytes": 3506,
+          "body_sha256": "8a546903b849a584e626c736434acad447d3b86d46ac93ef554dfaf0159fc067",
+          "rows": [
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 1481,
+              "source_total_lines": 60,
+              "source_truncated": false,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.3065000055357814,
+          "samples_ms": [
+            0.3623000084189698,
+            0.251600009505637,
+            0.39169999945443124,
+            0.298099999781698,
+            0.2300000051036477,
+            0.2927000023191795,
+            0.298700004350394,
+            0.38070000300649554,
+            0.2855000057024881,
+            0.421199991251342,
+            0.3470999945420772,
+            0.3065000055357814,
+            0.2521999995224178,
+            0.3353999927639961,
+            0.7851999980630353
+          ],
+          "characters": 1076,
+          "bytes": 1076,
+          "body_sha256": "772b762b4f33430db5f2d4b9c22db6034fb1ebd6973af178dcab41e850b3872b",
+          "rows": [
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 12.0,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "hydroponics-process",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.3837999975075945,
+          "samples_ms": [
+            0.4047999973408878,
+            0.45980000868439674,
+            0.35370000114198774,
+            0.3614000015659258,
+            0.3837999975075945,
+            0.4915000026812777,
+            0.33569999504834414,
+            0.3930999955628067,
+            0.45870000030845404,
+            0.39200000173877925,
+            0.33209999673999846,
+            0.35060000664088875,
+            0.375000003259629,
+            0.3327000013086945,
+            0.40699999954085797
+          ],
+          "characters": 7169,
+          "bytes": 7169,
+          "body_sha256": "216b05794a2aabf6e01fd0b385e12d8018f65952eba73a11a19686d1cd616de0",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm:290:35",
+              "override_index": 0,
+              "owner": "/obj/machinery/hydroponics",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\_machinery.dm:310:23",
+              "override_index": 0,
+              "owner": "/obj/machinery",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem\\processing\\processing.dm:48:20",
+              "override_index": 0,
+              "owner": "/datum",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.291600008495152,
+          "samples_ms": [
+            0.30220000189729035,
+            0.33819999953266233,
+            0.23079999664332718,
+            0.23790000705048442,
+            0.2958999975817278,
+            0.3657000052044168,
+            0.25040000036824495,
+            0.27180000324733555,
+            0.29749999521300197,
+            0.34149999555666,
+            0.22620000527240336,
+            0.23770000552758574,
+            0.291600008495152,
+            0.22309999621938914,
+            0.3698999935295433
+          ],
+          "characters": 2849,
+          "bytes": 2849,
+          "body_sha256": "e57c69b1d55bcc90be7e920ab90c87dc36ec1ddd0d198bc7176e82991af5fade",
+          "rows": [
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.2631999959703535,
+          "samples_ms": [
+            0.2803999959724024,
+            0.38150000909809023,
+            0.23830001009628177,
+            0.23549998877570033,
+            0.27520000003278255,
+            0.3291999892098829,
+            0.24429999757558107,
+            0.2631999959703535,
+            0.3237000055378303,
+            0.31149999995250255,
+            0.21009999909438193,
+            0.21680000645574182,
+            0.2801000082399696,
+            0.21800000104121864,
+            0.2569999924162403
+          ],
+          "characters": 950,
+          "bytes": 950,
+          "body_sha256": "73fe3810757a5f7852459d7303608a9cd917d917920b29dfa427ba1997f55e16",
+          "rows": [
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.5684000061592087,
+          "samples_ms": [
+            0.42799999937415123,
+            0.5735999875469133,
+            0.6015999970259145,
+            0.5476999940583482,
+            0.4167000006418675,
+            0.5684000061592087,
+            0.5440999957500026,
+            0.5713999998988584,
+            0.4322000022511929,
+            0.41170000622514635,
+            0.7148000004235655,
+            0.6317000079434365,
+            0.5550000059884042,
+            0.5763999943155795,
+            0.8481999975629151
+          ],
+          "characters": 7587,
+          "bytes": 7587,
+          "body_sha256": "4da24199fd3703ff1a6f5ae126bb7b58d694963906b6b0a8ebe0ad6084ca4033",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm:290:35",
+              "override_index": 0,
+              "owner": "/obj/machinery/hydroponics",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 290,
+              "source_total_lines": 166,
+              "source_truncated": true
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\_machinery.dm:310:23",
+              "override_index": 0,
+              "owner": "/obj/machinery",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 310,
+              "source_total_lines": 2,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem\\processing\\processing.dm:48:20",
+              "override_index": 0,
+              "owner": "/datum",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 48,
+              "source_total_lines": 3,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.42270000267308205,
+          "samples_ms": [
+            0.461799994809553,
+            0.4442999925231561,
+            0.37959999463055283,
+            0.5088000034447759,
+            0.30450000485870987,
+            0.3904000041075051,
+            0.5097999965073541,
+            0.4932000010740012,
+            0.42270000267308205,
+            0.35990000469610095,
+            0.36439999530557543,
+            3.047200007131323,
+            0.341799997841008,
+            0.42149999353569,
+            0.4489999992074445
+          ],
+          "characters": 2821,
+          "bytes": 2821,
+          "body_sha256": "fa517122f754814f02d7ac134f9545efd7388838969fdc21f1a1afb74cc1aeaf",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm:290:35",
+              "override_index": 0,
+              "owner": "/obj/machinery/hydroponics"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\machinery\\_machinery.dm:310:23",
+              "override_index": 0,
+              "owner": "/obj/machinery"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem\\processing\\processing.dm:48:20",
+              "override_index": 0,
+              "owner": "/datum"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.364200008334592,
+          "samples_ms": [
+            0.49199999193660915,
+            0.38729999505449086,
+            0.364200008334592,
+            0.4027999966638163,
+            0.35409998963586986,
+            0.4259999986970797,
+            0.35909999860450625,
+            0.5103000003146008,
+            0.25350000942125916,
+            0.3026000049430877,
+            0.35200000274926424,
+            4.996299991034903,
+            0.2823999966494739,
+            0.3491000097710639,
+            0.5855000053998083
+          ],
+          "characters": 3114,
+          "bytes": 3114,
+          "body_sha256": "b5a6e71a8d9039611625e9f21aa5eb48f89fd18cbe781497f7fa38cce62283ce",
+          "rows": [
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 290,
+              "source_total_lines": 166,
+              "source_truncated": true,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.4960999940522015,
+          "samples_ms": [
+            0.45879998651798815,
+            0.5636999994749203,
+            0.3862000012304634,
+            0.6357000092975795,
+            0.34670000604819506,
+            0.40210000588558614,
+            0.4960999940522015,
+            0.43629998981487006,
+            0.5462000117404386,
+            0.3281999961473048,
+            0.5074999935459346,
+            1.3088999985484406,
+            0.3412000078242272,
+            0.5863999977009371,
+            0.5997000116622075
+          ],
+          "characters": 8916,
+          "bytes": 8916,
+          "body_sha256": "b3f8aa6b6ef7ad6ed8e5417f4c9ce20bedba48bac8cb9631ea5b7716b47c1f79",
+          "rows": [
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 290,
+              "source_total_lines": 166,
+              "source_truncated": false,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.3175000019837171,
+          "samples_ms": [
+            0.413799993111752,
+            0.26590000197757035,
+            0.30869999318383634,
+            0.43000000005122274,
+            0.26169999910052866,
+            0.29120000544935465,
+            0.34500000765547156,
+            0.37000000884290785,
+            0.26559999969322234,
+            0.3175000019837171,
+            0.24290000146720558,
+            1.7260999884456396,
+            0.24870000197552145,
+            0.33549999352544546,
+            0.4189000028418377
+          ],
+          "characters": 1042,
+          "bytes": 1042,
+          "body_sha256": "3e5bfdc710eb2aa78974f715ded9bbe8cca72a4f1345b366cc1e3f09fc37138d",
+          "rows": [
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 12.0,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "spell-check",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.28049999673385173,
+          "samples_ms": [
+            0.29719999292865396,
+            0.28049999673385173,
+            0.258400003076531,
+            0.27230000705458224,
+            0.34840000444091856,
+            0.37009999505244195,
+            0.3265999985160306,
+            0.2733000001171604,
+            0.30139999580569565,
+            0.3282999969087541,
+            0.2535999956307933,
+            0.27529998624231666,
+            0.30590000096708536,
+            0.24000000848900527,
+            0.2638000005390495
+          ],
+          "characters": 4627,
+          "bytes": 4627,
+          "body_sha256": "34e8b1d2fc12ebad030e61e7c06b88f9a42297b6ac5e3e4b17f049e91947a016",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\spells\\spell.dm:152:49",
+              "override_index": 0,
+              "owner": "/datum/action/cooldown/spell",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.2766999969026074,
+          "samples_ms": [
+            0.2766999969026074,
+            0.3484999906504527,
+            0.22529999841935933,
+            0.22149999858811498,
+            0.3208999987691641,
+            0.27069999487139285,
+            0.28449999808799475,
+            0.32839999767020345,
+            0.3659999929368496,
+            0.304599991068244,
+            0.23360000341199338,
+            0.2615999983390793,
+            0.29769999673590064,
+            0.27520000003278255,
+            0.24900000425986946
+          ],
+          "characters": 3102,
+          "bytes": 3102,
+          "body_sha256": "46c4dbc640e76e20d33417df43beabb2317064e8cc01d213157571a427abb8bb",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 12.0,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.24710000434424728,
+          "samples_ms": [
+            0.27689999842550606,
+            0.30849999166093767,
+            0.1917999907163903,
+            0.2066000015474856,
+            0.23379999038297683,
+            0.2521999995224178,
+            0.31350000062957406,
+            0.2533999941078946,
+            0.29850000282749534,
+            0.2027000009547919,
+            0.28649999876506627,
+            0.22260000696405768,
+            0.19659999816212803,
+            0.24710000434424728,
+            0.24470000062137842
+          ],
+          "characters": 1116,
+          "bytes": 1116,
+          "body_sha256": "c601524e03c9e1107974ad4a173157010ffc570b90b36e99835bf3b5b58c4c2d",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 12.0,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.3868000057991594,
+          "samples_ms": [
+            0.4569000011542812,
+            0.30020000122021884,
+            0.33969999640248716,
+            0.3944999916711822,
+            0.2835000050254166,
+            0.4141000099480152,
+            0.42810000013560057,
+            0.4405999934533611,
+            0.29209999775048345,
+            0.364200008334592,
+            0.3868000057991594,
+            0.31380000291392207,
+            0.30390000029001385,
+            0.5071000050520524,
+            0.5971999926259741
+          ],
+          "characters": 4513,
+          "bytes": 4513,
+          "body_sha256": "a836c250cf7d91b27289ffd891f59958fe311ff4ee8b01ade65b714dc585e533",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\spells\\spell.dm:152:49",
+              "override_index": 0,
+              "owner": "/datum/action/cooldown/spell",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 152,
+              "source_total_lines": 72,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.35459999344311655,
+          "samples_ms": [
+            0.42630000098142773,
+            0.4099000070709735,
+            0.25660000392235816,
+            0.40099999750964344,
+            0.22610000451095402,
+            0.3547999949660152,
+            0.3308000013930723,
+            0.3564000071492046,
+            0.35459999344311655,
+            0.20670000230893493,
+            0.22899999748915434,
+            0.2753000007942319,
+            0.228599994443357,
+            0.40820000867825,
+            0.36669999826699495
+          ],
+          "characters": 864,
+          "bytes": 864,
+          "body_sha256": "d3ac77e46dd77910004a715a785498137887dd876c6c3668371a29548527b4c4",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\spells\\spell.dm:152:49",
+              "override_index": 0,
+              "owner": "/datum/action/cooldown/spell"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.32839999767020345,
+          "samples_ms": [
+            0.38299999141599983,
+            0.43829999049194157,
+            0.37480000173673034,
+            0.2806999982567504,
+            0.29749999521300197,
+            0.43879999429918826,
+            0.41229999624192715,
+            0.3868000057991594,
+            0.32839999767020345,
+            0.2905000001192093,
+            0.2886999864131212,
+            0.2666000073077157,
+            0.29370000993367285,
+            0.2766000106930733,
+            0.5507000023499131
+          ],
+          "characters": 3366,
+          "bytes": 3366,
+          "body_sha256": "dadb801da17e8a3f06cc52e5589be5dba8a95e26ab61111ac22a90bd34ec50b3",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 152,
+              "source_total_lines": 72,
+              "source_truncated": true,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.39850000757724047,
+          "samples_ms": [
+            0.4096000047866255,
+            0.5167000053916126,
+            0.32750000536907464,
+            0.39850000757724047,
+            0.28279999969527125,
+            0.4330000083427876,
+            0.37039999733678997,
+            0.3854000096907839,
+            0.4130999877816066,
+            0.2521999995224178,
+            0.2789999998640269,
+            0.48909999895840883,
+            0.31039999157655984,
+            0.4558000073302537,
+            0.4219000111334026
+          ],
+          "characters": 4783,
+          "bytes": 4783,
+          "body_sha256": "5f1e582ddff2fde4a554b28981fa9fae1f5e7cf406f98f82e1a02273f308102b",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 152,
+              "source_total_lines": 72,
+              "source_truncated": false,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.3020000003743917,
+          "samples_ms": [
+            0.35990000469610095,
+            0.40750000334810466,
+            0.3020000003743917,
+            0.36299999919719994,
+            0.2918999962275848,
+            0.37810001231264323,
+            0.29079998785164207,
+            0.3704000118887052,
+            0.2621999883558601,
+            0.2302999928360805,
+            0.23680001322645694,
+            0.23629999486729503,
+            0.32199999259319156,
+            0.2572999947005883,
+            0.3868999920086935
+          ],
+          "characters": 1208,
+          "bytes": 1208,
+          "body_sha256": "a84afae84dd9ecf4cd3b1cc3922e4749d231ec5967356e00df18db9a349239e7",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 12.0,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "backpack-initialize",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.43509999522939324,
+          "samples_ms": [
+            0.4273999948054552,
+            0.4820000031031668,
+            0.4057000041939318,
+            0.45479999971576035,
+            0.414699999964796,
+            0.5721000052290037,
+            0.5392000020947307,
+            0.4057000041939318,
+            0.42799999937415123,
+            0.5225000058999285,
+            0.5504000000655651,
+            0.4351999959908426,
+            0.40180000360123813,
+            0.40859999717213213,
+            0.43509999522939324
+          ],
+          "characters": 8668,
+          "bytes": 8668,
+          "body_sha256": "2ed2fb057716bcbb7d112234eb93648b58f51d2473ed6ed8a7e1cbf5a5aa52f7",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm:31:38",
+              "override_index": 0,
+              "owner": "/obj/item/storage/backpack",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items\\storage\\storage.dm:15:29",
+              "override_index": 0,
+              "owner": "/obj/item/storage",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items.dm:244:21",
+              "override_index": 0,
+              "owner": "/obj/item",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\objs.dm:62:16",
+              "override_index": 0,
+              "owner": "/obj",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atoms_movable.dm:152:25",
+              "override_index": 0,
+              "owner": "/atom/movable",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atom\\atoms_initializing_EXPENSIVE.dm:115:22",
+              "override_index": 0,
+              "owner": "/atom",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.23700000019744039,
+          "samples_ms": [
+            0.2398999931756407,
+            0.23219999275170267,
+            0.24120000307448208,
+            0.21819998801220208,
+            0.21230000129435211,
+            0.30169999809004366,
+            0.2550999925006181,
+            0.2325000095879659,
+            0.2683000057004392,
+            0.21320000814739615,
+            0.26259999140165746,
+            0.23700000019744039,
+            0.23800000781193376,
+            0.20300000323913991,
+            0.23349998809862882
+          ],
+          "characters": 1118,
+          "bytes": 1118,
+          "body_sha256": "3878ca3eb1f2e47f2591c51fe719313635fa67165c44ccc1bf4add97c28087d2",
+          "rows": [
+            {
+              "column": 38,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm",
+              "implementation_owner": "/obj/item/storage/backpack",
+              "kind": "proc",
+              "line": 31,
+              "name": "Initialize",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/item/storage",
+              "score": 12.0,
+              "symbol": "/obj/item/storage/backpack/proc/Initialize",
+              "type_path": "/obj/item/storage/backpack"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.22840000747237355,
+          "samples_ms": [
+            0.22840000747237355,
+            0.1880000054370612,
+            0.21139999444130808,
+            0.2648000081535429,
+            0.22769998759031296,
+            0.2440999960526824,
+            0.29520000680349767,
+            0.2221999893663451,
+            0.2023999986704439,
+            0.22319999698083848,
+            0.23859999782871455,
+            0.2590999938547611,
+            0.29779999749735,
+            0.2617000136524439,
+            0.20899999071843922
+          ],
+          "characters": 967,
+          "bytes": 967,
+          "body_sha256": "7216c3ab12d07275d5ce8608b729acc94e7b731b903144a27d80cf2771d336a7",
+          "rows": [
+            {
+              "column": 38,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm",
+              "implementation_owner": "/obj/item/storage/backpack",
+              "kind": "proc",
+              "line": 31,
+              "name": "Initialize",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/item/storage",
+              "score": 12.0,
+              "symbol": "/obj/item/storage/backpack/proc/Initialize",
+              "type_path": "/obj/item/storage/backpack"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.6677000055788085,
+          "samples_ms": [
+            0.7249000045703724,
+            0.5138999986229464,
+            0.556500002858229,
+            0.7700999994995072,
+            0.8059999963734299,
+            0.5816000048071146,
+            0.6677000055788085,
+            0.6024000031175092,
+            0.8692000119481236,
+            0.48149999929592013,
+            0.5268999957479537,
+            0.7254999945871532,
+            0.5366999976104125,
+            0.686999992467463,
+            1.1454000050434843
+          ],
+          "characters": 12014,
+          "bytes": 12014,
+          "body_sha256": "401fc6e95cfcd34ec873de2f2f6dc3dba445cc20c0f600754bdb6454926ac481",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm:31:38",
+              "override_index": 0,
+              "owner": "/obj/item/storage/backpack",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 31,
+              "source_total_lines": 3,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items\\storage\\storage.dm:15:29",
+              "override_index": 0,
+              "owner": "/obj/item/storage",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 15,
+              "source_total_lines": 6,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items.dm:244:21",
+              "override_index": 0,
+              "owner": "/obj/item",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 244,
+              "source_total_lines": 31,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\objs.dm:62:16",
+              "override_index": 0,
+              "owner": "/obj",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 62,
+              "source_total_lines": 9,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atoms_movable.dm:152:25",
+              "override_index": 0,
+              "owner": "/atom/movable",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 152,
+              "source_total_lines": 65,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atom\\atoms_initializing_EXPENSIVE.dm:115:22",
+              "override_index": 0,
+              "owner": "/atom",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 115,
+              "source_total_lines": 45,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.494399995659478,
+          "samples_ms": [
+            0.5898999952478334,
+            0.494399995659478,
+            0.5504000000655651,
+            0.44019999040756375,
+            0.5444999987957999,
+            0.4262000002199784,
+            0.47230000200215727,
+            0.5400999943958595,
+            0.4884999943897128,
+            0.3544000064721331,
+            0.39939999987836927,
+            0.562399989576079,
+            0.44219999108463526,
+            0.5899999960092828,
+            0.5945000011706725
+          ],
+          "characters": 4512,
+          "bytes": 4512,
+          "body_sha256": "b0ad87738ee0311e7c86aa49a26ab722ef727f809169e49ea4e8daaf985f80c4",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm:31:38",
+              "override_index": 0,
+              "owner": "/obj/item/storage/backpack"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items\\storage\\storage.dm:15:29",
+              "override_index": 0,
+              "owner": "/obj/item/storage"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\items.dm:244:21",
+              "override_index": 0,
+              "owner": "/obj/item"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\objects\\objs.dm:62:16",
+              "override_index": 0,
+              "owner": "/obj"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atoms_movable.dm:152:25",
+              "override_index": 0,
+              "owner": "/atom/movable"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atom\\atoms_initializing_EXPENSIVE.dm:115:22",
+              "override_index": 0,
+              "owner": "/atom"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.3420999855734408,
+          "samples_ms": [
+            0.44099999649915844,
+            0.3364000003784895,
+            0.4380999889690429,
+            0.338099998771213,
+            0.40499999886378646,
+            0.3728000010596588,
+            0.30870000773575157,
+            0.37540000630542636,
+            0.3046999918296933,
+            0.3293000045232475,
+            0.3420999855734408,
+            0.26599998818710446,
+            0.40820000867825,
+            0.30449999030679464,
+            0.5336999893188477
+          ],
+          "characters": 1351,
+          "bytes": 1351,
+          "body_sha256": "4920f734b17fff5f7ae4af571eacb7244c9055fa50b73408da1e28d1723b6a5a",
+          "rows": [
+            {
+              "column": 38,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm",
+              "implementation_owner": "/obj/item/storage/backpack",
+              "kind": "proc",
+              "line": 31,
+              "name": "Initialize",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/item/storage",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 31,
+              "source_total_lines": 3,
+              "source_truncated": false,
+              "symbol": "/obj/item/storage/backpack/proc/Initialize",
+              "type_path": "/obj/item/storage/backpack"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.3296999930171296,
+          "samples_ms": [
+            0.4047999973408878,
+            0.41459999920334667,
+            0.31829999352339655,
+            0.3431999939493835,
+            0.28449999808799475,
+            0.3296999930171296,
+            0.40389999048784375,
+            0.30250000418163836,
+            0.2961999998660758,
+            0.2128000051015988,
+            0.22820000594947487,
+            0.36169998929835856,
+            0.2714000002015382,
+            0.4062999942107126,
+            0.37480000173673034
+          ],
+          "characters": 1352,
+          "bytes": 1352,
+          "body_sha256": "6e142b1e1aa4525248a4ea989e956c1e8f82f6d9645e1cb005702f72850f16f5",
+          "rows": [
+            {
+              "column": 38,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm",
+              "implementation_owner": "/obj/item/storage/backpack",
+              "kind": "proc",
+              "line": 31,
+              "name": "Initialize",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/item/storage",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 31,
+              "source_total_lines": 3,
+              "source_truncated": false,
+              "symbol": "/obj/item/storage/backpack/proc/Initialize",
+              "type_path": "/obj/item/storage/backpack"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.3392999933566898,
+          "samples_ms": [
+            0.4287999909138307,
+            0.35000000207219273,
+            0.36439999530557543,
+            0.3643000090960413,
+            0.3887000057147816,
+            0.31689999741502106,
+            0.2879999956348911,
+            0.477100009447895,
+            0.2327999973203987,
+            0.2297000028192997,
+            0.30599998717661947,
+            0.3110999969067052,
+            0.3392999933566898,
+            0.30669999250676483,
+            0.4600999964168295
+          ],
+          "characters": 1059,
+          "bytes": 1059,
+          "body_sha256": "1cdce5d8ee939a52d326cd962a191fb81e4a88b03c6f276386ce2e88fc99c650",
+          "rows": [
+            {
+              "column": 38,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\game\\objects\\items\\storage\\backpack.dm",
+              "implementation_owner": "/obj/item/storage/backpack",
+              "kind": "proc",
+              "line": 31,
+              "name": "Initialize",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/item/storage",
+              "score": 12.0,
+              "symbol": "/obj/item/storage/backpack/proc/Initialize",
+              "type_path": "/obj/item/storage/backpack"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "atmos-fire",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.31800000579096377,
+          "samples_ms": [
+            0.3648999991128221,
+            0.3268000000389293,
+            0.36669999826699495,
+            0.2717000024858862,
+            0.2834999904735014,
+            0.3637000045273453,
+            0.4023999936180189,
+            0.4493000014917925,
+            0.2820999943651259,
+            0.2872000040952116,
+            0.31800000579096377,
+            0.2978000120492652,
+            0.28670000028796494,
+            0.3868000057991594,
+            0.31040000612847507
+          ],
+          "characters": 4942,
+          "bytes": 4942,
+          "body_sha256": "9104b88a46bebd54c4c06c1c495dbb5dad715240e46e42a5f614699d127e0fc3",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem\\air.dm:108:37",
+              "override_index": 0,
+              "owner": "/datum/controller/subsystem/air",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem.dm:163:38",
+              "override_index": 0,
+              "owner": "/datum/controller/subsystem",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.2877000079024583,
+          "samples_ms": [
+            0.22110001009423286,
+            0.2877000079024583,
+            0.43450000521261245,
+            0.2308999974047765,
+            0.23440000950358808,
+            0.38520000816788524,
+            0.4664000007323921,
+            0.3333999920869246,
+            0.26020000223070383,
+            0.25910000840667635,
+            0.26160001289099455,
+            0.28449999808799475,
+            0.30479999259114265,
+            0.36270001146476716,
+            0.3544999926816672
+          ],
+          "characters": 2714,
+          "bytes": 2714,
+          "body_sha256": "df0db5cfd83e4f069c66cc0792b76328c1f14cefc46a937edc64aa33b9b22739",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/datum/controller/subsystem",
+              "file": "<rift>\\code\\controllers\\subsystem\\air.dm",
+              "implementation_owner": "/datum/controller/subsystem/air",
+              "kind": "proc",
+              "line": 108,
+              "name": "fire",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/controller/subsystem",
+              "score": 12.0,
+              "symbol": "/datum/controller/subsystem/air/proc/fire",
+              "type_path": "/datum/controller/subsystem/air"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.23710000095888972,
+          "samples_ms": [
+            0.19799999427050352,
+            0.26810000417754054,
+            0.23330000112764537,
+            0.2094000083161518,
+            0.2125999890267849,
+            0.27150000096298754,
+            0.23710000095888972,
+            0.25100000493694097,
+            0.2747999969869852,
+            0.21850000484846532,
+            0.20280000171624124,
+            0.1959000073838979,
+            0.2598999999463558,
+            0.2641000028233975,
+            0.3217000048607588
+          ],
+          "characters": 989,
+          "bytes": 989,
+          "body_sha256": "0ba2eb28be94c3f3bed57b1a79d8a0619ab71be450ba7d18f27082f68c9c4c97",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/datum/controller/subsystem",
+              "file": "<rift>\\code\\controllers\\subsystem\\air.dm",
+              "implementation_owner": "/datum/controller/subsystem/air",
+              "kind": "proc",
+              "line": 108,
+              "name": "fire",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/controller/subsystem",
+              "score": 12.0,
+              "symbol": "/datum/controller/subsystem/air/proc/fire",
+              "type_path": "/datum/controller/subsystem/air"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.42150000808760524,
+          "samples_ms": [
+            0.5245999927865341,
+            0.4132000030949712,
+            0.5447000003186986,
+            0.39600000309292227,
+            0.42150000808760524,
+            0.338700003339909,
+            0.48919999971985817,
+            0.46290000318549573,
+            0.417499992181547,
+            0.30700000934302807,
+            0.3913999971700832,
+            0.502099996083416,
+            0.39760000072419643,
+            0.5049999890616164,
+            0.5485000001499429
+          ],
+          "characters": 5285,
+          "bytes": 5285,
+          "body_sha256": "47f9a7fbcb884e7c2c7140b02f47b1da7fcd69c495207d8e1aabda83d6707d53",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem\\air.dm:108:37",
+              "override_index": 0,
+              "owner": "/datum/controller/subsystem/air",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 108,
+              "source_total_lines": 124,
+              "source_truncated": true
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem.dm:163:38",
+              "override_index": 0,
+              "owner": "/datum/controller/subsystem",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 163,
+              "source_total_lines": 3,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.3429000062169507,
+          "samples_ms": [
+            0.34720000985544175,
+            0.3429000062169507,
+            0.29290000384207815,
+            0.3617999900598079,
+            0.28780000866390765,
+            0.37199999496806413,
+            0.2871000033337623,
+            0.3499000013107434,
+            0.3217999910702929,
+            0.2601000014692545,
+            0.31940000189933926,
+            0.3863000019919127,
+            0.2587999915704131,
+            0.39280000783037394,
+            0.38740001036785543
+          ],
+          "characters": 1378,
+          "bytes": 1378,
+          "body_sha256": "09170c512b493a732f3ed54ef153002176f7c3cc93c4c385e4c0ebe3760c023a",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem\\air.dm:108:37",
+              "override_index": 0,
+              "owner": "/datum/controller/subsystem/air"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\controllers\\subsystem.dm:163:38",
+              "override_index": 0,
+              "owner": "/datum/controller/subsystem"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.3718000079970807,
+          "samples_ms": [
+            0.4180000105407089,
+            0.3158000035909936,
+            0.44010000419802964,
+            0.2820000081555918,
+            0.3328000020701438,
+            0.3843000013148412,
+            0.3181000065524131,
+            0.39080000715330243,
+            0.25430000096093863,
+            0.39900001138448715,
+            0.5093999934615567,
+            0.31600000511389226,
+            0.29159999394323677,
+            0.3718000079970807,
+            0.46699999074917287
+          ],
+          "characters": 2979,
+          "bytes": 2979,
+          "body_sha256": "57398968a568a8317f957cc32d27e85d1bd2dc56dfe5e7271001d53eedd0c54c",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/datum/controller/subsystem",
+              "file": "<rift>\\code\\controllers\\subsystem\\air.dm",
+              "implementation_owner": "/datum/controller/subsystem/air",
+              "kind": "proc",
+              "line": 108,
+              "name": "fire",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/controller/subsystem",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 108,
+              "source_total_lines": 124,
+              "source_truncated": true,
+              "symbol": "/datum/controller/subsystem/air/proc/fire",
+              "type_path": "/datum/controller/subsystem/air"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.43709999590646476,
+          "samples_ms": [
+            0.38219999987632036,
+            0.5402999959187582,
+            0.33239999902434647,
+            0.5299000040395185,
+            0.40499999886378646,
+            0.48329999845009297,
+            0.3662999952211976,
+            0.44430000707507133,
+            0.5062999989604577,
+            0.2804000105243176,
+            0.42270000267308205,
+            0.4388999950606376,
+            0.30220000189729035,
+            0.4929999995511025,
+            0.43709999590646476
+          ],
+          "characters": 5745,
+          "bytes": 5745,
+          "body_sha256": "0d7f0391a4f2e1447570e0c3dbcce5fc1362fa04c7dc30a6c3d482536ef78522",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/datum/controller/subsystem",
+              "file": "<rift>\\code\\controllers\\subsystem\\air.dm",
+              "implementation_owner": "/datum/controller/subsystem/air",
+              "kind": "proc",
+              "line": 108,
+              "name": "fire",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/controller/subsystem",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 108,
+              "source_total_lines": 124,
+              "source_truncated": false,
+              "symbol": "/datum/controller/subsystem/air/proc/fire",
+              "type_path": "/datum/controller/subsystem/air"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.31960000342223793,
+          "samples_ms": [
+            0.4361000028438866,
+            0.3209999995306134,
+            0.26479999360162765,
+            0.2901999978348613,
+            0.4454000008990988,
+            0.45519998820964247,
+            0.32160000409930944,
+            0.37599999632220715,
+            0.2724999940255657,
+            0.2525000018067658,
+            0.302400003420189,
+            0.2893000055337325,
+            0.22230000467970967,
+            0.31960000342223793,
+            0.49220000801142305
+          ],
+          "characters": 1081,
+          "bytes": 1081,
+          "body_sha256": "8d976b45a88dbcdc29d3da8921874e260218759598f41f6936f66a0f32055606",
+          "rows": [
+            {
+              "column": 37,
+              "declaration_owner": "/datum/controller/subsystem",
+              "file": "<rift>\\code\\controllers\\subsystem\\air.dm",
+              "implementation_owner": "/datum/controller/subsystem/air",
+              "kind": "proc",
+              "line": 108,
+              "name": "fire",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/controller/subsystem",
+              "score": 12.0,
+              "symbol": "/datum/controller/subsystem/air/proc/fire",
+              "type_path": "/datum/controller/subsystem/air"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "human-initialize",
+      "views": {
+        "baseline_exact": {
+          "median_ms": 0.5650999955832958,
+          "samples_ms": [
+            0.7825000066077337,
+            0.5189999938011169,
+            0.487299999804236,
+            0.4828999954042956,
+            0.5004999984521419,
+            0.566099988645874,
+            0.5873000045539811,
+            0.5166999908396974,
+            0.5677000008290634,
+            0.5650999955832958,
+            0.6138000026112422,
+            0.4997999931219965,
+            0.51710000843741,
+            0.6943000043975189,
+            0.8061999978963286
+          ],
+          "characters": 14273,
+          "bytes": 14273,
+          "body_sha256": "a42fda64bbeb230ff7000dbc5b7eaa8ef6b94278c36b1e2d26dc8a9c6cecad30",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm:1:36",
+              "override_index": 0,
+              "owner": "/mob/living/carbon/human",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm:5:36",
+              "override_index": 1,
+              "owner": "/mob/living/carbon/human",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm:72:36",
+              "override_index": 2,
+              "owner": "/mob/living/carbon/human",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\carbon\\carbon.dm:1:30",
+              "override_index": 0,
+              "owner": "/mob/living/carbon",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\living.dm:1:23",
+              "override_index": 0,
+              "owner": "/mob/living",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\mob.dm:81:16",
+              "override_index": 0,
+              "owner": "/mob",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\mob.dm:8:16",
+              "override_index": 1,
+              "owner": "/mob",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atoms_movable.dm:152:25",
+              "override_index": 0,
+              "owner": "/atom/movable",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atom\\atoms_initializing_EXPENSIVE.dm:115:22",
+              "override_index": 0,
+              "owner": "/atom",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot"
+            }
+          ]
+        },
+        "baseline_search": {
+          "median_ms": 0.3133999998681247,
+          "samples_ms": [
+            0.40689999877940863,
+            0.30519999563694,
+            0.3269000008003786,
+            0.2769999991869554,
+            0.2766999969026074,
+            0.27639999461825937,
+            0.3899000003002584,
+            0.2857000072253868,
+            0.43169999844394624,
+            0.27010000485461205,
+            0.3133999998681247,
+            0.28410000959411263,
+            0.32730000384617597,
+            0.3175000019837171,
+            0.4478999908315018
+          ],
+          "characters": 5294,
+          "bytes": 5294,
+          "body_sha256": "04e9d43a27e6b04d53e2e92142195580ee2050b3e3b205645d86b2a509a55830",
+          "rows": [
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 1,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 0,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 5,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 1,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 72,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 2,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            }
+          ]
+        },
+        "baseline_search_omit": {
+          "median_ms": 0.2753000007942319,
+          "samples_ms": [
+            0.2539999986765906,
+            0.28809999639634043,
+            0.2530000056140125,
+            0.2753000007942319,
+            0.25779999850783497,
+            0.3389000048628077,
+            0.3251000016462058,
+            0.25490000552963465,
+            0.30420000257436186,
+            0.3184000088367611,
+            0.27299999783281237,
+            0.24170000688172877,
+            0.24599999596830457,
+            0.36859999818261713,
+            0.36720000207424164
+          ],
+          "characters": 2239,
+          "bytes": 2239,
+          "body_sha256": "14c624c6546e9bc484c20fe3bfe2d864cac7ab70c67b4ef9c7e59cb47ba406c4",
+          "rows": [
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 1,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 0,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 5,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 1,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 72,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 2,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            }
+          ]
+        },
+        "candidate_exact": {
+          "median_ms": 0.8168000058503821,
+          "samples_ms": [
+            0.8211999956984073,
+            1.1067000014008954,
+            1.0504000092623755,
+            0.7213000062620267,
+            0.8489000028930604,
+            0.7933000015327707,
+            0.8037999941734597,
+            0.7105999975465238,
+            0.717400005669333,
+            0.6951000104891136,
+            1.5922000020509586,
+            0.8168000058503821,
+            0.7592000038130209,
+            1.3891999988118187,
+            1.2421999999787658
+          ],
+          "characters": 17982,
+          "bytes": 17982,
+          "body_sha256": "0d0b3e5ef8b13a6563592eeaad697135bcec100907aa7db513704a551592f74a",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm:1:36",
+              "override_index": 0,
+              "owner": "/mob/living/carbon/human",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 1,
+              "source_total_lines": 38,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm:5:36",
+              "override_index": 1,
+              "owner": "/mob/living/carbon/human",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 5,
+              "source_total_lines": 12,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm:72:36",
+              "override_index": 2,
+              "owner": "/mob/living/carbon/human",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 72,
+              "source_total_lines": 8,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\carbon\\carbon.dm:1:30",
+              "override_index": 0,
+              "owner": "/mob/living/carbon",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 1,
+              "source_total_lines": 12,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\living.dm:1:23",
+              "override_index": 0,
+              "owner": "/mob/living",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 1,
+              "source_total_lines": 24,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\mob.dm:81:16",
+              "override_index": 0,
+              "owner": "/mob",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 81,
+              "source_total_lines": 21,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\mob.dm:8:16",
+              "override_index": 1,
+              "owner": "/mob",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 8,
+              "source_total_lines": 3,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atoms_movable.dm:152:25",
+              "override_index": 0,
+              "owner": "/atom/movable",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 152,
+              "source_total_lines": 65,
+              "source_truncated": false
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atom\\atoms_initializing_EXPENSIVE.dm:115:22",
+              "override_index": 0,
+              "owner": "/atom",
+              "source_boundary": "parser_body_end",
+              "source_line_limit": 80,
+              "source_origin": "analysis_snapshot",
+              "source_start_column": 1,
+              "source_start_line": 115,
+              "source_total_lines": 45,
+              "source_truncated": false
+            }
+          ]
+        },
+        "candidate_exact_omit": {
+          "median_ms": 0.6113999988883734,
+          "samples_ms": [
+            0.5286000086925924,
+            0.5443000118248165,
+            0.6125999934738502,
+            0.7035000016912818,
+            0.4731999943032861,
+            0.6099000020185485,
+            0.868799994350411,
+            0.6113999988883734,
+            0.5636999994749203,
+            0.48580000293441117,
+            0.7142999966163188,
+            0.680800003465265,
+            0.45649999810848385,
+            0.7992000028025359,
+            0.8820999937597662
+          ],
+          "characters": 6070,
+          "bytes": 6070,
+          "body_sha256": "0b30a9bebf3cdedec9aed1b8553b6637321aab0209e25afe549c6818628db2a3",
+          "rows": [
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm:1:36",
+              "override_index": 0,
+              "owner": "/mob/living/carbon/human"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm:5:36",
+              "override_index": 1,
+              "owner": "/mob/living/carbon/human"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm:72:36",
+              "override_index": 2,
+              "owner": "/mob/living/carbon/human"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\carbon\\carbon.dm:1:30",
+              "override_index": 0,
+              "owner": "/mob/living/carbon"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\living\\living.dm:1:23",
+              "override_index": 0,
+              "owner": "/mob/living"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\modules\\mob\\mob.dm:81:16",
+              "override_index": 0,
+              "owner": "/mob"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\mob.dm:8:16",
+              "override_index": 1,
+              "owner": "/mob"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atoms_movable.dm:152:25",
+              "override_index": 0,
+              "owner": "/atom/movable"
+            },
+            {
+              "has_body": true,
+              "location": "<rift>\\code\\game\\atom\\atoms_initializing_EXPENSIVE.dm:115:22",
+              "override_index": 0,
+              "owner": "/atom"
+            }
+          ]
+        },
+        "candidate_search": {
+          "median_ms": 0.4887999966740608,
+          "samples_ms": [
+            0.6170999986352399,
+            0.4887999966740608,
+            0.5202999891480431,
+            0.335000004270114,
+            0.45259999751579016,
+            0.4403000057209283,
+            0.4354999982751906,
+            0.552500001504086,
+            0.37909999082330614,
+            0.4997000069124624,
+            0.6978000019444153,
+            0.40160000207833946,
+            0.5447000003186986,
+            0.4310000076657161,
+            0.6494999979622662
+          ],
+          "characters": 5859,
+          "bytes": 5859,
+          "body_sha256": "7ff7a4021577000576097fd6136e400724c92d4f7031dc4c8b9c901493d3d430",
+          "rows": [
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 1,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 0,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 1,
+              "source_total_lines": 38,
+              "source_truncated": false,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 5,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 1,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 5,
+              "source_total_lines": 12,
+              "source_truncated": false,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 72,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 2,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 72,
+              "source_total_lines": 8,
+              "source_truncated": false,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            }
+          ]
+        },
+        "candidate_search_200": {
+          "median_ms": 0.4192000051261857,
+          "samples_ms": [
+            0.421799995820038,
+            0.5104000010760501,
+            0.3952999977627769,
+            0.41429999691899866,
+            0.36269999691285193,
+            0.3733999910764396,
+            0.5051000043749809,
+            0.43659999209921807,
+            0.4177000082563609,
+            0.4192000051261857,
+            0.5398999928729609,
+            0.5155999970156699,
+            0.3460000007180497,
+            0.5020000098738819,
+            0.4124999977648258
+          ],
+          "characters": 5860,
+          "bytes": 5860,
+          "body_sha256": "392d202b918be6a16d4097507b559822a8409a2292512b82636bf4ecba3075d1",
+          "rows": [
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 1,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 0,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 1,
+              "source_total_lines": 38,
+              "source_truncated": false,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 5,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 1,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 5,
+              "source_total_lines": 12,
+              "source_truncated": false,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 72,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 2,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "source_boundary": "parser_body_end",
+              "source_start_column": 1,
+              "source_start_line": 72,
+              "source_total_lines": 8,
+              "source_truncated": false,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            }
+          ]
+        },
+        "candidate_search_omit": {
+          "median_ms": 0.4025999951409176,
+          "samples_ms": [
+            0.5355000030249357,
+            0.31230000604409724,
+            0.42410001333337277,
+            0.36780000664293766,
+            0.3825000021606684,
+            0.4335999983595684,
+            0.494699997943826,
+            0.4025999951409176,
+            0.3198000049451366,
+            0.2753000007942319,
+            0.6091000104788691,
+            0.37510000402107835,
+            0.41059999784920365,
+            0.3842000005533919,
+            0.5132999940542504
+          ],
+          "characters": 2331,
+          "bytes": 2331,
+          "body_sha256": "cd2f97850e562b291b2a6f6992b483d4253ff4ed00893db9a12497a65a36906c",
+          "rows": [
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 1,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 0,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\mob\\living\\carbon\\human\\human.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 5,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 1,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\modular_nova\\modules\\blooper\\atoms_movable.dm",
+              "implementation_owner": "/mob/living/carbon/human",
+              "kind": "proc",
+              "line": 72,
+              "name": "Initialize",
+              "override_count": 3,
+              "override_index": 2,
+              "parent": "/mob/living/carbon",
+              "score": 12.0,
+              "symbol": "/mob/living/carbon/human/proc/Initialize",
+              "type_path": "/mob/living/carbon/human"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "vending dispense product",
+      "views": {
+        "baseline_ranked": {
+          "median_ms": 1.360399997793138,
+          "samples_ms": [
+            1.287799997953698,
+            1.2504999904194847,
+            1.41789999906905,
+            1.2361999979475513,
+            1.6583999968133867,
+            1.3786999916192144,
+            1.349300000583753,
+            1.360399997793138,
+            1.284099998883903,
+            1.5505999908782542,
+            1.3438000023597851,
+            1.3627000007545575,
+            1.2820999982068315,
+            2.034799996181391,
+            1.567700004670769
+          ],
+          "characters": 8001,
+          "bytes": 8001,
+          "body_sha256": "e2a70f3b44767cc7fa12fabdbfe59522a93e87000bd2ed287880593a6fb55a77",
+          "rows": [
+            {
+              "column": 40,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 260,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 37.991,
+              "symbol": "/obj/machinery/vending/proc/on_dispense",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 37.267,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 34,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\_vending.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 252,
+              "name": "atom_break",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 30.965,
+              "symbol": "/obj/machinery/vending/proc/atom_break",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 53,
+              "declaration_owner": "/datum/fish_source/vending",
+              "file": "<rift>\\code\\modules\\fishing\\sources\\subtypes\\structures.dm",
+              "implementation_owner": "/datum/fish_source/vending",
+              "kind": "proc",
+              "line": 366,
+              "name": "spawn_vending_reward",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/fish_source",
+              "score": 29.899,
+              "symbol": "/datum/fish_source/vending/proc/spawn_vending_reward",
+              "type_path": "/datum/fish_source/vending"
+            },
+            {
+              "column": 39,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\throwing.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 8,
+              "name": "throw_item",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 27.997,
+              "symbol": "/obj/machinery/vending/proc/throw_item",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 33,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 147,
+              "name": "vend",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 27.801,
+              "symbol": "/obj/machinery/vending/proc/vend",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 44,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\wardrobes.dm",
+              "implementation_owner": "/obj/machinery/vending/wardrobe",
+              "kind": "proc",
+              "line": 26,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/vending",
+              "score": 27.497,
+              "symbol": "/obj/machinery/vending/wardrobe/proc/on_dispense",
+              "type_path": "/obj/machinery/vending/wardrobe"
+            },
+            {
+              "column": 42,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\hotdog.dm",
+              "implementation_owner": "/obj/machinery/vending/hotdog",
+              "kind": "proc",
+              "line": 54,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/vending",
+              "score": 27.191,
+              "symbol": "/obj/machinery/vending/hotdog/proc/on_dispense",
+              "type_path": "/obj/machinery/vending/hotdog"
+            },
+            {
+              "column": 40,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\cola.dm",
+              "implementation_owner": "/obj/machinery/vending/cola",
+              "kind": "proc",
+              "line": 66,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/vending",
+              "score": 26.939,
+              "symbol": "/obj/machinery/vending/cola/proc/on_dispense",
+              "type_path": "/obj/machinery/vending/cola"
+            },
+            {
+              "column": 43,
+              "declaration_owner": "/datum/fish_source",
+              "file": "<rift>\\code\\modules\\fishing\\sources\\subtypes\\structures.dm",
+              "implementation_owner": "/datum/fish_source/vending",
+              "kind": "proc",
+              "line": 338,
+              "name": "dispense_reward",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/fish_source",
+              "score": 26.877,
+              "symbol": "/datum/fish_source/vending/proc/dispense_reward",
+              "type_path": "/datum/fish_source/vending"
+            }
+          ]
+        },
+        "candidate_ranked": {
+          "median_ms": 1.6857000009622425,
+          "samples_ms": [
+            1.8940000009024516,
+            2.1902000007685274,
+            1.4304000069387257,
+            1.6857000009622425,
+            1.6519000055268407,
+            1.4452999894274399,
+            1.400699999067001,
+            1.6029999969759956,
+            1.4897000073688105,
+            1.2802999990526587,
+            2.5994999887188897,
+            2.066999993985519,
+            2.0299000025261194,
+            2.091000002110377,
+            2.3981000122148544
+          ],
+          "characters": 7961,
+          "bytes": 7961,
+          "body_sha256": "27e6bc082005f4242e1ea6f7652fd2f986e2425acaf9d5860802088d65ee9086",
+          "rows": [
+            {
+              "column": 40,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 260,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 37.422,
+              "symbol": "/obj/machinery/vending/proc/on_dispense",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 37,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\inventory.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 230,
+              "name": "dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 37.135,
+              "symbol": "/obj/machinery/vending/proc/dispense",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 34,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\_vending.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 252,
+              "name": "atom_break",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 31.029,
+              "symbol": "/obj/machinery/vending/proc/atom_break",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 53,
+              "declaration_owner": "/datum/fish_source/vending",
+              "file": "<rift>\\code\\modules\\fishing\\sources\\subtypes\\structures.dm",
+              "implementation_owner": "/datum/fish_source/vending",
+              "kind": "proc",
+              "line": 366,
+              "name": "spawn_vending_reward",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/fish_source",
+              "score": 29.969,
+              "symbol": "/datum/fish_source/vending/proc/spawn_vending_reward",
+              "type_path": "/datum/fish_source/vending"
+            },
+            {
+              "column": 39,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\throwing.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 8,
+              "name": "throw_item",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 28.512,
+              "symbol": "/obj/machinery/vending/proc/throw_item",
+              "type_path": "/obj/machinery/vending"
+            },
+            {
+              "column": 44,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\wardrobes.dm",
+              "implementation_owner": "/obj/machinery/vending/wardrobe",
+              "kind": "proc",
+              "line": 26,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/vending",
+              "score": 27.561,
+              "symbol": "/obj/machinery/vending/wardrobe/proc/on_dispense",
+              "type_path": "/obj/machinery/vending/wardrobe"
+            },
+            {
+              "column": 42,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\hotdog.dm",
+              "implementation_owner": "/obj/machinery/vending/hotdog",
+              "kind": "proc",
+              "line": 54,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/vending",
+              "score": 27.252,
+              "symbol": "/obj/machinery/vending/hotdog/proc/on_dispense",
+              "type_path": "/obj/machinery/vending/hotdog"
+            },
+            {
+              "column": 40,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\cola.dm",
+              "implementation_owner": "/obj/machinery/vending/cola",
+              "kind": "proc",
+              "line": 66,
+              "name": "on_dispense",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/vending",
+              "score": 26.998,
+              "symbol": "/obj/machinery/vending/cola/proc/on_dispense",
+              "type_path": "/obj/machinery/vending/cola"
+            },
+            {
+              "column": 43,
+              "declaration_owner": "/datum/fish_source",
+              "file": "<rift>\\code\\modules\\fishing\\sources\\subtypes\\structures.dm",
+              "implementation_owner": "/datum/fish_source/vending",
+              "kind": "proc",
+              "line": 338,
+              "name": "dispense_reward",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/fish_source",
+              "score": 26.935,
+              "symbol": "/datum/fish_source/vending/proc/dispense_reward",
+              "type_path": "/datum/fish_source/vending"
+            },
+            {
+              "column": 36,
+              "declaration_owner": "/obj/machinery/vending",
+              "file": "<rift>\\code\\modules\\vending\\vendor\\interaction.dm",
+              "implementation_owner": "/obj/machinery/vending",
+              "kind": "proc",
+              "line": 195,
+              "name": "freebie",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 26.558,
+              "symbol": "/obj/machinery/vending/proc/freebie",
+              "type_path": "/obj/machinery/vending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "airlock close crush",
+      "views": {
+        "baseline_ranked": {
+          "median_ms": 1.8779999954858795,
+          "samples_ms": [
+            1.8598000024212524,
+            1.79049999860581,
+            1.8532999965827912,
+            1.706499999272637,
+            2.913600008469075,
+            1.8299000075785443,
+            2.2118000051705167,
+            1.8779999954858795,
+            1.748299997416325,
+            1.957500004209578,
+            1.8364999996265396,
+            2.8165000112494454,
+            2.1453999943332747,
+            1.909899991005659,
+            2.1124000049894676
+          ],
+          "characters": 7413,
+          "bytes": 7413,
+          "body_sha256": "4e4846ac11cdeb352ce099793aca14f8a1019f208910c0a93132515da54b6a28",
+          "rows": [
+            {
+              "column": 46,
+              "declaration_owner": "/obj/machinery/door/airlock",
+              "file": "<rift>\\code\\game\\machinery\\airlock_control.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 29,
+              "name": "secure_close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 37.677,
+              "symbol": "/obj/machinery/door/airlock/proc/secure_close",
+              "type_path": "/obj/machinery/door/airlock"
+            },
+            {
+              "column": 42,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/instant",
+              "kind": "proc",
+              "line": 2700,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 37.051,
+              "symbol": "/obj/machinery/door/airlock/instant/proc/close",
+              "type_path": "/obj/machinery/door/airlock/instant"
+            },
+            {
+              "column": 43,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/material",
+              "kind": "proc",
+              "line": 2634,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 37.046,
+              "symbol": "/obj/machinery/door/airlock/material/proc/close",
+              "type_path": "/obj/machinery/door/airlock/material"
+            },
+            {
+              "column": 39,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\modules\\transport\\tram\\tram_doors.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/tram",
+              "kind": "proc",
+              "line": 62,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 36.827,
+              "symbol": "/obj/machinery/door/airlock/tram/proc/close",
+              "type_path": "/obj/machinery/door/airlock/tram"
+            },
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 35.938,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            },
+            {
+              "column": 51,
+              "declaration_owner": "/obj/machinery/door/airlock/tram",
+              "file": "<rift>\\code\\modules\\transport\\tram\\tram_doors.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/tram",
+              "kind": "proc",
+              "line": 80,
+              "name": "try_to_close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 32.694,
+              "symbol": "/obj/machinery/door/airlock/tram/proc/try_to_close",
+              "type_path": "/obj/machinery/door/airlock/tram"
+            },
+            {
+              "column": 39,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\modules\\transport\\tram\\tram_doors.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/tram",
+              "kind": "proc",
+              "line": 151,
+              "name": "crush",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 28.886,
+              "symbol": "/obj/machinery/door/airlock/tram/proc/crush",
+              "type_path": "/obj/machinery/door/airlock/tram"
+            },
+            {
+              "column": 47,
+              "declaration_owner": "/datum/component/omen",
+              "file": "<rift>\\code\\datums\\components\\omen.dm",
+              "implementation_owner": "/datum/component/omen",
+              "kind": "proc",
+              "line": 115,
+              "name": "check_airlock_crush",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/component",
+              "score": 27.256,
+              "symbol": "/datum/component/omen/proc/check_airlock_crush",
+              "type_path": "/datum/component/omen"
+            },
+            {
+              "column": 45,
+              "declaration_owner": "/obj/docking_port/mobile",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\shuttle\\shuttle.dm",
+              "implementation_owner": "/obj/docking_port/mobile",
+              "kind": "proc",
+              "line": 11,
+              "name": "bolt_all_doors",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/docking_port",
+              "score": 26.074,
+              "symbol": "/obj/docking_port/mobile/proc/bolt_all_doors",
+              "type_path": "/obj/docking_port/mobile"
+            },
+            {
+              "column": 49,
+              "declaration_owner": "/datum/wound/blunt/bone/moderate",
+              "file": "<rift>\\code\\datums\\wounds\\bones.dm",
+              "implementation_owner": "/datum/wound/blunt/bone/moderate",
+              "kind": "proc",
+              "line": 277,
+              "name": "door_crush",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/wound/blunt/bone",
+              "score": 24.216,
+              "symbol": "/datum/wound/blunt/bone/moderate/proc/door_crush",
+              "type_path": "/datum/wound/blunt/bone/moderate"
+            }
+          ]
+        },
+        "candidate_ranked": {
+          "median_ms": 2.107699998305179,
+          "samples_ms": [
+            1.9742000004043803,
+            2.874600002542138,
+            2.148200001101941,
+            1.8909000064013526,
+            2.1118000004207715,
+            1.8586000078357756,
+            1.9284000009065494,
+            2.0780000049853697,
+            2.107699998305179,
+            1.774100004695356,
+            3.6696000024676323,
+            2.7611000114120543,
+            1.9974999886471778,
+            3.577199997380376,
+            3.0838999955449253
+          ],
+          "characters": 7503,
+          "bytes": 7503,
+          "body_sha256": "cb131e057bfd74db7b07fd4d459c3e5ecb57c05e6d00953754e8d503d8ee0380",
+          "rows": [
+            {
+              "column": 46,
+              "declaration_owner": "/obj/machinery/door/airlock",
+              "file": "<rift>\\code\\game\\machinery\\airlock_control.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 29,
+              "name": "secure_close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 37.866,
+              "symbol": "/obj/machinery/door/airlock/proc/secure_close",
+              "type_path": "/obj/machinery/door/airlock"
+            },
+            {
+              "column": 42,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/instant",
+              "kind": "proc",
+              "line": 2700,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 37.234,
+              "symbol": "/obj/machinery/door/airlock/instant/proc/close",
+              "type_path": "/obj/machinery/door/airlock/instant"
+            },
+            {
+              "column": 43,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/material",
+              "kind": "proc",
+              "line": 2634,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 37.229,
+              "symbol": "/obj/machinery/door/airlock/material/proc/close",
+              "type_path": "/obj/machinery/door/airlock/material"
+            },
+            {
+              "column": 39,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\modules\\transport\\tram\\tram_doors.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/tram",
+              "kind": "proc",
+              "line": 62,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 36.988,
+              "symbol": "/obj/machinery/door/airlock/tram/proc/close",
+              "type_path": "/obj/machinery/door/airlock/tram"
+            },
+            {
+              "column": 34,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\game\\machinery\\doors\\airlock.dm",
+              "implementation_owner": "/obj/machinery/door/airlock",
+              "kind": "proc",
+              "line": 1481,
+              "name": "close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door",
+              "score": 36.108,
+              "symbol": "/obj/machinery/door/airlock/proc/close",
+              "type_path": "/obj/machinery/door/airlock"
+            },
+            {
+              "column": 51,
+              "declaration_owner": "/obj/machinery/door/airlock/tram",
+              "file": "<rift>\\code\\modules\\transport\\tram\\tram_doors.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/tram",
+              "kind": "proc",
+              "line": 80,
+              "name": "try_to_close",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 32.836,
+              "symbol": "/obj/machinery/door/airlock/tram/proc/try_to_close",
+              "type_path": "/obj/machinery/door/airlock/tram"
+            },
+            {
+              "column": 47,
+              "declaration_owner": "/datum/component/omen",
+              "file": "<rift>\\code\\datums\\components\\omen.dm",
+              "implementation_owner": "/datum/component/omen",
+              "kind": "proc",
+              "line": 115,
+              "name": "check_airlock_crush",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/component",
+              "score": 27.447,
+              "symbol": "/datum/component/omen/proc/check_airlock_crush",
+              "type_path": "/datum/component/omen"
+            },
+            {
+              "column": 45,
+              "declaration_owner": "/obj/docking_port/mobile",
+              "file": "<rift>\\modular_nova\\master_files\\code\\modules\\shuttle\\shuttle.dm",
+              "implementation_owner": "/obj/docking_port/mobile",
+              "kind": "proc",
+              "line": 11,
+              "name": "bolt_all_doors",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/docking_port",
+              "score": 26.156,
+              "symbol": "/obj/docking_port/mobile/proc/bolt_all_doors",
+              "type_path": "/obj/docking_port/mobile"
+            },
+            {
+              "column": 39,
+              "declaration_owner": "/obj/machinery/door",
+              "file": "<rift>\\code\\modules\\transport\\tram\\tram_doors.dm",
+              "implementation_owner": "/obj/machinery/door/airlock/tram",
+              "kind": "proc",
+              "line": 151,
+              "name": "crush",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery/door/airlock",
+              "score": 25.91,
+              "symbol": "/obj/machinery/door/airlock/tram/proc/crush",
+              "type_path": "/obj/machinery/door/airlock/tram"
+            },
+            {
+              "column": 49,
+              "declaration_owner": "/datum/wound/blunt/bone/moderate",
+              "file": "<rift>\\code\\datums\\wounds\\bones.dm",
+              "implementation_owner": "/datum/wound/blunt/bone/moderate",
+              "kind": "proc",
+              "line": 277,
+              "name": "door_crush",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/wound/blunt/bone",
+              "score": 24.31,
+              "symbol": "/datum/wound/blunt/bone/moderate/proc/door_crush",
+              "type_path": "/datum/wound/blunt/bone/moderate"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "hydroponics water nutrients",
+      "views": {
+        "baseline_ranked": {
+          "median_ms": 3.428099997108802,
+          "samples_ms": [
+            3.978399996412918,
+            3.6287999973865226,
+            3.0417999951168895,
+            3.428099997108802,
+            3.4195000043837354,
+            5.022199999075383,
+            3.526200001942925,
+            3.9363000105367973,
+            3.2955999922705814,
+            3.0687999969813973,
+            3.180400002747774,
+            3.299499992863275,
+            3.01949999993667,
+            3.554499999154359,
+            4.425300008733757
+          ],
+          "characters": 7033,
+          "bytes": 7033,
+          "body_sha256": "cfdfff9e044c44a414dcd566f7f2ba356547644e1e711fdfeeda9ea0bedeb54e",
+          "rows": [
+            {
+              "column": 22,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 54,
+              "name": "self_sustaining",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/obj/machinery",
+              "score": 34.567,
+              "symbol": "/obj/machinery/hydroponics/var/self_sustaining",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 27.553,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 51,
+              "declaration_owner": "/datum/component/plumbing",
+              "file": "<rift>\\code\\datums\\components\\plumbing\\hydroponics.dm",
+              "implementation_owner": "/datum/component/plumbing/hydroponics",
+              "kind": "proc",
+              "line": 27,
+              "name": "send_request",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/component/plumbing",
+              "score": 25.591,
+              "symbol": "/datum/component/plumbing/hydroponics/proc/send_request",
+              "type_path": "/datum/component/plumbing/hydroponics"
+            },
+            {
+              "column": 17,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 18,
+              "name": "nutridrain",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/obj/machinery",
+              "score": 25.36,
+              "symbol": "/obj/machinery/hydroponics/var/nutridrain",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 48,
+              "declaration_owner": "/obj/machinery/hydroponics",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics_chemreact.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 5,
+              "name": "apply_chemicals",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 21.475,
+              "symbol": "/obj/machinery/hydroponics/proc/apply_chemicals",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 44,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 894,
+              "name": "item_interaction",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 20.908,
+              "symbol": "/obj/machinery/hydroponics/proc/item_interaction",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 35,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 1304,
+              "name": "water_level",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/obj/item/circuit_component",
+              "score": 20.333,
+              "symbol": "/obj/item/circuit_component/hydroponics/var/water_level",
+              "type_path": "/obj/item/circuit_component/hydroponics"
+            },
+            {
+              "column": 35,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\components\\plumbing\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 5,
+              "name": "water_reagents",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/component/plumbing",
+              "score": 20.331,
+              "symbol": "/datum/component/plumbing/hydroponics/var/water_reagents",
+              "type_path": "/datum/component/plumbing/hydroponics"
+            },
+            {
+              "column": 20,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\components\\plumbing\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 7,
+              "name": "receive_water",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/component/plumbing",
+              "score": 20.292,
+              "symbol": "/datum/component/plumbing/hydroponics/var/receive_water",
+              "type_path": "/datum/component/plumbing/hydroponics"
+            },
+            {
+              "column": 52,
+              "declaration_owner": "/datum/reagent",
+              "file": "<rift>\\code\\modules\\reagents\\chemistry\\reagents\\other_reagents.dm",
+              "implementation_owner": "/datum/reagent/water/holywater",
+              "kind": "proc",
+              "line": 343,
+              "name": "on_hydroponics_apply",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/reagent/water",
+              "score": 20.072,
+              "symbol": "/datum/reagent/water/holywater/proc/on_hydroponics_apply",
+              "type_path": "/datum/reagent/water/holywater"
+            }
+          ]
+        },
+        "candidate_ranked": {
+          "median_ms": 3.4602000087033957,
+          "samples_ms": [
+            3.4716000081971288,
+            5.149800010258332,
+            3.469800009042956,
+            3.257200005464256,
+            3.1100999913178384,
+            3.3912000071723014,
+            3.3561000018380582,
+            3.4602000087033957,
+            3.1916000007186085,
+            5.041700002038851,
+            6.202400007168762,
+            3.311100008431822,
+            3.2821000058902428,
+            5.783000000519678,
+            5.836999989696778
+          ],
+          "characters": 7123,
+          "bytes": 7123,
+          "body_sha256": "cde067736f703ce183fdb12e5368fda21840c65ae591c175a17d0b1f5e4fc1ef",
+          "rows": [
+            {
+              "column": 22,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 54,
+              "name": "self_sustaining",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/obj/machinery",
+              "score": 34.591,
+              "symbol": "/obj/machinery/hydroponics/var/self_sustaining",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 35,
+              "declaration_owner": "/datum",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 290,
+              "name": "process",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 27.542,
+              "symbol": "/obj/machinery/hydroponics/proc/process",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 51,
+              "declaration_owner": "/datum/component/plumbing",
+              "file": "<rift>\\code\\datums\\components\\plumbing\\hydroponics.dm",
+              "implementation_owner": "/datum/component/plumbing/hydroponics",
+              "kind": "proc",
+              "line": 27,
+              "name": "send_request",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/component/plumbing",
+              "score": 25.619,
+              "symbol": "/datum/component/plumbing/hydroponics/proc/send_request",
+              "type_path": "/datum/component/plumbing/hydroponics"
+            },
+            {
+              "column": 17,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 18,
+              "name": "nutridrain",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/obj/machinery",
+              "score": 25.345,
+              "symbol": "/obj/machinery/hydroponics/var/nutridrain",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 48,
+              "declaration_owner": "/obj/machinery/hydroponics",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics_chemreact.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 5,
+              "name": "apply_chemicals",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 21.446,
+              "symbol": "/obj/machinery/hydroponics/proc/apply_chemicals",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 44,
+              "declaration_owner": "/atom",
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": "/obj/machinery/hydroponics",
+              "kind": "proc",
+              "line": 894,
+              "name": "item_interaction",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/obj/machinery",
+              "score": 20.92,
+              "symbol": "/obj/machinery/hydroponics/proc/item_interaction",
+              "type_path": "/obj/machinery/hydroponics"
+            },
+            {
+              "column": 35,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\hydroponics\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 1304,
+              "name": "water_level",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/obj/item/circuit_component",
+              "score": 20.39,
+              "symbol": "/obj/item/circuit_component/hydroponics/var/water_level",
+              "type_path": "/obj/item/circuit_component/hydroponics"
+            },
+            {
+              "column": 35,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\components\\plumbing\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 5,
+              "name": "water_reagents",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/component/plumbing",
+              "score": 20.388,
+              "symbol": "/datum/component/plumbing/hydroponics/var/water_reagents",
+              "type_path": "/datum/component/plumbing/hydroponics"
+            },
+            {
+              "column": 20,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\components\\plumbing\\hydroponics.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 7,
+              "name": "receive_water",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/component/plumbing",
+              "score": 20.35,
+              "symbol": "/datum/component/plumbing/hydroponics/var/receive_water",
+              "type_path": "/datum/component/plumbing/hydroponics"
+            },
+            {
+              "column": 52,
+              "declaration_owner": "/datum/reagent",
+              "file": "<rift>\\code\\modules\\reagents\\chemistry\\reagents\\other_reagents.dm",
+              "implementation_owner": "/datum/reagent/water/holywater",
+              "kind": "proc",
+              "line": 343,
+              "name": "on_hydroponics_apply",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/reagent/water",
+              "score": 20.126,
+              "symbol": "/datum/reagent/water/holywater/proc/on_hydroponics_apply",
+              "type_path": "/datum/reagent/water/holywater"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "spell casting requirements",
+      "views": {
+        "baseline_ranked": {
+          "median_ms": 2.4277999909827486,
+          "samples_ms": [
+            3.1199999939417467,
+            2.4277999909827486,
+            2.3687000066274777,
+            2.3624999885214493,
+            2.5231000036001205,
+            3.7034999986644834,
+            2.3671000089962035,
+            2.781399991363287,
+            2.4935000110417604,
+            2.5960000057239085,
+            2.188500002375804,
+            2.28610000340268,
+            2.3089000023901463,
+            2.357799996389076,
+            3.221299994038418
+          ],
+          "characters": 6419,
+          "bytes": 6419,
+          "body_sha256": "ac00a5529e67921a8e915d736afc4900bb8e2b71df3076b6edeaee0f9c1b0b58",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 31.454,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            },
+            {
+              "column": 20,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\components\\chuunibyou.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 21,
+              "name": "casting_spell",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/component",
+              "score": 27.471,
+              "symbol": "/datum/component/chuunibyou/var/casting_spell",
+              "type_path": "/datum/component/chuunibyou"
+            },
+            {
+              "column": 14,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\antagonists\\wizard\\equipment\\enchanted_clown_suit.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 16,
+              "name": "casting",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell/conjure_item",
+              "score": 27.009,
+              "symbol": "/datum/action/cooldown/spell/conjure_item/clown_pockets/var/casting",
+              "type_path": "/datum/action/cooldown/spell/conjure_item/clown_pockets"
+            },
+            {
+              "column": 17,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\spells\\spell_types\\pointed\\_pointed.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 18,
+              "name": "cast_range",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.737,
+              "symbol": "/datum/action/cooldown/spell/pointed/var/cast_range",
+              "type_path": "/datum/action/cooldown/spell/pointed"
+            },
+            {
+              "column": 1,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\__DEFINES\\magic.dm",
+              "implementation_owner": null,
+              "kind": "type",
+              "line": 66,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/bitfield",
+              "score": 23.73,
+              "symbol": "/datum/bitfield/spell_requirements",
+              "type_path": "/datum/bitfield/spell_requirements"
+            },
+            {
+              "column": 1,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\__DEFINES\\magic.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 66,
+              "name": "_bitfield_spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": null,
+              "score": 23.607,
+              "symbol": "/var/_bitfield_spell_requirements",
+              "type_path": ""
+            },
+            {
+              "column": 1,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\admin\\admin_verbs.dm",
+              "implementation_owner": null,
+              "kind": "type",
+              "line": 632,
+              "name": "debug_spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/admin_verb",
+              "score": 23.512,
+              "symbol": "/datum/admin_verb/debug_spell_requirements",
+              "type_path": "/datum/admin_verb/debug_spell_requirements"
+            },
+            {
+              "column": 21,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\mutations\\farsight.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 27,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.486,
+              "symbol": "/datum/action/cooldown/spell/farsight/var/spell_requirements",
+              "type_path": "/datum/action/cooldown/spell/farsight"
+            },
+            {
+              "column": 21,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\mutations\\olfaction.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 27,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.486,
+              "symbol": "/datum/action/cooldown/spell/olfaction/var/spell_requirements",
+              "type_path": "/datum/action/cooldown/spell/olfaction"
+            },
+            {
+              "column": 21,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\mutations\\void_magnet.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 31,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.476,
+              "symbol": "/datum/action/cooldown/spell/void/var/spell_requirements",
+              "type_path": "/datum/action/cooldown/spell/void"
+            }
+          ]
+        },
+        "candidate_ranked": {
+          "median_ms": 2.5655000063125044,
+          "samples_ms": [
+            3.0454999941866845,
+            2.1936999983154237,
+            2.8802000015275553,
+            2.153199995518662,
+            2.5824999902397394,
+            2.250300007290207,
+            2.360800004680641,
+            2.4039999989327043,
+            2.5655000063125044,
+            2.2465000074589625,
+            3.8493000029120594,
+            2.5169000000460073,
+            2.758599992375821,
+            5.285699997330084,
+            3.288699997938238
+          ],
+          "characters": 6893,
+          "bytes": 6893,
+          "body_sha256": "2a268135f18d33af699f29df5c9b0351e8099059ddc25fc6bafb76a2e673458e",
+          "rows": [
+            {
+              "column": 49,
+              "declaration_owner": "/datum/action/cooldown/spell",
+              "file": "<rift>\\code\\modules\\spells\\spell.dm",
+              "implementation_owner": "/datum/action/cooldown/spell",
+              "kind": "proc",
+              "line": 152,
+              "name": "can_cast_spell",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown",
+              "score": 31.761,
+              "symbol": "/datum/action/cooldown/spell/proc/can_cast_spell",
+              "type_path": "/datum/action/cooldown/spell"
+            },
+            {
+              "column": 20,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\components\\chuunibyou.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 21,
+              "name": "casting_spell",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/component",
+              "score": 27.9,
+              "symbol": "/datum/component/chuunibyou/var/casting_spell",
+              "type_path": "/datum/component/chuunibyou"
+            },
+            {
+              "column": 14,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\antagonists\\wizard\\equipment\\enchanted_clown_suit.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 16,
+              "name": "casting",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell/conjure_item",
+              "score": 27.43,
+              "symbol": "/datum/action/cooldown/spell/conjure_item/clown_pockets/var/casting",
+              "type_path": "/datum/action/cooldown/spell/conjure_item/clown_pockets"
+            },
+            {
+              "column": 17,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\spells\\spell_types\\pointed\\_pointed.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 18,
+              "name": "cast_range",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 24.067,
+              "symbol": "/datum/action/cooldown/spell/pointed/var/cast_range",
+              "type_path": "/datum/action/cooldown/spell/pointed"
+            },
+            {
+              "column": 1,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\__DEFINES\\magic.dm",
+              "implementation_owner": null,
+              "kind": "type",
+              "line": 66,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/bitfield",
+              "score": 23.822,
+              "symbol": "/datum/bitfield/spell_requirements",
+              "type_path": "/datum/bitfield/spell_requirements"
+            },
+            {
+              "column": 1,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\__DEFINES\\magic.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 66,
+              "name": "_bitfield_spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": null,
+              "score": 23.698,
+              "symbol": "/var/_bitfield_spell_requirements",
+              "type_path": ""
+            },
+            {
+              "column": 57,
+              "declaration_owner": "/datum/action/cooldown/spell/touch",
+              "file": "<rift>\\code\\modules\\spells\\spell_types\\touch\\_touch.dm",
+              "implementation_owner": "/datum/action/cooldown/spell/touch",
+              "kind": "proc",
+              "line": 264,
+              "name": "cast_on_hand_hit",
+              "override_count": 1,
+              "override_index": 0,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.634,
+              "symbol": "/datum/action/cooldown/spell/touch/proc/cast_on_hand_hit",
+              "type_path": "/datum/action/cooldown/spell/touch"
+            },
+            {
+              "column": 1,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\modules\\admin\\admin_verbs.dm",
+              "implementation_owner": null,
+              "kind": "type",
+              "line": 632,
+              "name": "debug_spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/admin_verb",
+              "score": 23.602,
+              "symbol": "/datum/admin_verb/debug_spell_requirements",
+              "type_path": "/datum/admin_verb/debug_spell_requirements"
+            },
+            {
+              "column": 21,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\mutations\\farsight.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 27,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.575,
+              "symbol": "/datum/action/cooldown/spell/farsight/var/spell_requirements",
+              "type_path": "/datum/action/cooldown/spell/farsight"
+            },
+            {
+              "column": 21,
+              "declaration_owner": null,
+              "file": "<rift>\\code\\datums\\mutations\\olfaction.dm",
+              "implementation_owner": null,
+              "kind": "var",
+              "line": 27,
+              "name": "spell_requirements",
+              "override_count": null,
+              "override_index": null,
+              "parent": "/datum/action/cooldown/spell",
+              "score": 23.575,
+              "symbol": "/datum/action/cooldown/spell/olfaction/var/spell_requirements",
+              "type_path": "/datum/action/cooldown/spell/olfaction"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "source_availability_preserved_rows": 35,
+  "recorded_queries": 1080
+}

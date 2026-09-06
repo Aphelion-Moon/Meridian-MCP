@@ -101,6 +101,8 @@ fn heap_size_of_location_range(_range: &Option<Range<Location>>) -> usize {
 #[derive(Debug, Clone, GetSize)]
 pub struct ProcValue {
     pub location: Location,
+    /// Start of this implementation's physical header, before its parameter list.
+    pub header_location: Location,
     pub parameters: Box<[Parameter]>,
     pub docs: DocCollection,
     pub code: Option<Block>,
@@ -1256,6 +1258,7 @@ impl ObjectTreeBuilder {
 
         let value = ProcValue {
             location,
+            header_location: location,
             parameters: parameters.into(),
             docs: Default::default(),
             code,

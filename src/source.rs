@@ -1,203 +1,233 @@
+use dreammaker::lexer::from_utf8_or_latin1_borrowed;
+use dreammaker::Location;
+
+pub(crate) const MAX_SOURCE_LINES: usize = 200;
+pub(crate) const DEFAULT_PROC_SOURCE_LINES: usize = 80;
+
+/// Bounded physical source from the same parse snapshot as its symbol metadata.
+#[derive(Clone, Debug)]
+pub(crate) struct SourceExcerpt {
+    pub(crate) text: String,
+    pub(crate) start_line: u32,
+    pub(crate) start_column: u16,
+    pub(crate) total_lines: usize,
+    pub(crate) boundary: &'static str,
+}
+
+impl SourceExcerpt {
+    pub(crate) fn line(text: String, start_line: u32) -> Self {
+        Self {
+            text,
+            start_line,
+            start_column: 1,
+            total_lines: 1,
+            boundary: "declaration_line",
+        }
+    }
+
+    pub(crate) fn render(&self, max_lines: usize) -> String {
+        self.text
+            .split('\n')
+            .take(max_lines)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    pub(crate) fn truncated(&self, max_lines: usize) -> bool {
+        self.total_lines > self.text.split('\n').take(max_lines).count()
+    }
+}
+
 pub(crate) struct IndexedSource {
-    text: String,
+    // Parser columns count original bytes. Keep those offsets until decoding an
+    // excerpt, including for Latin-1 source and non-ASCII same-line declarations.
+    bytes: Vec<u8>,
     line_starts: Vec<usize>,
 }
 
 impl IndexedSource {
-    pub(crate) fn new(text: String) -> Self {
-        let mut line_starts = Vec::new();
-        if !text.is_empty() {
-            line_starts.push(0);
-            line_starts.extend(
-                text.match_indices('\n')
-                    .map(|(index, _)| index + 1)
-                    .filter(|start| *start < text.len()),
-            );
+    pub(crate) fn new(mut bytes: Vec<u8>) -> Self {
+        if bytes.starts_with(b"\xef\xbb\xbf") {
+            bytes.drain(..3);
         }
-        Self { text, line_starts }
+        let mut line_starts = Vec::new();
+        if !bytes.is_empty() {
+            line_starts.push(0);
+            line_starts.extend(bytes.iter().enumerate().filter_map(|(index, byte)| {
+                (*byte == b'\n' && index + 1 < bytes.len()).then_some(index + 1)
+            }));
+        }
+        Self { bytes, line_starts }
     }
 
     pub(crate) fn read(path: &std::path::Path) -> std::io::Result<Self> {
-        std::fs::read_to_string(path).map(Self::new)
+        std::fs::read(path).map(Self::new)
     }
 
-    pub(crate) fn line(&self, one_based_line: u32) -> Option<&str> {
+    fn line_bytes(&self, one_based_line: u32) -> Option<&[u8]> {
         let index = one_based_line.checked_sub(1)? as usize;
         let start = *self.line_starts.get(index)?;
         let end = self
             .line_starts
             .get(index + 1)
-            .map_or(self.text.len(), |next| next.saturating_sub(1));
-        self.text.get(start..end).map(|line| {
-            let line = line.strip_suffix('\n').unwrap_or(line);
-            line.strip_suffix('\r').unwrap_or(line)
-        })
+            .copied()
+            .unwrap_or(self.bytes.len());
+        let line = self.bytes.get(start..end)?;
+        let line = line.strip_suffix(b"\n").unwrap_or(line);
+        Some(line.strip_suffix(b"\r").unwrap_or(line))
     }
 
-    pub(crate) fn declaration(&self, one_based_line: u32, max_lines: usize) -> Option<String> {
-        if one_based_line == 0 || max_lines == 0 {
+    pub(crate) fn line(&self, one_based_line: u32) -> Option<String> {
+        Some(from_utf8_or_latin1_borrowed(self.line_bytes(one_based_line)?).into_owned())
+    }
+
+    pub(crate) fn declaration(
+        &self,
+        start: Location,
+        end: Option<Location>,
+        max_lines: usize,
+    ) -> Option<SourceExcerpt> {
+        if max_lines == 0 {
             return None;
         }
-        let start_index = one_based_line.checked_sub(1)? as usize;
-        self.line_starts.get(start_index)?;
-
-        let mut excerpt = Vec::new();
-        let mut in_block_comment = false;
-        for index in start_index..self.line_count().min(start_index + max_lines) {
-            let line = self.line((index + 1) as u32)?;
-            let trimmed = line.trim_start();
-            let is_column_zero = line
-                .chars()
-                .next()
-                .is_some_and(|character| !character.is_whitespace());
-            let is_comment = in_block_comment
-                || trimmed.starts_with("//")
-                || trimmed.starts_with("/*")
-                || trimmed.starts_with('*');
-
-            if !excerpt.is_empty() && is_column_zero && !is_comment {
-                break;
+        let first = self.line_bytes(start.line)?;
+        let start_byte = usize::from(start.column.checked_sub(1)?);
+        let prefix = first.get(..start_byte)?;
+        let start_byte = if prefix.iter().all(u8::is_ascii_whitespace) {
+            0
+        } else {
+            start_byte
+        };
+        let (last_line, last_column, boundary) = match end {
+            Some(end)
+                if end.file == start.file
+                    && end.line >= start.line
+                    && self.line_bytes(end.line).is_some() =>
+            {
+                (end.line, Some(end.column), "parser_body_end")
             }
-            excerpt.push(line);
-
-            let mut remainder = line;
-            while let Some(start) = remainder.find("/*") {
-                let after_start = &remainder[start + 2..];
-                if let Some(end) = after_start.find("*/") {
-                    remainder = &after_start[end + 2..];
-                } else {
-                    in_block_comment = true;
-                    break;
+            // An included file's final synthetic dedent can be located in its
+            // includer. Report the physical file boundary, not a complete body.
+            Some(_) => (
+                u32::try_from(self.line_starts.len()).ok()?,
+                None,
+                "file_end",
+            ),
+            None => (start.line, None, "declaration_line"),
+        };
+        let total_lines = (last_line - start.line) as usize + 1;
+        let mut lines = Vec::with_capacity(total_lines.min(max_lines));
+        for offset in 0..total_lines.min(max_lines) {
+            let line_number = start.line + offset as u32;
+            let mut line = self.line_bytes(line_number)?;
+            if line_number == last_line {
+                if let Some(column) = last_column {
+                    let token = usize::from(column.saturating_sub(1));
+                    // Explicit closing tokens occupy a source byte; synthetic
+                    // braces/semicolons mark EOL or the final token at EOF.
+                    if matches!(line.get(token), Some(b'}' | b';')) {
+                        line = &line[..token + 1];
+                    }
                 }
             }
-            if in_block_comment && remainder.contains("*/") {
-                in_block_comment = false;
+            if offset == 0 {
+                line = line.get(start_byte..)?;
             }
+            lines.push(from_utf8_or_latin1_borrowed(line));
         }
-
-        Some(excerpt.join("\n"))
+        Some(SourceExcerpt {
+            text: lines.join("\n"),
+            start_line: start.line,
+            start_column: u16::try_from(start_byte + 1).ok()?,
+            total_lines,
+            boundary,
+        })
     }
-
-    pub(crate) fn line_count(&self) -> usize {
-        self.line_starts.len()
-    }
-}
-
-/// Extract a declaration from source text without reading the file again.
-#[cfg(test)]
-pub(crate) fn extract_source_from_text(
-    source: &str,
-    start_line: u32,
-    max_lines: usize,
-) -> Option<String> {
-    IndexedSource::new(source.to_owned()).declaration(start_line, max_lines)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
-    static SOURCE_FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    const MAX_SOURCE_LINES: usize = 200;
-
-    fn extract_source(file_path: &str, start_line: u32) -> Option<String> {
-        IndexedSource::read(std::path::Path::new(file_path))
-            .ok()?
-            .declaration(start_line, MAX_SOURCE_LINES)
-    }
-
-    fn write_source_file(contents: &str) -> PathBuf {
-        let unique_suffix = format!(
-            "{}_{}",
-            std::process::id(),
-            SOURCE_FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed)
-        );
-        let path = std::env::temp_dir().join(format!("meridian_mcp_source_{unique_suffix}.dm"));
-        std::fs::write(&path, contents).expect("source fixture should be writable");
-        path
-    }
-
-    #[test]
-    fn extract_source_reads_an_indented_proc_until_the_next_declaration() {
-        let path = write_source_file(
-            "/proc/example()\n\tvar/value = 1\n\treturn value\n/proc/next()\n\treturn\n",
-        );
-
-        let source = extract_source(path.to_str().unwrap(), 1).expect("source should exist");
-        assert_eq!(source, "/proc/example()\n\tvar/value = 1\n\treturn value");
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn extract_source_keeps_column_zero_comments_inside_the_declaration() {
-        let path = write_source_file(
-            "/proc/example()\n\treturn\n// explanation\n/proc/next()\n\treturn\n",
-        );
-
-        let source = extract_source(path.to_str().unwrap(), 1).expect("source should exist");
-        assert_eq!(source, "/proc/example()\n\treturn\n// explanation");
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn extract_source_returns_none_for_a_missing_line() {
-        let path = write_source_file("/proc/example()\n\treturn\n");
-
-        assert_eq!(extract_source(path.to_str().unwrap(), 99), None);
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn extract_source_is_capped_at_maximum_source_lines() {
-        let mut contents = String::from("/proc/example()\n");
-        for _ in 0..(MAX_SOURCE_LINES + 20) {
-            contents.push_str("\treturn\n");
+    fn loc(line: u32, column: u16) -> Location {
+        Location {
+            line,
+            column,
+            ..Location::BUILTINS
         }
-        let path = write_source_file(&contents);
-
-        let source = extract_source(path.to_str().unwrap(), 1).expect("source should exist");
-        assert_eq!(source.lines().count(), MAX_SOURCE_LINES);
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
-    fn extract_source_from_text_honors_a_smaller_caller_limit() {
-        let source =
-            extract_source_from_text("/proc/example()\n\tvar/one\n\tvar/two\n\treturn\n", 1, 3)
-                .expect("source should exist");
-
-        assert_eq!(source.lines().count(), 3);
+    fn parser_bounds_keep_comments_and_stop_at_a_nested_sibling() {
+        let source = IndexedSource::new(
+            b"/datum/test\n\tfirst()\n\t\treturn\n// comment\n\tsecond()\n\t\treturn\n".to_vec(),
+        );
+        let excerpt = source.declaration(loc(2, 2), Some(loc(4, 11)), 80).unwrap();
+        assert_eq!(excerpt.text, "\tfirst()\n\t\treturn\n// comment");
+        assert!(!excerpt.truncated(80));
     }
 
     #[test]
-    fn indexed_source_serves_multiple_declarations_from_one_line_table() {
-        let indexed =
-            IndexedSource::new("/proc/one()\n\treturn 1\n/proc/two()\n\treturn 2\n".to_owned());
-        assert_eq!(indexed.line(1), Some("/proc/one()"));
-        assert_eq!(
-            indexed.declaration(1, 80).as_deref(),
-            Some("/proc/one()\n\treturn 1")
-        );
-        assert_eq!(
-            indexed.declaration(3, 80).as_deref(),
-            Some("/proc/two()\n\treturn 2")
-        );
-        assert_eq!(indexed.line_count(), 4);
+    fn missing_or_invalid_start_never_returns_unrelated_source() {
+        let source = IndexedSource::new(b"/proc/one()\n\treturn\n".to_vec());
+        for start in [loc(0, 1), loc(99, 1), loc(1, 0), loc(1, 99)] {
+            assert!(source.declaration(start, Some(loc(2, 8)), 80).is_none());
+        }
+        assert!(source.declaration(loc(1, 1), Some(loc(2, 8)), 0).is_none());
     }
 
     #[test]
-    fn indexed_source_preserves_crlf_line_semantics() {
-        let indexed = IndexedSource::new("/proc/one()\r\n\treturn 1\r\n".to_owned());
+    fn line_cap_retains_the_total_span_and_render_limit() {
+        let source = IndexedSource::new(b"/proc/one()\n\tvar/one\n\tvar/two\n\treturn\n".to_vec());
+        let excerpt = source.declaration(loc(1, 1), Some(loc(4, 8)), 3).unwrap();
+        assert_eq!(excerpt.total_lines, 4);
+        assert_eq!(excerpt.text.lines().count(), 3);
+        assert_eq!(excerpt.render(1), "/proc/one()");
+        assert!(excerpt.truncated(200));
+    }
 
-        assert_eq!(indexed.line(1), Some("/proc/one()"));
-        assert_eq!(indexed.line(2), Some("\treturn 1"));
+    #[test]
+    fn file_boundary_is_explicit_when_the_parser_end_leaves_the_file() {
+        let source = IndexedSource::new(b"/proc/one()\n\treturn 1".to_vec());
+        let excerpt = source.declaration(loc(1, 1), Some(loc(99, 1)), 80).unwrap();
+        assert_eq!(excerpt.boundary, "file_end");
+        assert_eq!(excerpt.text, "/proc/one()\n\treturn 1");
+    }
+
+    #[test]
+    fn explicit_brace_ends_before_another_same_line_declaration() {
+        let source = IndexedSource::new(b"one() {return;}; two() {return;}".to_vec());
+        let first = source.declaration(loc(1, 1), Some(loc(1, 15)), 80).unwrap();
+        let second = source
+            .declaration(loc(1, 18), Some(loc(1, 32)), 80)
+            .unwrap();
+        assert_eq!(first.text, "one() {return;}");
+        assert_eq!(second.text, "two() {return;}");
+        assert_eq!(second.start_column, 18);
+    }
+
+    #[test]
+    fn bom_and_crlf_follow_parser_byte_locations() {
+        let source = IndexedSource::new(b"\xef\xbb\xbf/proc/one()\r\n\treturn 1\r\n".to_vec());
+        assert_eq!(source.line(1).as_deref(), Some("/proc/one()"));
         assert_eq!(
-            indexed.declaration(1, 80).as_deref(),
-            Some("/proc/one()\n\treturn 1")
+            source
+                .declaration(loc(1, 1), Some(loc(2, 10)), 80)
+                .unwrap()
+                .text,
+            "/proc/one()\n\treturn 1"
         );
-        assert_eq!(indexed.line_count(), 2);
+    }
+
+    #[test]
+    fn latin1_source_is_decoded_with_the_upstream_rule() {
+        let source = IndexedSource::new(b"/proc/one()\n\treturn \"caf\xe9\"".to_vec());
+        assert_eq!(
+            source
+                .declaration(loc(1, 1), Some(loc(2, 9)), 80)
+                .unwrap()
+                .text,
+            "/proc/one()\n\treturn \"caf\u{e9}\""
+        );
     }
 }

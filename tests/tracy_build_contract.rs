@@ -52,11 +52,28 @@ fn owned_patch_files_are_forced_to_lf_with_unified_diff_whitespace_rules() {
     let attributes =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(".gitattributes"))
             .expect(".gitattributes should exist");
+    let rule = attributes
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some("*.patch"))
+        .expect("owned patches require an attributes rule");
+    let fields: Vec<_> = rule.split_whitespace().collect();
     assert!(
-        attributes
-            .lines()
-            .any(|line| line == "*.patch text eol=lf whitespace=-space-before-tab"),
-        "owned patches must remain LF and permit unified-diff context markers before tab indentation"
+        fields.contains(&"text") && fields.contains(&"eol=lf"),
+        "owned patches must remain LF"
+    );
+    let whitespace: Vec<_> = fields
+        .iter()
+        .find_map(|field| field.strip_prefix("whitespace="))
+        .expect("unified-diff context requires explicit whitespace rules")
+        .split(',')
+        .collect();
+    assert!(
+        whitespace.contains(&"-space-before-tab"),
+        "allow context markers before tab indentation"
+    );
+    assert!(
+        whitespace.contains(&"-blank-at-eol"),
+        "allow blank context lines containing one space"
     );
 }
 

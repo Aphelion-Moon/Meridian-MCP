@@ -1,0 +1,11 @@
+# Source excerpt comparison protocol
+
+Compare the retained language-query release candidate (SHA-256 `c654d93b19cb32530dc499a5fe1ecd550d35d3db8b46b712ac00a4b46f5e92aa`) with a fresh source-excerpt candidate on the same clean Meridian-Rift commit `7462a6942b2e71a3ea13c00169f65f575cb281b7`.
+
+Use eight known procedures across vending, airlocks, hydroponics, spells, storage, atmospherics and human initialization. For each, request exact inspection, exact-symbol search and search without source. Request candidate exact inspection without source and a 200-line search excerpt as additional views. Run four natural-language searches to record ranking changes; changed order alone is not a relevance improvement.
+
+Run three fresh processes per binary, alternating binary order, with five repetitions per query. Keep other builds and test suites stopped during measurement. Record cold parse timings, parsed process private bytes and working set, complete response characters/UTF-8 bytes, warm query timings, returned identities, source lengths/truncation and natural shutdown. Characters and bytes are response-volume measures, not billed or reasoning tokens.
+
+Require equal parse counts and exact-inspection semantic metadata across binaries. Require candidate source omission to preserve all non-source fields. Validate every candidate physical excerpt against the reported source file, start line and byte column; a parser-end excerpt may end before the rest of its last line. After capture, compare row identities and require each non-null baseline exact-inspection/search excerpt to remain available in the candidate. Retain all raw replies privately under `target/`, and publish portable summaries with hashes instead of machine paths or source dumps. Preserve source Git state and hash every inspected source file before and after the experiment.
+
+The controlled Rust fixtures remain the accuracy authority for sibling exclusion, same-line separation, multiline strings, BOM/Latin-1/CRLF decoding, snapshot reuse after edits, truncation and invalid arguments. This experiment does not prove complete dynamic reference resolution, BYOND runtime behavior, general relevance or deployment readiness.

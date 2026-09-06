@@ -1272,6 +1272,7 @@ impl<'ctx, 'an, 'inp> Parser<'ctx, 'an, 'inp> {
             Some(body_start..self.location),
         ) {
             Ok((idx, proc)) => {
+                proc.header_location = entry_start;
                 proc.docs.extend(docs);
                 // manually performed for borrowck reasons
                 if let Some(dest) = self.annotations.as_mut() {

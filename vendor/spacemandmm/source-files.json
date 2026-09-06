@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "upstream_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
-  "local_patch": "meridian-read-policy-v2",
-  "delta_sha256": "9c634bdc169e3305c6e2845e5a38f2e1f59224a462e0f56969ff422a8657c20e",
+  "local_patch": "meridian-read-policy-v3",
+  "delta_sha256": "ad8df4cc7bb7224ca1f749ac128e09d10f5f3bda55468930f49d55da72f31546",
   "files": {
     "dmm-tools/Cargo.toml": "ae3a0fc5d19104ff24df301af3f2722c0fdf7666924ca327fd0245d19aeda782",
     "dmm-tools/examples/duplicate_icon_states.rs": "12dd01e051d1155e789a77a5fa146c66c299dd5ac1b006ffd2ddb6cd14bbe00c",
@@ -40,8 +40,8 @@
     "dreammaker/src/intern.rs": "8108de8a85b67bab4d356d9923bb6bf26021484f0302e391ef8c9c02cff8a96d",
     "dreammaker/src/lexer.rs": "fbf5459d3af542c4bd33edf5710f7de50b4272f3c580d3426df52768603e47d7",
     "dreammaker/src/lib.rs": "d7339592d997846d7ddbba82c8cd2984bb2962337529d13db9c9c16cb08b3b3e",
-    "dreammaker/src/objtree.rs": "05f8f521bfa6f90c3516b0134120e9bf1afa4210bec89fee95834ec2fff5fc16",
-    "dreammaker/src/parser.rs": "45bf575d07396b22fe9b374bcf43d44cd5be825c2b4e6c7b28c41fe3ff3510bc",
+    "dreammaker/src/objtree.rs": "1e3cda986f286691e78f268a35ef51118b3464d0fcc6b004a57072dd84ad44b9",
+    "dreammaker/src/parser.rs": "1a6b53601ff0909d76be7c6cda94ecce0008c494538c0472ae977b912ca4bb0b",
     "dreammaker/src/preprocessor.rs": "a0557d2a1dd90483869720d5aa6d362bb3d1f7b72772e73b331143546d6e97c1",
     "dreammaker/tests/annotation_tests.rs": "d32206258cef3b4b2c5922d00b8cfa445182580352eed344d7e069642aae9933",
     "dreammaker/tests/ast_tests.rs": "00c2fc0e62bd824595474d8ddd5e683938118efa2fbe35a4c6fd8734e1461729",

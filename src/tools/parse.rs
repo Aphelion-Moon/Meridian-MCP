@@ -478,6 +478,8 @@ pub async fn get_type(state: &ServerState, args: Value) -> Result<ToolResult> {
 /// Get proc information
 pub async fn get_proc(state: &ServerState, args: Value) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
+    let (include_source, max_source_lines) =
+        super::search::source_options(&args, snapshot.search_index.source_line_limit())?;
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
 
@@ -534,17 +536,23 @@ pub async fn get_proc(state: &ServerState, args: Value) -> Result<ToolResult> {
                 implementation.override_index,
             )
         };
-        values.push(json!({
+        let mut detail = json!({
             "owner": implementation.owner,
             "override_index": implementation.override_index,
             "parameters": parameters,
             "documentation": value.docs.text(),
             "location": format!("{}:{}:{}", file_path, value.location.line, value.location.column),
             "has_body": implementation.has_body,
-            "source": source,
-            "source_origin": "analysis_snapshot",
-            "source_line_limit": snapshot.search_index.source_line_limit(),
-        }));
+        });
+        if include_source {
+            let fields = detail
+                .as_object_mut()
+                .expect("procedure detail is an object");
+            fields.insert("source_origin".into(), json!("analysis_snapshot"));
+            fields.insert("source_line_limit".into(), json!(max_source_lines));
+            super::search::add_source_fields(fields, source, max_source_lines);
+        }
+        values.push(detail);
     }
 
     let result = json!({

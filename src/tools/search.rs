@@ -3,12 +3,12 @@ use serde_json::{json, Map, Value};
 
 use crate::mcp::ToolResult;
 use crate::search::{SearchIndex, SearchRequest, SymbolKind};
+use crate::source::{SourceExcerpt, MAX_SOURCE_LINES};
 use crate::state::ServerState;
 
 const DEFAULT_RESULT_LIMIT: usize = 10;
 const MAX_RESULT_LIMIT: usize = 50;
 const DEFAULT_SOURCE_LINES: usize = 40;
-const MAX_SOURCE_LINES: usize = 200;
 
 pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<ToolResult> {
     let query = args
@@ -17,6 +17,12 @@ pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<T
         .map(str::trim)
         .filter(|query| !query.is_empty())
         .ok_or_else(|| anyhow!("Missing or empty query argument"))?;
+
+    let kind = parse_kind(optional_nonempty_string(&args, "kind")?.unwrap_or("all"))?;
+    let type_prefix = optional_nonempty_string(&args, "type_prefix")?;
+    let file_filter = optional_nonempty_string(&args, "file_filter")?;
+    let limit = bounded_usize(&args, "limit", DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT)?;
+    let (include_source, max_source_lines) = source_options(&args, DEFAULT_SOURCE_LINES)?;
 
     let snapshot = match state.snapshot().await {
         Ok(snapshot) => snapshot,
@@ -27,22 +33,6 @@ pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<T
         }
     };
     let index = &snapshot.search_index;
-
-    let kind = parse_kind(args.get("kind").and_then(Value::as_str).unwrap_or("all"))?;
-    let type_prefix = optional_nonempty_string(&args, "type_prefix");
-    let file_filter = optional_nonempty_string(&args, "file_filter");
-    let limit = bounded_usize(&args, "limit", DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT)?;
-    let include_source = args
-        .get("include_source")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
-    let max_source_lines = bounded_usize(
-        &args,
-        "max_source_lines",
-        DEFAULT_SOURCE_LINES,
-        1,
-        MAX_SOURCE_LINES,
-    )?;
 
     let request = SearchRequest {
         query,
@@ -85,13 +75,7 @@ pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<T
             ]);
 
             if include_source {
-                result.insert(
-                    "source".to_string(),
-                    json!(document
-                        .source
-                        .as_deref()
-                        .map(|source| truncate_lines(source, max_source_lines))),
-                );
+                add_source_fields(&mut result, document.source.as_ref(), max_source_lines);
             }
 
             Value::Object(result)
@@ -104,6 +88,9 @@ pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<T
         "indexed_documents": index.len(),
         "count": results.len(),
         "results": results,
+        "state_generation": snapshot.generation,
+        "source_origin": "analysis_snapshot",
+        "source_line_limit": max_source_lines,
         "retrieval": {
             "mode": "lexical",
             "algorithm": "bm25",
@@ -126,11 +113,28 @@ fn parse_kind(kind: &str) -> Result<Option<SymbolKind>> {
     }
 }
 
-fn optional_nonempty_string<'a>(args: &'a Value, name: &str) -> Option<&'a str> {
+pub(super) fn source_options(args: &Value, default_lines: usize) -> Result<(bool, usize)> {
+    let include_source = match args.get("include_source") {
+        None => true,
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| anyhow!("include_source must be a boolean"))?,
+    };
+    let max_source_lines =
+        bounded_usize(args, "max_source_lines", default_lines, 1, MAX_SOURCE_LINES)?;
+    Ok((include_source, max_source_lines))
+}
+
+fn optional_nonempty_string<'a>(args: &'a Value, name: &str) -> Result<Option<&'a str>> {
     args.get(name)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow!("{name} must be a non-empty string"))
+        })
+        .transpose()
 }
 
 fn bounded_usize(
@@ -140,19 +144,41 @@ fn bounded_usize(
     minimum: usize,
     maximum: usize,
 ) -> Result<usize> {
-    let Some(value) = args.get(name) else {
-        return Ok(default);
-    };
-    let value = value
-        .as_u64()
-        .ok_or_else(|| anyhow!("{name} must be a positive integer"))?;
-    usize::try_from(value)
-        .map(|value| value.clamp(minimum, maximum))
-        .map_err(|_| anyhow!("{name} is too large"))
+    super::bounded_u64(args, name, default as u64, minimum as u64, maximum as u64)
+        .map(|value| value as usize)
 }
 
-fn truncate_lines(source: &str, maximum: usize) -> String {
-    source.lines().take(maximum).collect::<Vec<_>>().join("\n")
+pub(super) fn add_source_fields(
+    result: &mut Map<String, Value>,
+    source: Option<&SourceExcerpt>,
+    maximum: usize,
+) {
+    result.extend(Map::from_iter([
+        (
+            "source".into(),
+            json!(source.map(|source| source.render(maximum))),
+        ),
+        (
+            "source_start_line".into(),
+            json!(source.map(|source| source.start_line)),
+        ),
+        (
+            "source_start_column".into(),
+            json!(source.map(|source| source.start_column)),
+        ),
+        (
+            "source_total_lines".into(),
+            json!(source.map(|source| source.total_lines)),
+        ),
+        (
+            "source_truncated".into(),
+            json!(source.map(|source| source.truncated(maximum))),
+        ),
+        (
+            "source_boundary".into(),
+            json!(source.map(|source| source.boundary)),
+        ),
+    ]));
 }
 
 #[cfg(test)]
