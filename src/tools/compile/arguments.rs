@@ -1,3 +1,4 @@
+use super::response::ResponseOptions;
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -11,6 +12,7 @@ pub(super) struct CompileOptions {
     pub timeout_ms: u64,
     pub idle_timeout_ms: u64,
     pub capture_network: bool,
+    pub response: ResponseOptions,
 }
 
 impl CompileOptions {
@@ -29,6 +31,9 @@ impl CompileOptions {
                     "timeout_ms",
                     "idle_timeout_ms",
                     "capture_network",
+                    "include_output",
+                    "output_max_bytes",
+                    "diagnostic_limit",
                 ]
                 .contains(&name.as_str()),
                 "unknown dm_compile argument: {name}"
@@ -73,6 +78,7 @@ impl CompileOptions {
             fixture_manifest_path,
             defines,
             capture_network,
+            response: ResponseOptions::parse(args)?,
             timeout_ms: capped_timeout(args, "timeout_ms", 600_000, 1, 1_800_000)?,
             idle_timeout_ms: capped_timeout(
                 args,

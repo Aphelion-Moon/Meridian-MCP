@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "base_revision": "485f716",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "src/tools/compile.rs": "ac35269918ab4e2e1f73f602d51a09fdcf5aae5094c21e1c99285a1bb8f76009",
+    "src/tools/compile/arguments.rs": "f1336182741cc9391942fde40d053f16fdd91d6b393cd365f7d4f841eeefd108",
+    "src/tools/compile/response.rs": "f30ec1ec70e4dc5bd9dbb070454d1bd71e403f3164f127df6eb48dc17d6e5db2",
+    "src/tools/mod.rs": "c077488d8b728c3c61f858e6f74f1b63066f271446d1ae7633e4f801e1ec14ad",
+    "tests/compiler_responses.rs": "b128ddd77026757efed9f32313be1aa3cc0072afd209f6ec863919fc61c0d0ad",
+    "tests/fixtures/compiler_output.rs": "7de858b44b9d20f03c0032ec16d21a62beea15884c7ef36a81701170bd29d00d",
+    "docs/audits/2026-09-06-compiler-responses/probe.ps1": "b3937e6d19052c5a6cd87b9a1abd15f54c62a6d18eb363d8e40f55ec496a5012",
+    "docs/audits/2026-09-06-compiler-responses/record.py": "70eb0d2777c05d376b30130b16ccf284eb83c8a17b2cfde21fa4365749b29df2"
+  },
+  "gates": {
+    "windows": {
+      "passed": 450,
+      "failed": 0,
+      "ignored": 5,
+      "log_sha256": "3af9827a09711acbbf38670a24988b534ee034f9792a8d064305865c5d155c1e",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "4cb2afefc49893e2683ff6e8cf9b04284fc4ebc50e9d0bdaa98d3a6c09371b05"
+    },
+    "linux": {
+      "passed": 443,
+      "failed": 0,
+      "ignored": 6,
+      "log_sha256": "15761208410ab3861ec9e978d4c223bbc98ebffa7bf04ccc4d81c987d4fbfa09",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "cfa657426d2232b68f9182efcb542ca1ad0a0224ee8562142739a960ea8762ce"
+    },
+    "capability-audit": {
+      "status": "passed",
+      "log_sha256": "e29a92dab7d0a04a9987bc843aefaa7092b351f1a030bee41cfb5014d7254bf4"
+    },
+    "capability-drift": {
+      "status": "passed",
+      "log_sha256": "add44c6455cc89f51e029c85973358c2d79f67ae10766d26ba570db64276c486"
+    },
+    "dmdoc": {
+      "status": "passed",
+      "log_sha256": "91b2a6c2626f82519eae2b5747f381ac5c33877f8824d0d12eb4f457a76f9227"
+    }
+  },
+  "before": {
+    "passed": 1,
+    "failed": 3,
+    "ignored": 0,
+    "log_sha256": "c594493163c4af3049fd7a52bd96b4ddd4065b53d38fdbd57c707a076a850f1d"
+  },
+  "initial_focused": {
+    "passed": 20,
+    "failed": 0,
+    "ignored": 0,
+    "log_sha256": "dfb798c23abbfd094e0c1145c5bfac9d3a95c8d4b813653cdc249231953606cf"
+  },
+  "comparison": {
+    "file": "comparison.json",
+    "cases": 72,
+    "sessions": 6,
+    "equivalent_pairs_with_baseline_status": 30,
+    "candidate_statuses_retained": 48,
+    "baseline_overflow_cases": 9,
+    "raw_sha256": {
+      "round-0-A/raw.json": "10a8d4e0bee10043e20ec677ff91a871cc86d8bd2179c3cd6b5491d03440df8e",
+      "round-0-B/raw.json": "14ffd6323a894d4c3316421d7b3416e5854df774b62eca4e0685a8354924ded5",
+      "round-1-B/raw.json": "5fd798effc696770a81c323cc14504e1cc81e4a910f14e93bb203538b443f6dc",
+      "round-1-A/raw.json": "90d347399b8e9889692ea20877d76d11e3a260d9107ae96e9d147e9f9041d409",
+      "round-2-A/raw.json": "d8afa937538f1e684f3a38d537e672894b57a9a949726bceac5612bc0184f193",
+      "round-2-B/raw.json": "7f2eb3062f04a3b96f2bcba058c91e466f24ebd25e3477b12385813f59aefddb"
+    }
+  },
+  "native": {
+    "file": "native.json",
+    "verified_fresh_dmb_cases": 3,
+    "invalid_request_created_dmb": false,
+    "natural_mcp_exit_code": 0
+  },
+  "boundaries": [
+    "Local Windows and Linux under WSL 1, not hosted native Ubuntu CI.",
+    "Output comparison uses an owned synthetic compiler and debug MCP binaries.",
+    "Native compiler evidence is a small owned Windows BYOND fixture, not a full Meridian-Rift build.",
+    "Latency includes client JSON parsing and concurrent qualification activity; no speedup or memory claim.",
+    "Actual model tokens and thinking cost were not measured; response and wire bytes are recorded.",
+    "Capture loss limits diagnostic completeness; omitted text has no later retrieval API.",
+    "The earlier intermittent WSL ownership-fixture failure remains unexplained.",
+    "Hosted CI, live debugger/Tracy qualification, installed-MCP replacement and broader artifact review remain separate."
+  ]
+}

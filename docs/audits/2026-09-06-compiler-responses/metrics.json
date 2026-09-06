@@ -1,0 +1,194 @@
+[
+  {
+    "mode": "quiet",
+    "baseline": {
+      "response_text_utf8_bytes": 2390,
+      "wire_bytes": 2843,
+      "roundtrip_ms": 69,
+      "request_bytes": 312,
+      "code": null
+    },
+    "default": {
+      "response_text_utf8_bytes": 2514,
+      "wire_bytes": 2951,
+      "roundtrip_ms": 59,
+      "request_bytes": 312,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 2487,
+      "wire_bytes": 2915,
+      "roundtrip_ms": 54,
+      "request_bytes": 337,
+      "code": null
+    }
+  },
+  {
+    "mode": "moderate",
+    "baseline": {
+      "response_text_utf8_bytes": 82393,
+      "wire_bytes": 82845,
+      "roundtrip_ms": 89,
+      "request_bytes": 318,
+      "code": null
+    },
+    "default": {
+      "response_text_utf8_bytes": 18921,
+      "wire_bytes": 19357,
+      "roundtrip_ms": 63,
+      "request_bytes": 318,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 2519,
+      "wire_bytes": 2947,
+      "roundtrip_ms": 66,
+      "request_bytes": 343,
+      "code": null
+    }
+  },
+  {
+    "mode": "few_diagnostics",
+    "baseline": {
+      "response_text_utf8_bytes": 7756,
+      "wire_bytes": 8929,
+      "roundtrip_ms": 116,
+      "request_bytes": 332,
+      "code": null
+    },
+    "default": {
+      "response_text_utf8_bytes": 6385,
+      "wire_bytes": 7330,
+      "roundtrip_ms": 73,
+      "request_bytes": 332,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 5268,
+      "wire_bytes": 6175,
+      "roundtrip_ms": 57,
+      "request_bytes": 357,
+      "code": null
+    }
+  },
+  {
+    "mode": "diagnostics",
+    "baseline": {
+      "response_text_utf8_bytes": 115296,
+      "wire_bytes": 130389,
+      "roundtrip_ms": 119,
+      "request_bytes": 324,
+      "code": null
+    },
+    "default": {
+      "response_text_utf8_bytes": 16796,
+      "wire_bytes": 18406,
+      "roundtrip_ms": 75,
+      "request_bytes": 324,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 8042,
+      "wire_bytes": 9429,
+      "roundtrip_ms": 99,
+      "request_bytes": 349,
+      "code": null
+    }
+  },
+  {
+    "mode": "dual",
+    "baseline": {
+      "response_text_utf8_bytes": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 208,
+      "request_bytes": 310,
+      "code": "limit_exceeded"
+    },
+    "default": {
+      "response_text_utf8_bytes": 18911,
+      "wire_bytes": 19347,
+      "roundtrip_ms": 96,
+      "request_bytes": 310,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 2509,
+      "wire_bytes": 2937,
+      "roundtrip_ms": 104,
+      "request_bytes": 335,
+      "code": null
+    }
+  },
+  {
+    "mode": "unicode",
+    "baseline": {
+      "response_text_utf8_bytes": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 252,
+      "request_bytes": 316,
+      "code": "limit_exceeded"
+    },
+    "default": {
+      "response_text_utf8_bytes": 18916,
+      "wire_bytes": 22084,
+      "roundtrip_ms": 158,
+      "request_bytes": 316,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 2513,
+      "wire_bytes": 2941,
+      "roundtrip_ms": 133,
+      "request_bytes": 341,
+      "code": null
+    }
+  },
+  {
+    "mode": "controls",
+    "baseline": {
+      "response_text_utf8_bytes": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 154,
+      "request_bytes": 318,
+      "code": "limit_exceeded"
+    },
+    "default": {
+      "response_text_utf8_bytes": 90604,
+      "wire_bytes": 107424,
+      "roundtrip_ms": 90,
+      "request_bytes": 318,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 2524,
+      "wire_bytes": 2952,
+      "roundtrip_ms": 73,
+      "request_bytes": 343,
+      "code": null
+    }
+  },
+  {
+    "mode": "giant",
+    "baseline": {
+      "response_text_utf8_bytes": 402697,
+      "wire_bytes": 443198,
+      "roundtrip_ms": 250,
+      "request_bytes": 312,
+      "code": null
+    },
+    "default": {
+      "response_text_utf8_bytes": 23152,
+      "wire_bytes": 25664,
+      "roundtrip_ms": 135,
+      "request_bytes": 312,
+      "code": null
+    },
+    "no_output": {
+      "response_text_utf8_bytes": 6794,
+      "wire_bytes": 7666,
+      "roundtrip_ms": 121,
+      "request_bytes": 337,
+      "code": null
+    }
+  }
+]

@@ -1,0 +1,3409 @@
+{
+  "schema": 1,
+  "repeats": 3,
+  "arm_A": "baseline",
+  "arm_B": "candidate",
+  "baseline_sha256": "a706227b7058f3c719ddb287a109b3c313d5500cf8bb005020a23d6837c0f224",
+  "candidate_sha256": "9f46c7c64620e2efedc0ec1d490a05e8094b4ba0a63191de8493b1bbe6e6abd9",
+  "fixture_sha256": "8dc51a4ccab82c7b2d3352752adeb565e10a7e9ee7be2314e7474e55040ebed3",
+  "sessions": [
+    {
+      "arm": "A",
+      "round": 0,
+      "exit_code": 0,
+      "build": {
+        "build_id": "f5932afa84320a96a43ad2035859cb999d42dc3dfd3f8664aef8cbea5e61db25",
+        "complete": true,
+        "executable_sha256": "a706227b7058f3c719ddb287a109b3c313d5500cf8bb005020a23d6837c0f224",
+        "profile": "debug",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "66d6f9d973480db2b9cd81136935c63112802f3a",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      },
+      "compiler_definition_bytes": 1292,
+      "tools_list_wire_bytes": 24529
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "exit_code": 0,
+      "build": {
+        "build_id": "f751175458df87dbd79a6b30b41e5d1ad3c6a9c818174c27d2566994d2244c0e",
+        "complete": true,
+        "executable_sha256": "9f46c7c64620e2efedc0ec1d490a05e8094b4ba0a63191de8493b1bbe6e6abd9",
+        "profile": "debug",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "485f7164958e5577ab6de4492c5496905c8a74ac",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      },
+      "compiler_definition_bytes": 1883,
+      "tools_list_wire_bytes": 25120
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "exit_code": 0,
+      "build": {
+        "build_id": "f751175458df87dbd79a6b30b41e5d1ad3c6a9c818174c27d2566994d2244c0e",
+        "complete": true,
+        "executable_sha256": "9f46c7c64620e2efedc0ec1d490a05e8094b4ba0a63191de8493b1bbe6e6abd9",
+        "profile": "debug",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "485f7164958e5577ab6de4492c5496905c8a74ac",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      },
+      "compiler_definition_bytes": 1883,
+      "tools_list_wire_bytes": 25120
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "exit_code": 0,
+      "build": {
+        "build_id": "f5932afa84320a96a43ad2035859cb999d42dc3dfd3f8664aef8cbea5e61db25",
+        "complete": true,
+        "executable_sha256": "a706227b7058f3c719ddb287a109b3c313d5500cf8bb005020a23d6837c0f224",
+        "profile": "debug",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "66d6f9d973480db2b9cd81136935c63112802f3a",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      },
+      "compiler_definition_bytes": 1292,
+      "tools_list_wire_bytes": 24529
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "exit_code": 0,
+      "build": {
+        "build_id": "f5932afa84320a96a43ad2035859cb999d42dc3dfd3f8664aef8cbea5e61db25",
+        "complete": true,
+        "executable_sha256": "a706227b7058f3c719ddb287a109b3c313d5500cf8bb005020a23d6837c0f224",
+        "profile": "debug",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "66d6f9d973480db2b9cd81136935c63112802f3a",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      },
+      "compiler_definition_bytes": 1292,
+      "tools_list_wire_bytes": 24529
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "exit_code": 0,
+      "build": {
+        "build_id": "f751175458df87dbd79a6b30b41e5d1ad3c6a9c818174c27d2566994d2244c0e",
+        "complete": true,
+        "executable_sha256": "9f46c7c64620e2efedc0ec1d490a05e8094b4ba0a63191de8493b1bbe6e6abd9",
+        "profile": "debug",
+        "schema": 1,
+        "source_dirty": true,
+        "source_revision": "485f7164958e5577ab6de4492c5496905c8a74ac",
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.1.0"
+      },
+      "compiler_definition_bytes": 1883,
+      "tools_list_wire_bytes": 25120
+    }
+  ],
+  "cases": [
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "quiet",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 2390,
+      "response_text_utf16_units": 2390,
+      "wire_bytes": 2843,
+      "roundtrip_ms": 130,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "moderate",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 82393,
+      "response_text_utf16_units": 82393,
+      "wire_bytes": 82845,
+      "roundtrip_ms": 89,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "few_diagnostics",
+      "variant": "default",
+      "request_bytes": 332,
+      "response_text_utf8_bytes": 7756,
+      "response_text_utf16_units": 7756,
+      "wire_bytes": 8929,
+      "roundtrip_ms": 180,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "diagnostics",
+      "variant": "default",
+      "request_bytes": 324,
+      "response_text_utf8_bytes": 115296,
+      "response_text_utf16_units": 115296,
+      "wire_bytes": 130389,
+      "roundtrip_ms": 365,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 600,
+      "returned_warnings": 10,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "dual",
+      "variant": "default",
+      "request_bytes": 310,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 250,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1050953
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "unicode",
+      "variant": "default",
+      "request_bytes": 316,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 351,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1050971
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "controls",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 154,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1077393
+    },
+    {
+      "arm": "A",
+      "round": 0,
+      "mode": "giant",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 402698,
+      "response_text_utf16_units": 322698,
+      "wire_bytes": 443199,
+      "roundtrip_ms": 727,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "quiet",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 2515,
+      "response_text_utf16_units": 2515,
+      "wire_bytes": 2952,
+      "roundtrip_ms": 66,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 14,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 14
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "quiet",
+      "variant": "no_output",
+      "request_bytes": 337,
+      "response_text_utf8_bytes": 2487,
+      "response_text_utf16_units": 2487,
+      "wire_bytes": 2915,
+      "roundtrip_ms": 145,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 14,
+          "included": false,
+          "omitted_utf8_bytes": 14,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "moderate",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 18922,
+      "response_text_utf16_units": 18922,
+      "wire_bytes": 19358,
+      "roundtrip_ms": 80,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 40000,
+          "included": true,
+          "omitted_utf8_bytes": 31808,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 40000,
+          "included": true,
+          "omitted_utf8_bytes": 31808,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "moderate",
+      "variant": "no_output",
+      "request_bytes": 343,
+      "response_text_utf8_bytes": 2520,
+      "response_text_utf16_units": 2520,
+      "wire_bytes": 2948,
+      "roundtrip_ms": 68,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 40000,
+          "included": false,
+          "omitted_utf8_bytes": 40000,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 40000,
+          "included": false,
+          "omitted_utf8_bytes": 40000,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "few_diagnostics",
+      "variant": "default",
+      "request_bytes": 332,
+      "response_text_utf8_bytes": 6385,
+      "response_text_utf16_units": 6385,
+      "wire_bytes": 7330,
+      "roundtrip_ms": 73,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 20,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 20,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 332
+        },
+        "stdout": {
+          "available_utf8_bytes": 742,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 742
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "few_diagnostics",
+      "variant": "no_output",
+      "request_bytes": 357,
+      "response_text_utf8_bytes": 5268,
+      "response_text_utf16_units": 5268,
+      "wire_bytes": 6175,
+      "roundtrip_ms": 57,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 20,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 20,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": false,
+          "omitted_utf8_bytes": 332,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 742,
+          "included": false,
+          "omitted_utf8_bytes": 742,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "diagnostics",
+      "variant": "default",
+      "request_bytes": 324,
+      "response_text_utf8_bytes": 16796,
+      "response_text_utf16_units": 16796,
+      "wire_bytes": 18406,
+      "roundtrip_ms": 85,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 50,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 600,
+        "errors_detail": {
+          "omitted": 550,
+          "returned": 50,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 332
+        },
+        "stdout": {
+          "available_utf8_bytes": 23784,
+          "included": true,
+          "omitted_utf8_bytes": 15592,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "diagnostics",
+      "variant": "no_output",
+      "request_bytes": 349,
+      "response_text_utf8_bytes": 8042,
+      "response_text_utf16_units": 8042,
+      "wire_bytes": 9429,
+      "roundtrip_ms": 154,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 50,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 600,
+        "errors_detail": {
+          "omitted": 550,
+          "returned": 50,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": false,
+          "omitted_utf8_bytes": 332,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 23784,
+          "included": false,
+          "omitted_utf8_bytes": 23784,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "dual",
+      "variant": "default",
+      "request_bytes": 310,
+      "response_text_utf8_bytes": 18911,
+      "response_text_utf16_units": 18911,
+      "wire_bytes": 19347,
+      "roundtrip_ms": 119,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 75712,
+      "stderr_capture_truncated_bytes": 75712,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "dual",
+      "variant": "no_output",
+      "request_bytes": 335,
+      "response_text_utf8_bytes": 2509,
+      "response_text_utf16_units": 2509,
+      "wire_bytes": 2937,
+      "roundtrip_ms": 104,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 75712,
+      "stderr_capture_truncated_bytes": 75712,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "unicode",
+      "variant": "default",
+      "request_bytes": 316,
+      "response_text_utf8_bytes": 18916,
+      "response_text_utf16_units": 16186,
+      "wire_bytes": 22084,
+      "roundtrip_ms": 158,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 15712,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "unicode",
+      "variant": "no_output",
+      "request_bytes": 341,
+      "response_text_utf8_bytes": 2513,
+      "response_text_utf16_units": 2513,
+      "wire_bytes": 2941,
+      "roundtrip_ms": 142,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 15712,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "controls",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 90604,
+      "response_text_utf16_units": 90604,
+      "wire_bytes": 107424,
+      "roundtrip_ms": 100,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 100000,
+          "included": true,
+          "omitted_utf8_bytes": 91808,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 100000,
+          "included": true,
+          "omitted_utf8_bytes": 91808,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "controls",
+      "variant": "no_output",
+      "request_bytes": 343,
+      "response_text_utf8_bytes": 2524,
+      "response_text_utf16_units": 2524,
+      "wire_bytes": 2952,
+      "roundtrip_ms": 100,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 100000,
+          "included": false,
+          "omitted_utf8_bytes": 100000,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100000,
+          "included": false,
+          "omitted_utf8_bytes": 100000,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "giant",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 23152,
+      "response_text_utf16_units": 19072,
+      "wire_bytes": 25664,
+      "roundtrip_ms": 182,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 1
+        },
+        "scope": "captured_output",
+        "warnings": 1,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100059,
+          "included": true,
+          "omitted_utf8_bytes": 91867,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 0,
+      "mode": "giant",
+      "variant": "no_output",
+      "request_bytes": 337,
+      "response_text_utf8_bytes": 6794,
+      "response_text_utf16_units": 5976,
+      "wire_bytes": 7666,
+      "roundtrip_ms": 162,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 1
+        },
+        "scope": "captured_output",
+        "warnings": 1,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100059,
+          "included": false,
+          "omitted_utf8_bytes": 100059,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "quiet",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 2514,
+      "response_text_utf16_units": 2514,
+      "wire_bytes": 2951,
+      "roundtrip_ms": 59,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 14,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 14
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "quiet",
+      "variant": "no_output",
+      "request_bytes": 337,
+      "response_text_utf8_bytes": 2487,
+      "response_text_utf16_units": 2487,
+      "wire_bytes": 2915,
+      "roundtrip_ms": 54,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 14,
+          "included": false,
+          "omitted_utf8_bytes": 14,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "moderate",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 18921,
+      "response_text_utf16_units": 18921,
+      "wire_bytes": 19357,
+      "roundtrip_ms": 63,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 40000,
+          "included": true,
+          "omitted_utf8_bytes": 31808,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 40000,
+          "included": true,
+          "omitted_utf8_bytes": 31808,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "moderate",
+      "variant": "no_output",
+      "request_bytes": 343,
+      "response_text_utf8_bytes": 2519,
+      "response_text_utf16_units": 2519,
+      "wire_bytes": 2947,
+      "roundtrip_ms": 62,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 40000,
+          "included": false,
+          "omitted_utf8_bytes": 40000,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 40000,
+          "included": false,
+          "omitted_utf8_bytes": 40000,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "few_diagnostics",
+      "variant": "default",
+      "request_bytes": 332,
+      "response_text_utf8_bytes": 6385,
+      "response_text_utf16_units": 6385,
+      "wire_bytes": 7330,
+      "roundtrip_ms": 78,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 20,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 20,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 332
+        },
+        "stdout": {
+          "available_utf8_bytes": 742,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 742
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "few_diagnostics",
+      "variant": "no_output",
+      "request_bytes": 357,
+      "response_text_utf8_bytes": 5269,
+      "response_text_utf16_units": 5269,
+      "wire_bytes": 6176,
+      "roundtrip_ms": 58,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 20,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 20,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": false,
+          "omitted_utf8_bytes": 332,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 742,
+          "included": false,
+          "omitted_utf8_bytes": 742,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "diagnostics",
+      "variant": "default",
+      "request_bytes": 324,
+      "response_text_utf8_bytes": 16796,
+      "response_text_utf16_units": 16796,
+      "wire_bytes": 18406,
+      "roundtrip_ms": 75,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 50,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 600,
+        "errors_detail": {
+          "omitted": 550,
+          "returned": 50,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 332
+        },
+        "stdout": {
+          "available_utf8_bytes": 23784,
+          "included": true,
+          "omitted_utf8_bytes": 15592,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "diagnostics",
+      "variant": "no_output",
+      "request_bytes": 349,
+      "response_text_utf8_bytes": 8042,
+      "response_text_utf16_units": 8042,
+      "wire_bytes": 9429,
+      "roundtrip_ms": 99,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 50,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 600,
+        "errors_detail": {
+          "omitted": 550,
+          "returned": 50,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": false,
+          "omitted_utf8_bytes": 332,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 23784,
+          "included": false,
+          "omitted_utf8_bytes": 23784,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "dual",
+      "variant": "default",
+      "request_bytes": 310,
+      "response_text_utf8_bytes": 18911,
+      "response_text_utf16_units": 18911,
+      "wire_bytes": 19347,
+      "roundtrip_ms": 96,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 75712,
+      "stderr_capture_truncated_bytes": 75712,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "dual",
+      "variant": "no_output",
+      "request_bytes": 335,
+      "response_text_utf8_bytes": 2509,
+      "response_text_utf16_units": 2509,
+      "wire_bytes": 2937,
+      "roundtrip_ms": 106,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 75712,
+      "stderr_capture_truncated_bytes": 75712,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "unicode",
+      "variant": "default",
+      "request_bytes": 316,
+      "response_text_utf8_bytes": 18916,
+      "response_text_utf16_units": 16186,
+      "wire_bytes": 22084,
+      "roundtrip_ms": 156,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 15712,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "unicode",
+      "variant": "no_output",
+      "request_bytes": 341,
+      "response_text_utf8_bytes": 2513,
+      "response_text_utf16_units": 2513,
+      "wire_bytes": 2941,
+      "roundtrip_ms": 133,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 15712,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "controls",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 90604,
+      "response_text_utf16_units": 90604,
+      "wire_bytes": 107424,
+      "roundtrip_ms": 90,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 100000,
+          "included": true,
+          "omitted_utf8_bytes": 91808,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 100000,
+          "included": true,
+          "omitted_utf8_bytes": 91808,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "controls",
+      "variant": "no_output",
+      "request_bytes": 343,
+      "response_text_utf8_bytes": 2523,
+      "response_text_utf16_units": 2523,
+      "wire_bytes": 2951,
+      "roundtrip_ms": 73,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 100000,
+          "included": false,
+          "omitted_utf8_bytes": 100000,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100000,
+          "included": false,
+          "omitted_utf8_bytes": 100000,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "giant",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 23152,
+      "response_text_utf16_units": 19072,
+      "wire_bytes": 25664,
+      "roundtrip_ms": 122,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 1
+        },
+        "scope": "captured_output",
+        "warnings": 1,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100059,
+          "included": true,
+          "omitted_utf8_bytes": 91867,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 1,
+      "mode": "giant",
+      "variant": "no_output",
+      "request_bytes": 337,
+      "response_text_utf8_bytes": 6794,
+      "response_text_utf16_units": 5976,
+      "wire_bytes": 7666,
+      "roundtrip_ms": 121,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 1
+        },
+        "scope": "captured_output",
+        "warnings": 1,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100059,
+          "included": false,
+          "omitted_utf8_bytes": 100059,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "quiet",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 2390,
+      "response_text_utf16_units": 2390,
+      "wire_bytes": 2843,
+      "roundtrip_ms": 68,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "moderate",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 82392,
+      "response_text_utf16_units": 82392,
+      "wire_bytes": 82844,
+      "roundtrip_ms": 110,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "few_diagnostics",
+      "variant": "default",
+      "request_bytes": 332,
+      "response_text_utf8_bytes": 7755,
+      "response_text_utf16_units": 7755,
+      "wire_bytes": 8928,
+      "roundtrip_ms": 116,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "diagnostics",
+      "variant": "default",
+      "request_bytes": 324,
+      "response_text_utf8_bytes": 115295,
+      "response_text_utf16_units": 115295,
+      "wire_bytes": 130388,
+      "roundtrip_ms": 119,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 600,
+      "returned_warnings": 10,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "dual",
+      "variant": "default",
+      "request_bytes": 310,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 177,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1050953
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "unicode",
+      "variant": "default",
+      "request_bytes": 316,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 218,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1050971
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "controls",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 120,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1077393
+    },
+    {
+      "arm": "A",
+      "round": 1,
+      "mode": "giant",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 402697,
+      "response_text_utf16_units": 322697,
+      "wire_bytes": 443198,
+      "roundtrip_ms": 250,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "quiet",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 2389,
+      "response_text_utf16_units": 2389,
+      "wire_bytes": 2842,
+      "roundtrip_ms": 69,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "moderate",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 82393,
+      "response_text_utf16_units": 82393,
+      "wire_bytes": 82845,
+      "roundtrip_ms": 79,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "few_diagnostics",
+      "variant": "default",
+      "request_bytes": 332,
+      "response_text_utf8_bytes": 7756,
+      "response_text_utf16_units": 7756,
+      "wire_bytes": 8929,
+      "roundtrip_ms": 58,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "diagnostics",
+      "variant": "default",
+      "request_bytes": 324,
+      "response_text_utf8_bytes": 115296,
+      "response_text_utf16_units": 115296,
+      "wire_bytes": 130389,
+      "roundtrip_ms": 117,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 600,
+      "returned_warnings": 10,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "dual",
+      "variant": "default",
+      "request_bytes": 310,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 208,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1050953
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "unicode",
+      "variant": "default",
+      "request_bytes": 316,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 252,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1050971
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "controls",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 240,
+      "response_text_utf16_units": 240,
+      "wire_bytes": 351,
+      "roundtrip_ms": 160,
+      "code": "limit_exceeded",
+      "has_compile_status": false,
+      "success": null,
+      "is_error": true,
+      "artifact_sha256": null,
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": null,
+      "errors": null,
+      "warnings": null,
+      "returned_errors": null,
+      "returned_warnings": null,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": null,
+      "stderr_capture_truncated_bytes": null,
+      "overflow_output_bytes": 1077393
+    },
+    {
+      "arm": "A",
+      "round": 2,
+      "mode": "giant",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 402697,
+      "response_text_utf16_units": 322697,
+      "wire_bytes": 443198,
+      "roundtrip_ms": 241,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": null,
+      "output_summary": null,
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "quiet",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 2514,
+      "response_text_utf16_units": 2514,
+      "wire_bytes": 2951,
+      "roundtrip_ms": 45,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 14,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 14
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "quiet",
+      "variant": "no_output",
+      "request_bytes": 337,
+      "response_text_utf8_bytes": 2487,
+      "response_text_utf16_units": 2487,
+      "wire_bytes": 2915,
+      "roundtrip_ms": 45,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 14,
+          "included": false,
+          "omitted_utf8_bytes": 14,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "moderate",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 18921,
+      "response_text_utf16_units": 18921,
+      "wire_bytes": 19357,
+      "roundtrip_ms": 48,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 40000,
+          "included": true,
+          "omitted_utf8_bytes": 31808,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 40000,
+          "included": true,
+          "omitted_utf8_bytes": 31808,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "moderate",
+      "variant": "no_output",
+      "request_bytes": 343,
+      "response_text_utf8_bytes": 2519,
+      "response_text_utf16_units": 2519,
+      "wire_bytes": 2947,
+      "roundtrip_ms": 66,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 40000,
+          "included": false,
+          "omitted_utf8_bytes": 40000,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 40000,
+          "included": false,
+          "omitted_utf8_bytes": 40000,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "few_diagnostics",
+      "variant": "default",
+      "request_bytes": 332,
+      "response_text_utf8_bytes": 6384,
+      "response_text_utf16_units": 6384,
+      "wire_bytes": 7329,
+      "roundtrip_ms": 44,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 20,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 20,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 332
+        },
+        "stdout": {
+          "available_utf8_bytes": 742,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 742
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "few_diagnostics",
+      "variant": "no_output",
+      "request_bytes": 357,
+      "response_text_utf8_bytes": 5268,
+      "response_text_utf16_units": 5268,
+      "wire_bytes": 6175,
+      "roundtrip_ms": 43,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 20,
+      "warnings": 10,
+      "returned_errors": 20,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 20,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 20,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": false,
+          "omitted_utf8_bytes": 332,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 742,
+          "included": false,
+          "omitted_utf8_bytes": 742,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "diagnostics",
+      "variant": "default",
+      "request_bytes": 324,
+      "response_text_utf8_bytes": 16796,
+      "response_text_utf16_units": 16796,
+      "wire_bytes": 18406,
+      "roundtrip_ms": 75,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 50,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 600,
+        "errors_detail": {
+          "omitted": 550,
+          "returned": 50,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 332
+        },
+        "stdout": {
+          "available_utf8_bytes": 23784,
+          "included": true,
+          "omitted_utf8_bytes": 15592,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "diagnostics",
+      "variant": "no_output",
+      "request_bytes": 349,
+      "response_text_utf8_bytes": 8042,
+      "response_text_utf16_units": 8042,
+      "wire_bytes": 9429,
+      "roundtrip_ms": 65,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 600,
+      "warnings": 10,
+      "returned_errors": 50,
+      "returned_warnings": 10,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 600,
+        "errors_detail": {
+          "omitted": 550,
+          "returned": 50,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 10,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 10,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 332,
+          "included": false,
+          "omitted_utf8_bytes": 332,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 23784,
+          "included": false,
+          "omitted_utf8_bytes": 23784,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "dual",
+      "variant": "default",
+      "request_bytes": 310,
+      "response_text_utf8_bytes": 18911,
+      "response_text_utf16_units": 18911,
+      "wire_bytes": 19347,
+      "roundtrip_ms": 83,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 75712,
+      "stderr_capture_truncated_bytes": 75712,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "dual",
+      "variant": "no_output",
+      "request_bytes": 335,
+      "response_text_utf8_bytes": 2509,
+      "response_text_utf16_units": 2509,
+      "wire_bytes": 2937,
+      "roundtrip_ms": 78,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 75712,
+      "stderr_capture_truncated_bytes": 75712,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "unicode",
+      "variant": "default",
+      "request_bytes": 316,
+      "response_text_utf8_bytes": 18916,
+      "response_text_utf16_units": 16186,
+      "wire_bytes": 22084,
+      "roundtrip_ms": 163,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": true,
+          "omitted_utf8_bytes": 516096,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 15712,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "unicode",
+      "variant": "no_output",
+      "request_bytes": 341,
+      "response_text_utf8_bytes": 2513,
+      "response_text_utf16_units": 2513,
+      "wire_bytes": 2941,
+      "roundtrip_ms": 111,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 15712,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "controls",
+      "variant": "default",
+      "request_bytes": 318,
+      "response_text_utf8_bytes": 90604,
+      "response_text_utf16_units": 90604,
+      "wire_bytes": 107424,
+      "roundtrip_ms": 77,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 100000,
+          "included": true,
+          "omitted_utf8_bytes": 91808,
+          "returned_utf8_bytes": 8192
+        },
+        "stdout": {
+          "available_utf8_bytes": 100000,
+          "included": true,
+          "omitted_utf8_bytes": 91808,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "controls",
+      "variant": "no_output",
+      "request_bytes": 343,
+      "response_text_utf8_bytes": 2524,
+      "response_text_utf16_units": 2524,
+      "wire_bytes": 2952,
+      "roundtrip_ms": 63,
+      "code": null,
+      "has_compile_status": true,
+      "success": true,
+      "is_error": false,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 0,
+      "warnings": 0,
+      "returned_errors": 0,
+      "returned_warnings": 0,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "scope": "captured_output",
+        "warnings": 0,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 100000,
+          "included": false,
+          "omitted_utf8_bytes": 100000,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100000,
+          "included": false,
+          "omitted_utf8_bytes": 100000,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "giant",
+      "variant": "default",
+      "request_bytes": 312,
+      "response_text_utf8_bytes": 23152,
+      "response_text_utf16_units": 19072,
+      "wire_bytes": 25664,
+      "roundtrip_ms": 135,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 1
+        },
+        "scope": "captured_output",
+        "warnings": 1,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": true,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100059,
+          "included": true,
+          "omitted_utf8_bytes": 91867,
+          "returned_utf8_bytes": 8192
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    },
+    {
+      "arm": "B",
+      "round": 2,
+      "mode": "giant",
+      "variant": "no_output",
+      "request_bytes": 337,
+      "response_text_utf8_bytes": 6794,
+      "response_text_utf16_units": 5976,
+      "wire_bytes": 7666,
+      "roundtrip_ms": 117,
+      "code": null,
+      "has_compile_status": true,
+      "success": false,
+      "is_error": true,
+      "artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "actual_artifact_sha256": "3adf50edc94d07f04422935297aef1d8194511a006f807a2a470e28fe0731480",
+      "provenance_status": "unverified",
+      "errors": 1,
+      "warnings": 1,
+      "returned_errors": 1,
+      "returned_warnings": 1,
+      "diagnostic_summary": {
+        "capture_complete": true,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 1
+        },
+        "scope": "captured_output",
+        "warnings": 1,
+        "warnings_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        }
+      },
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 100059,
+          "included": false,
+          "omitted_utf8_bytes": 100059,
+          "returned_utf8_bytes": 0
+        }
+      },
+      "stdout_capture_truncated_bytes": 0,
+      "stderr_capture_truncated_bytes": 0,
+      "overflow_output_bytes": null
+    }
+  ]
+}

@@ -101,6 +101,8 @@ Launch options and readiness regexes are validated before starting a process. In
 
 For `dm_compile`, `working_directory` also resolves relative DME paths. Malformed options are rejected before compilation. `success` requires a DMB as well as a successful compiler exit; check `dmb_updated` and provenance separately for freshness and verified inputs.
 
+Compiler replies include bounded log tails and up to 50 diagnostics per severity. Use `include_output: false` for shorter replies, or adjust `output_max_bytes` and `diagnostic_limit`. Counts and omission summaries remain available when details are shortened. See [compiler output](docs/compiler-output.md).
+
 DreamDaemon binds to `127.0.0.1`. Set `working_directory` to resolve a relative DMB and run the game from that directory; otherwise it runs from the DMB's directory. Additional `daemon_args` cannot override the DMB, port, directory or bind address. World parameters passed with `-params` remain supported.
 
 `dm_topic` uses one timeout for the complete request, from 1 to 60,000 ms (default 5,000). Status and stop remain available while it waits; stopping its runtime cancels the pending request.

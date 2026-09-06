@@ -8,6 +8,7 @@ use std::time::Duration;
 use tracing::info;
 
 mod arguments;
+mod response;
 use arguments::CompileOptions;
 
 use super::ToolExecutionContext;
@@ -248,6 +249,7 @@ pub async fn compile(
         timeout_ms,
         idle_timeout_ms,
         capture_network,
+        response,
     } = match CompileOptions::parse(&args) {
         Ok(options) => options,
         Err(error) => {
@@ -464,10 +466,11 @@ pub async fn compile(
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
     });
 
+    let text = response::format(result, response)?;
     if success {
-        Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+        Ok(ToolResult::text(text))
     } else {
-        Ok(ToolResult::error(serde_json::to_string_pretty(&result)?))
+        Ok(ToolResult::error(text))
     }
 }
 

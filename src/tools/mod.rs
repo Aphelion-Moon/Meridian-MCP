@@ -497,7 +497,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     tools.push(ToolDefinition {
         name: "dm_compile".to_string(),
-        description: "Compile the DreamMaker environment using the DM compiler. Returns compiler output and any errors.".to_string(),
+        description: "Compile with DreamMaker. Return build/artifact evidence, diagnostic counts and bounded output tails; set include_output=false for shorter replies.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -508,6 +508,18 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "compiler_path": {
                     "type": "string",
                     "description": "Optional path to the DreamMaker executable"
+                },
+                "include_output": {
+                    "type": "boolean", "default": true,
+                    "description": "Include bounded stdout/stderr tails; false omits raw output, retaining diagnostics and build evidence"
+                },
+                "output_max_bytes": {
+                    "type": "integer", "minimum": 1, "maximum": 65536, "default": 8192,
+                    "description": "Maximum returned UTF-8 bytes per output stream; JSON escaping may reduce this further"
+                },
+                "diagnostic_limit": {
+                    "type": "integer", "minimum": 0, "maximum": 200, "default": 50,
+                    "description": "Maximum rows per severity, also subject to byte budgets; counts cover all parsed captured output"
                 },
                 "working_directory": {
                     "type": "string",
