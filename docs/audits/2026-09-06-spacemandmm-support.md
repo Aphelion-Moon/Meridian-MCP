@@ -8,6 +8,8 @@ The [source-identity follow-up](2026-09-06-source-identity.md) repairs case-sens
 
 The [source-excerpt follow-up](2026-09-06-source-excerpts/README.md) covers parser-based physical boundaries, source budgets, snapshot metadata and decoding, using the separately identified `meridian-read-policy-v3` local patch.
 
+The [search-storage follow-up](2026-09-06-search-storage/README.md) retains that upstream/patch identity and reduces measured private memory by 74.63 MB while preserving all 2,340 compared replies. Its final suites passed 427 Windows and 420 Linux/WSL 1 tests. The source capability audit, all 143 drift assertions and documentation generation through the final release binary passed again. These results extend the initial qualification below; they do not close the intermittent WSL ownership-fixture failure, hosted CI or live debugger gates.
+
 Meridian integrates the parser, checker, icon and map libraries, packages the documentation generator, and supplies typed source and debugger tools. **This is agent-facing integration, not complete LSP/editor or legacy extools parity.** Registry coverage means every audited entry has an explicit disposition; excluded entries do not count as implemented functionality.
 
 ## Findings and repairs

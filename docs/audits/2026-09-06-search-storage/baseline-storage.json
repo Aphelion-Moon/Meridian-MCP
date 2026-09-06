@@ -1,0 +1,75 @@
+{
+  "docs": {
+    "distinct_allocation_payload_bytes": 3791409,
+    "distinct_allocations": 43959,
+    "logical_bytes": 3791409,
+    "nonempty_occurrences": 43959,
+    "unique_text_bytes": 3727185,
+    "unique_text_count": 42715
+  },
+  "document_capacity": 524288,
+  "document_capacity_bytes": 167772160,
+  "document_slot_bytes": 320,
+  "documents": 452780,
+  "exact_name_count": 73861,
+  "exact_name_id_capacity_bytes": 6364256,
+  "exact_symbol_count": 452026,
+  "exact_symbol_id_capacity_bytes": 14464864,
+  "files": {
+    "distinct_allocation_payload_bytes": 45054237,
+    "distinct_allocations": 452780,
+    "logical_bytes": 45054237,
+    "nonempty_occurrences": 452780,
+    "unique_text_bytes": 979416,
+    "unique_text_count": 9889
+  },
+  "metadata_text": {
+    "distinct_allocation_payload_bytes": 104592244,
+    "distinct_allocations": 2514549,
+    "logical_bytes": 104592244,
+    "nonempty_occurrences": 2514549,
+    "unique_text_bytes": 24525787,
+    "unique_text_count": 543069
+  },
+  "names": {
+    "distinct_allocation_payload_bytes": 4728854,
+    "distinct_allocations": 452780,
+    "logical_bytes": 4728854,
+    "nonempty_occurrences": 452780,
+    "unique_text_bytes": 1047001,
+    "unique_text_count": 74025
+  },
+  "posting_capacity": 16993836,
+  "posting_capacity_bytes": 271901376,
+  "posting_count": 12587530,
+  "posting_terms": 63967,
+  "source": {
+    "distinct_allocation_payload_bytes": 48377853,
+    "distinct_allocations": 452780,
+    "logical_bytes": 48377853,
+    "nonempty_occurrences": 452780,
+    "unique_text_bytes": 43476631,
+    "unique_text_count": 322700
+  },
+  "timings_ms": {
+    "analysis_indexes": 8038,
+    "dreamchecker": 4166,
+    "fingerprint": 1335,
+    "preprocess_parse": 14201,
+    "queue_wait": 0,
+    "search_documents": 3528,
+    "total": 31289
+  },
+  "type_paths": {
+    "distinct_allocation_payload_bytes": 16312525,
+    "distinct_allocations": 450801,
+    "logical_bytes": 16312525,
+    "nonempty_occurrences": 450801,
+    "unique_text_bytes": 2625630,
+    "unique_text_count": 65153
+  },
+  "types": 65165,
+  "probe_build_profile": "release",
+  "source_base_revision": "7755d81651786f55e45d7f1e07dca5d3fe705ff4",
+  "corpus_revision": "7462a6942b2e71a3ea13c00169f65f575cb281b7"
+}

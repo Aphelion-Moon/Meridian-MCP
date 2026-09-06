@@ -321,11 +321,8 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
     }
     let preprocess_parse = preprocess_started.elapsed().as_millis() as u64;
 
-    // Always run. Measured on a ~10k-file, 65k-type environment, skipping
-    // dreamchecker saved under 1% of parse time (41.4s vs 41.7s, inside the
-    // noise) while dropping every semantic diagnostic — 139 errors and a
-    // warning on that environment. There is no useful trade here; the cost
-    // is dominated by preprocessing and index construction, not by this.
+    // Always run DreamChecker so semantic diagnostics describe this parsed
+    // snapshot. Its cost is reported separately in the parse response.
     let dreamchecker_started = Instant::now();
     dreamchecker::run(&context, &objtree);
     let configured_rules = configured_diagnostic_rules(&parse_path, &context);

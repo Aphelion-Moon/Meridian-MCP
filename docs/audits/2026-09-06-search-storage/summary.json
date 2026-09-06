@@ -1,0 +1,86 @@
+{
+  "arms": {
+    "baseline": {
+      "parse_median_ms": 25348.75540000212,
+      "parse_samples_ms": [
+        25348.75540000212,
+        24770.87889998802,
+        32773.595000006026
+      ],
+      "reuse_median_ms": 1256.1171000124887,
+      "private_median_bytes": 1962663936,
+      "working_set_median_bytes": 1831829504,
+      "stage_medians_ms": {
+        "analysis_indexes": 6086,
+        "dreamchecker": 3455,
+        "fingerprint": 1274,
+        "preprocess_parse": 11361,
+        "queue_wait": 0,
+        "search_documents": 3187,
+        "total": 25347
+      },
+      "response_characters_one_pass": 386944,
+      "response_bytes_one_pass": 386944
+    },
+    "candidate": {
+      "parse_median_ms": 26268.552299996372,
+      "parse_samples_ms": [
+        26268.552299996372,
+        24600.32610000053,
+        26896.517200002563
+      ],
+      "reuse_median_ms": 1339.1524000035133,
+      "private_median_bytes": 1888034816,
+      "working_set_median_bytes": 1816748032,
+      "stage_medians_ms": {
+        "analysis_indexes": 6268,
+        "dreamchecker": 3480,
+        "fingerprint": 1308,
+        "preprocess_parse": 10845,
+        "queue_wait": 0,
+        "search_documents": 3066,
+        "total": 26267
+      },
+      "response_characters_one_pass": 386944,
+      "response_bytes_one_pass": 386944
+    }
+  },
+  "candidate_change": {
+    "parse_median_ms": {
+      "absolute": 919.7968999942532,
+      "percent": 3.6285682885802695
+    },
+    "reuse_median_ms": {
+      "absolute": 83.03529999102466,
+      "percent": 6.6104744525967485
+    },
+    "private_median_bytes": {
+      "absolute": -74629120,
+      "percent": -3.8024400729601004
+    },
+    "working_set_median_bytes": {
+      "absolute": -15081472,
+      "percent": -0.8233010750764769
+    }
+  },
+  "paired_parse_changes_ms": [
+    919.7968999942532,
+    -170.5527999874903,
+    -5877.0778000034625
+  ],
+  "distinct_queries": 78,
+  "recorded_queries": 2340,
+  "source_files_checked": 22,
+  "natural_exit_codes": {
+    "baseline": [
+      0,
+      0,
+      0
+    ],
+    "candidate": [
+      0,
+      0,
+      0
+    ]
+  }
+}

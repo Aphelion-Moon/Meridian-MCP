@@ -16,6 +16,9 @@ const EXACT_NAME_BOOST: f64 = 6.0;
 const PHRASE_BOOST: f64 = 2.0;
 const INDEX_SOURCE_LINES: usize = 80;
 
+#[cfg(test)]
+mod storage_profile;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SymbolKind {
     Type,
@@ -81,32 +84,73 @@ struct Posting {
     term_frequency: f64,
 }
 
+/// Most canonical symbols have one implementation. Keep that ID in the map
+/// entry; allocate a list only when another document shares the lookup key.
+#[derive(Clone, Debug)]
+enum DocumentIds {
+    Single(usize),
+    Multiple(Vec<usize>),
+}
+
+impl DocumentIds {
+    fn push(&mut self, document_id: usize) {
+        match self {
+            Self::Single(first) => *self = Self::Multiple(vec![*first, document_id]),
+            Self::Multiple(ids) => ids.push(document_id),
+        }
+    }
+
+    fn as_slice(&self) -> &[usize] {
+        match self {
+            Self::Single(id) => std::slice::from_ref(id),
+            Self::Multiple(ids) => ids,
+        }
+    }
+
+    fn shrink_to_fit(&mut self) {
+        if let Self::Multiple(ids) = self {
+            ids.shrink_to_fit();
+        }
+    }
+
+    #[cfg(test)]
+    fn heap_capacity(&self) -> usize {
+        match self {
+            Self::Single(_) => 0,
+            Self::Multiple(ids) => ids.capacity(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct SearchIndex {
     documents: Vec<SearchDocument>,
     postings: HashMap<String, Vec<Posting>>,
-    exact_symbols: HashMap<String, Vec<usize>>,
-    exact_names: HashMap<String, Vec<usize>>,
+    exact_symbols: HashMap<String, DocumentIds>,
+    exact_names: HashMap<String, DocumentIds>,
     document_lengths: Vec<f64>,
     average_document_length: f64,
 }
 
 impl SearchIndex {
-    pub(crate) fn new(documents: Vec<SearchDocument>) -> Self {
+    pub(crate) fn new(mut documents: Vec<SearchDocument>) -> Self {
+        // These collections never grow after construction. Release build-time
+        // spare capacity before keeping them for the lifetime of the snapshot.
+        documents.shrink_to_fit();
         let mut postings: HashMap<String, Vec<Posting>> = HashMap::new();
-        let mut exact_symbols: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut exact_names: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut exact_symbols: HashMap<String, DocumentIds> = HashMap::new();
+        let mut exact_names: HashMap<String, DocumentIds> = HashMap::new();
         let mut document_lengths = Vec::with_capacity(documents.len());
 
         for (document_id, document) in documents.iter().enumerate() {
             exact_symbols
                 .entry(document.symbol.to_lowercase())
-                .or_default()
-                .push(document_id);
+                .and_modify(|ids| ids.push(document_id))
+                .or_insert(DocumentIds::Single(document_id));
             exact_names
                 .entry(document.name.to_lowercase())
-                .or_default()
-                .push(document_id);
+                .and_modify(|ids| ids.push(document_id))
+                .or_insert(DocumentIds::Single(document_id));
             let terms = weighted_terms(document);
             let length = terms.values().map(|frequency| *frequency as f64).sum();
             document_lengths.push(length);
@@ -124,6 +168,14 @@ impl SearchIndex {
         } else {
             document_lengths.iter().sum::<f64>() / document_lengths.len() as f64
         };
+
+        for rows in postings.values_mut() {
+            rows.shrink_to_fit();
+        }
+        for rows in exact_symbols.values_mut().chain(exact_names.values_mut()) {
+            rows.shrink_to_fit();
+        }
+        document_lengths.shrink_to_fit();
 
         Self {
             documents,
@@ -147,6 +199,7 @@ impl SearchIndex {
     ) -> Option<&SourceExcerpt> {
         self.exact_symbols
             .get(&member_symbol(owner, "proc", name).to_lowercase())?
+            .as_slice()
             .iter()
             .map(|index| &self.documents[*index])
             .find(|document| {
@@ -370,7 +423,12 @@ impl SearchIndex {
         let normalized_query = request.query.trim().to_lowercase();
         let mut scores = HashMap::<usize, f64>::new();
         if let Some(exact_symbols) = self.exact_symbols.get(&normalized_query) {
-            scores.extend(exact_symbols.iter().map(|document_id| (*document_id, 0.0)));
+            scores.extend(
+                exact_symbols
+                    .as_slice()
+                    .iter()
+                    .map(|document_id| (*document_id, 0.0)),
+            );
         } else {
             for term in query_terms {
                 let Some(postings) = self.postings.get(&term) else {
@@ -400,7 +458,7 @@ impl SearchIndex {
                 .exact_names
                 .get(&normalized_query)
                 .into_iter()
-                .flatten()
+                .flat_map(DocumentIds::as_slice)
             {
                 scores.entry(*document_id).or_default();
             }
@@ -621,6 +679,130 @@ impl<'a> SourceCache<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn singleton_exact_symbols_do_not_allocate_id_buffers() {
+        let index = SearchIndex::new(vec![
+            document(
+                SymbolKind::Proc,
+                "/datum/inline/proc/one",
+                "shared",
+                "/datum/inline",
+                "one.dm",
+                "",
+                "return 1",
+            ),
+            document(
+                SymbolKind::Proc,
+                "/datum/inline/proc/two",
+                "shared",
+                "/datum/inline",
+                "two.dm",
+                "",
+                "return 2",
+            ),
+        ]);
+        let heap_id_slots = index
+            .exact_symbols
+            .values()
+            .map(DocumentIds::heap_capacity)
+            .sum::<usize>();
+        assert_eq!(
+            heap_id_slots, 0,
+            "single-symbol lookups should store their only ID inline"
+        );
+        assert_eq!(index.search(&request("shared")).hits.len(), 2);
+        assert_eq!(
+            index.search(&request("/datum/inline/proc/two")).hits[0]
+                .document
+                .file,
+            "two.dm"
+        );
+    }
+
+    #[test]
+    fn exact_symbol_lists_preserve_every_override_and_source() {
+        let index = SearchIndex::new(
+            (0..5)
+                .map(|number| {
+                    let mut row = document(
+                        SymbolKind::Proc,
+                        "/datum/overrides/proc/run",
+                        "run",
+                        "/datum/overrides",
+                        &format!("code/{number}.dm"),
+                        "",
+                        &format!("return {number}"),
+                    );
+                    row.override_index = Some(number);
+                    row
+                })
+                .collect(),
+        );
+        let results = index.search(&request("/datum/overrides/proc/run"));
+        assert_eq!(results.hits.len(), 5);
+        for (number, hit) in results.hits.iter().enumerate() {
+            assert_eq!(hit.document.override_index, Some(number));
+            assert_eq!(
+                index
+                    .proc_source("/datum/overrides", "run", number)
+                    .unwrap()
+                    .text,
+                format!("return {number}")
+            );
+        }
+    }
+
+    #[test]
+    fn completed_search_index_releases_build_growth_capacity() {
+        let mut documents = Vec::with_capacity(1024);
+        for index in 0..257 {
+            documents.push(document(
+                SymbolKind::Proc,
+                &format!("/datum/capacity/proc/entry_{index}"),
+                "shared_name",
+                "/datum/capacity",
+                "code/capacity.dm",
+                "shared documentation",
+                "return shared_value",
+            ));
+        }
+        let index = SearchIndex::new(documents);
+        let used = index.documents.len() * std::mem::size_of::<SearchDocument>()
+            + index
+                .postings
+                .values()
+                .map(|rows| rows.len() * std::mem::size_of::<Posting>())
+                .sum::<usize>()
+            + index
+                .exact_symbols
+                .values()
+                .chain(index.exact_names.values())
+                .map(|rows| std::mem::size_of_val(rows.as_slice()))
+                .sum::<usize>()
+            + index.document_lengths.len() * std::mem::size_of::<f64>();
+        let retained = index.documents.capacity() * std::mem::size_of::<SearchDocument>()
+            + index
+                .postings
+                .values()
+                .map(|rows| rows.capacity() * std::mem::size_of::<Posting>())
+                .sum::<usize>()
+            + index
+                .exact_symbols
+                .values()
+                .chain(index.exact_names.values())
+                .map(|rows| rows.heap_capacity() * std::mem::size_of::<usize>())
+                .sum::<usize>()
+            + index.document_lengths.capacity() * std::mem::size_of::<f64>();
+        assert!(retained <= used * 105 / 100,
+            "finished immutable index retains growth storage: {retained} bytes for {used} bytes of rows");
+        let hits = index.search(&request("/datum/capacity/proc/entry_256"));
+        assert_eq!(hits.hits.len(), 1);
+        assert_eq!(
+            hits.hits[0].document.symbol,
+            "/datum/capacity/proc/entry_256"
+        );
+    }
     use dreammaker::Context;
     use std::sync::atomic::{AtomicU64, Ordering};
 

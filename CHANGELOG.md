@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Release search-index vector growth capacity after construction and store singleton lookup IDs inline, preserving indexed content and response formats. Added an opt-in storage probe and matched response-equivalence benchmark.
 - Serialized `dm_parse_environment` so overlapping calls queue instead of each building a complete object tree, and stopped holding the previous snapshot alive for the duration of a parse. Both removed a doubled peak memory footprint on large environments.
 - Built the post-parse indexes concurrently and centralized detection of the parser diagnostics that mean an environment was never fully read, with a test pinning that wording to the SpacemanDMM revision it is matched against.
 - Made `dm_parse_environment` reject a directory or missing path as a structured error before parsing, rather than reporting it as a parser failure.
