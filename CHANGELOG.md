@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Make Topic I/O asynchronous, apply one deadline to the whole exchange, and cancel pending requests with their runtime. Validate Topic arguments before runtime access so status and stop stay responsive.
 - Release search-index vector growth capacity after construction and store singleton lookup IDs inline, preserving indexed content and response formats. Added an opt-in storage probe and matched response-equivalence benchmark.
 - Validate runtime launch options and readiness regexes before process creation, returning structured `invalid_input` errors. Output waits reject incorrectly typed flags/timeouts while retaining zero-time polling and the five-minute cap. Ownership fixtures now retain startup phase and child-exit evidence on failure.
 - Serialized `dm_parse_environment` so overlapping calls queue instead of each building a complete object tree, and stopped holding the previous snapshot alive for the duration of a parse. Both removed a doubled peak memory footprint on large environments.

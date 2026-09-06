@@ -822,7 +822,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 },
                 "timeout_ms": {
                     "type": "integer",
-                    "description": "Timeout in milliseconds (default: 5000)"
+                    "minimum": 1,
+                    "maximum": 60000,
+                    "description": "Total request timeout in milliseconds (default: 5000)"
                 }
             },
             "required": ["topic"]

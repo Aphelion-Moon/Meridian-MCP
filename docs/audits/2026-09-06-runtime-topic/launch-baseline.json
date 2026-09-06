@@ -1,0 +1,52 @@
+{
+  "binary_sha256": "8760b197b80d56e5dceb2a07bc521914e4929b8155b913461a5fce1f292bb605",
+  "byond_version": "5.0.516.1687",
+  "build": {
+    "build_id": "537fdda0bab51f50bdd901e0bfd6579c4a023f076abe6f9597708f1c30922fcd",
+    "complete": true,
+    "executable_sha256": "8760b197b80d56e5dceb2a07bc521914e4929b8155b913461a5fce1f292bb605",
+    "profile": "debug",
+    "schema": 1,
+    "source_dirty": true,
+    "source_revision": "1d6329646fce613885d9595a5594601c22ff1348",
+    "target": "x86_64-pc-windows-msvc",
+    "version": "0.1.0"
+  },
+  "cases": [
+    {
+      "case": "default",
+      "success": true,
+      "error_code": null,
+      "observed_cwd": "artifact",
+      "reported_directory": "artifact",
+      "listener_addresses": [
+        "0.0.0.0"
+      ],
+      "topic_error": false,
+      "stop_error": false
+    },
+    {
+      "case": "absolute_with_directory",
+      "success": true,
+      "error_code": null,
+      "observed_cwd": "artifact",
+      "reported_directory": "artifact",
+      "listener_addresses": [
+        "0.0.0.0"
+      ],
+      "topic_error": true,
+      "stop_error": false
+    },
+    {
+      "case": "relative_with_directory",
+      "success": false,
+      "error_code": "path_not_found",
+      "observed_cwd": null,
+      "reported_directory": null,
+      "listener_addresses": [],
+      "topic_error": true,
+      "stop_error": false
+    }
+  ],
+  "exit_code": 0
+}

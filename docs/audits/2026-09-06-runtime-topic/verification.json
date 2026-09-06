@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "base_revision": "c8a8e79",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "src/tools/runtime.rs": "11fbaa964896fededd1e1c847d9f9805a952d9ba97e28a14859bc3a97f6adb51",
+    "src/tools/runtime/topic_tests.rs": "f074231ded889df23fe40dc88e7782f43fa18c8c76de211ab742d1fec973b363",
+    "src/tools/mod.rs": "5748508063ab1af112c89ade387fa4e3fc22149645808de599eb13cc13f9815e",
+    "src/runtime_ownership_tests.rs": "869b805aa6d556f7690639a381fd1858aafbc7d1e0cb5c6cb1d5e20084386134"
+  },
+  "tests": {
+    "focused_windows": {
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0,
+      "log_sha256": "306b7f50333b8f7eb8d06b7e18d8e986fbf8e12083509ba59ef83279659c8158"
+    },
+    "windows": {
+      "passed": 435,
+      "failed": 0,
+      "ignored": 5,
+      "log_sha256": "354486ecd441d9aefaefd41d439f548cb3b75f42b0c09ce694089e829ea8921c"
+    },
+    "linux_wsl1": {
+      "passed": 428,
+      "failed": 0,
+      "ignored": 6,
+      "log_sha256": "e9d92f2adf74e2f32f9b32faf20b58c7581182125f4938a5a6f7ffc89be02b4a"
+    }
+  },
+  "strict_clippy": {
+    "windows": {
+      "result": "passed",
+      "log_sha256": "dcf0ecfe747907ec3523923db8a93c07624d703da8faa38c3478db1d1d95e86f"
+    },
+    "linux": {
+      "result": "passed",
+      "log_sha256": "36e2609b493264ef3454830ffe92d1454d73cbfa9c2af65522bd63f841d99748"
+    }
+  },
+  "regressions_observed_before_repair": [
+    "An unrelated async timer could not run before the delayed Topic peer responded.",
+    "A 100 ms request accepted a trickled reply after 306 ms and 311 ms in two runs.",
+    "Pending Topic I/O retained the runtime mutex, blocking status and stop.",
+    "Invalid Topic arguments waited for runtime access."
+  ],
+  "fixture_correction": "The Windows cancellation peer initially inherited nonblocking mode and returned WouldBlock. That failure is not valid baseline cancellation evidence. The corrected peer waits in blocking mode on its own bounded OS thread and verifies socket closure after cancellation.",
+  "live_launch_baseline": {
+    "summary": "launch-baseline.json",
+    "summary_sha256": "605f880b5333fd1f7099a5e1fbd048a726c08bf70b0129ea854ed764076f2ce3",
+    "binary_sha256": "8760b197b80d56e5dceb2a07bc521914e4929b8155b913461a5fce1f292bb605",
+    "observed_gaps": [
+      "Wildcard listener binding",
+      "Ignored requested working directory",
+      "Relative DMB resolution failed"
+    ],
+    "additional_failure": "One ping timed out; cause not established.",
+    "execution_context": "Native Windows user context; initial sandbox compiler timed out without a DMB."
+  },
+  "boundaries": [
+    "Linux qualification ran under WSL 1, not hosted native Ubuntu.",
+    "No live BYOND candidate or live Tracy result is claimed by this batch.",
+    "No general latency or token-efficiency gain was measured.",
+    "Working-directory and listener-binding fixes remain pending.",
+    "The earlier intermittent WSL ownership fixture failure remains unexplained.",
+    "The connected MCP was not replaced; release packaging and hosted CI remain separate."
+  ]
+}

@@ -99,6 +99,8 @@ After building, use `dm_run` → `dm_wait_for_output` → `dm_topic` / `dm_statu
 
 Launch options and readiness regexes are validated before starting a process. Invalid options return `invalid_input`; flags such as `require_verified_provenance` must be JSON booleans. Output waits accept `timeout_ms: 0` for an immediate check and cap longer waits at five minutes.
 
+`dm_topic` uses one timeout for the complete request, from 1 to 60,000 ms (default 5,000). Status and stop remain available while it waits; stopping its runtime cancels the pending request.
+
 ### Inspect icons and maps
 
 Use `dm_dmi_info` before comparing or extracting DMI states. `dm_find_dmi_duplicates` looks across contained scopes for exact matches plus cropped, palette-only, mirrored, rotated, and scaled copies. `dm_audit_icons` checks statically resolvable inherited `icon` and `icon_state` references. Generated PNGs are written only by the explicit development tools and only to contained paths.

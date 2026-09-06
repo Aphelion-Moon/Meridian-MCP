@@ -50,6 +50,66 @@ fn fixture_provenance() -> crate::LaunchProvenance {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn topic_wait_keeps_status_and_stop_responsive() {
+    use crate::tools::runtime;
+    use serde_json::json;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    initialize_owner();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (accepted, ready) = tokio::sync::oneshot::channel();
+    let (release, released) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut packet = [0; 14];
+        stream.read_exact(&mut packet).await.unwrap();
+        accepted.send(()).unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(3), released).await;
+        let _ = stream.write_all(b"\x00\x83\x00\x06\x06pong\x00").await;
+    });
+    let state = std::sync::Arc::new(crate::state::ServerState::new());
+    let (child, containment) = crate::process::spawn_runtime_process(
+        &mut tokio::process::Command::from(fixture_command("leaf", std::path::Path::new("unused"))),
+    )
+    .unwrap();
+    {
+        let mut runtime = state.runtime().await;
+        runtime.set_game_process(child, port, fixture_provenance());
+        runtime.containment = Some(containment);
+    }
+    let request_state = std::sync::Arc::clone(&state);
+    let mut request = tokio::spawn(async move {
+        runtime::topic(&request_state, json!({"topic":"ping","timeout_ms":2000})).await
+    });
+    tokio::time::timeout(Duration::from_secs(2), ready)
+        .await
+        .unwrap()
+        .unwrap();
+    let status = tokio::time::timeout(
+        Duration::from_millis(150),
+        runtime::status(&state, json!({})),
+    )
+    .await;
+    let stop =
+        tokio::time::timeout(Duration::from_millis(150), runtime::stop(&state, json!({}))).await;
+    let early_reply = tokio::time::timeout(Duration::from_millis(150), &mut request).await;
+    let cancelled_with_runtime = early_reply.is_ok();
+    let _ = release.send(());
+    peer.await.unwrap();
+    let result = match early_reply {
+        Ok(result) => result,
+        Err(_) => request.await,
+    }
+    .unwrap()
+    .unwrap();
+    runtime::stop(&state, json!({})).await.unwrap();
+    assert!(status.is_ok(), "Topic wait held the runtime status lock");
+    assert!(stop.is_ok(), "Topic wait blocked runtime stop");
+    assert!(cancelled_with_runtime, "Topic request outlived its runtime");
+    assert_eq!(result.is_error, Some(true));
+}
+
 #[tokio::test]
 async fn output_wait_keeps_status_and_stop_responsive() {
     use crate::tools::runtime;

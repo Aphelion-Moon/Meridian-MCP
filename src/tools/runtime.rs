@@ -1,13 +1,12 @@
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
-use std::io::Write;
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use tokio::net::TcpStream;
 use tokio::process::Command;
 use tracing::info;
 
@@ -16,8 +15,12 @@ use crate::process_environment::minimal_runtime_environment;
 mod arguments;
 use arguments::{OutputPattern, RunOptions, WaitOptions};
 
+#[cfg(test)]
+mod topic_tests;
+
 const DEFAULT_OUTPUT_WAIT_TIMEOUT_MS: u64 = 30_000;
 const MAX_OUTPUT_WAIT_TIMEOUT_MS: u64 = 300_000;
+const MAX_TOPIC_TIMEOUT_MS: u64 = 60_000;
 const OUTPUT_READ_CHUNK_BYTES: usize = 8 * 1024;
 const LOG_FILE_POLL_INTERVAL_MS: u64 = 50;
 
@@ -688,6 +691,7 @@ mod tests {
     use crate::mcp::ToolContent;
     use crate::state::push_output_line;
     use std::fs::OpenOptions;
+    use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[tokio::test]
@@ -1114,25 +1118,37 @@ pub async fn status(state: &ServerState, _args: Value) -> Result<ToolResult> {
 
 /// Send a Topic() call to the running game server
 pub async fn topic(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let mut state = state.runtime().await;
-    if !state.is_game_running() {
+    let request = (|| -> Result<_> {
+        let topic = args
+            .get("topic")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("topic must be a string"))?;
+        let packet = build_topic_packet(topic.strip_prefix('?').unwrap_or(topic))?;
+        let timeout_ms = super::bounded_u64(&args, "timeout_ms", 5000, 1, MAX_TOPIC_TIMEOUT_MS)?;
+        Ok((packet, timeout_ms))
+    })();
+    let (packet, timeout_ms) = match request {
+        Ok(request) => request,
+        Err(error) => return Ok(invalid_arguments(error)),
+    };
+    let mut runtime = state.runtime().await;
+    if !runtime.is_game_running() {
         return Ok(ToolResult::error("No game instance is currently running."));
     }
-
-    let topic_string = args
-        .get("topic")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing topic argument"))?;
-
-    let port = state.game_port.unwrap_or(1337);
-    let timeout_ms = args
-        .get("timeout_ms")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(5000);
-
-    info!("Sending Topic to port {}: {}", port, topic_string);
-
-    match send_topic(&format!("127.0.0.1:{port}"), topic_string, timeout_ms).await {
+    state.observe_runtime(&mut runtime);
+    let port = runtime.game_port.unwrap_or(1337);
+    let output = Arc::clone(&runtime.output_log);
+    drop(runtime);
+    info!("Sending Topic to port {port}");
+    let address = format!("127.0.0.1:{port}");
+    let response = tokio::select! {
+        biased;
+        () = runtime_session_ended(&output) => {
+            return Ok(ToolResult::error("Runtime session ended during Topic request."));
+        }
+        response = send_topic_packet(&address, &packet, timeout_ms) => response,
+    };
+    match response {
         Ok(response) => Ok(ToolResult::text(
             json!({
                 "success": true,
@@ -1140,58 +1156,78 @@ pub async fn topic(state: &ServerState, args: Value) -> Result<ToolResult> {
             })
             .to_string(),
         )),
-        Err(e) => Ok(ToolResult::error(format!("Topic call failed: {e}"))),
+        Err(error) => Ok(crate::result::structured_error(
+            if error.is::<tokio::time::error::Elapsed>() {
+                crate::result::ToolErrorCode::TimedOut
+            } else {
+                crate::result::ToolErrorCode::ExternalToolFailure
+            },
+            format!("Topic call failed: {error}"),
+            Some(
+                "Check the running world's Topic handler and retry within the timeout limit."
+                    .to_owned(),
+            ),
+            json!({}),
+        )),
+    }
+}
+
+async fn runtime_session_ended(output: &OutputLog) {
+    let mut changes = output
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .changes
+        .subscribe();
+    loop {
+        changes.borrow_and_update();
+        if !output
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .running
+        {
+            return;
+        }
+        if changes.changed().await.is_err() {
+            return;
+        }
     }
 }
 
 /// Send a BYOND Topic packet and get response
 pub(crate) async fn send_topic(address: &str, topic: &str, timeout_ms: u64) -> Result<String> {
     let topic_clean = topic.strip_prefix('?').unwrap_or(topic);
-    info!(
-        "Sending topic packet for: {} (cleaned: {})",
-        topic, topic_clean
-    );
     let packet = build_topic_packet(topic_clean)?;
+    send_topic_packet(address, &packet, timeout_ms).await
+}
 
-    // Clone address for the blocking task
-    let address_owned = address.to_string();
-
-    // Connect with timeout
-    let stream = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        tokio::task::spawn_blocking(move || TcpStream::connect(&address_owned)),
-    )
-    .await??;
-
-    let mut stream = stream?;
-    stream.set_read_timeout(Some(Duration::from_millis(timeout_ms)))?;
-    stream.set_write_timeout(Some(Duration::from_millis(timeout_ms)))?;
-
-    // Send the packet
-    stream.write_all(&packet)?;
-    stream.flush()?;
-
-    // Read response
-    let mut response_header = [0u8; 4];
-    std::io::Read::read_exact(&mut stream, &mut response_header)?;
-
-    if response_header[0] != 0x00 || response_header[1] != 0x83 {
-        return Err(anyhow!("Invalid response header"));
-    }
-
-    let response_len = ((response_header[2] as u16) << 8) | (response_header[3] as u16);
-
-    if response_len == 0 {
-        return Ok(String::new());
-    }
-
-    let mut response_data = vec![0u8; response_len as usize];
-    std::io::Read::read_exact(&mut stream, &mut response_data)?;
-
-    decode_topic_response(&response_data)
+async fn send_topic_packet(address: &str, packet: &[u8], timeout_ms: u64) -> Result<String> {
+    use anyhow::Context;
+    anyhow::ensure!(
+        (1..=MAX_TOPIC_TIMEOUT_MS).contains(&timeout_ms),
+        "timeout_ms must be between 1 and {MAX_TOPIC_TIMEOUT_MS}"
+    );
+    // One deadline covers connection, request and every response fragment.
+    // Dropping this future also drops the socket; no blocking worker remains.
+    tokio::time::timeout(Duration::from_millis(timeout_ms), async {
+        let mut stream = TcpStream::connect(address).await?;
+        stream.write_all(packet).await?;
+        let mut header = [0; 4];
+        stream.read_exact(&mut header).await?;
+        anyhow::ensure!(header[..2] == [0, 0x83], "Invalid response header");
+        let length = u16::from_be_bytes([header[2], header[3]]) as usize;
+        if length == 0 {
+            return Ok(String::new());
+        }
+        let mut response = vec![0; length];
+        stream.read_exact(&mut response).await?;
+        decode_topic_response(&response)
+    })
+    .await
+    .with_context(|| format!("Topic request timed out after {timeout_ms} ms"))?
 }
 
 fn build_topic_packet(topic: &str) -> Result<Vec<u8>> {
+    anyhow::ensure!(!topic.contains('\0'), "topic must not contain a NUL byte");
     let topic_bytes = topic.as_bytes();
     let data_len = topic_bytes.len() + 6;
     if data_len > u16::MAX as usize {
