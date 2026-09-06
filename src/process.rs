@@ -200,11 +200,13 @@ pub struct ProcessOutcome {
     pub duration_ms: u128,
     pub stdout: BoundedOutput,
     pub stderr: BoundedOutput,
+    /// Both pipes reached EOF and every received chunk was delivered to capture.
+    pub output_complete: bool,
     pub network_audit: NetworkAuditReport,
 }
 
-#[derive(Clone, Copy)]
-enum OutputStream {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OutputStream {
     Stdout,
     Stderr,
 }
@@ -258,13 +260,15 @@ async fn capture_stream<R>(
     mut reader: R,
     stream: OutputStream,
     sender: mpsc::Sender<(OutputStream, Vec<u8>)>,
-) where
+) -> bool
+where
     R: AsyncRead + Unpin,
 {
     let mut buffer = [0_u8; 8 * 1024];
     loop {
         let count = match tokio::io::AsyncReadExt::read(&mut reader, &mut buffer).await {
-            Ok(0) | Err(_) => break,
+            Ok(0) => return true,
+            Err(_) => return false,
             Ok(count) => count,
         };
         if sender
@@ -272,12 +276,21 @@ async fn capture_stream<R>(
             .await
             .is_err()
         {
-            break;
+            return false;
         }
     }
 }
 
 pub async fn run_contained_process(spec: ProcessSpec) -> Result<ProcessOutcome> {
+    run_contained_process_observed(spec, |_, _| {}).await
+}
+
+/// Observe each chunk before tail eviction, including the final output drain.
+/// Observers must do bounded synchronous work; the runner retains no extra log.
+pub async fn run_contained_process_observed(
+    spec: ProcessSpec,
+    mut observe: impl FnMut(OutputStream, &[u8]) + Send,
+) -> Result<ProcessOutcome> {
     if spec
         .stdin
         .as_ref()
@@ -318,6 +331,7 @@ pub async fn run_contained_process(spec: ProcessSpec) -> Result<ProcessOutcome> 
                     truncated_bytes: 0,
                 },
                 network_audit: audit.finish(),
+                output_complete: false,
             });
         }
     };
@@ -383,6 +397,7 @@ pub async fn run_contained_process(spec: ProcessSpec) -> Result<ProcessOutcome> 
             output = receiver.recv() => {
                 if let Some((stream, bytes)) = output {
                     last_progress = tokio::time::Instant::now();
+                    observe(stream, &bytes);
                     append_output(&mut stdout, &mut stderr, stream, &bytes);
                 }
             }
@@ -417,7 +432,14 @@ pub async fn run_contained_process(spec: ProcessSpec) -> Result<ProcessOutcome> 
     audit.sample(&process_ids, started_at.elapsed().as_millis());
     let _ = containment.terminate(1);
     drop(sender);
-    drain_output(&mut receiver, &mut stdout, &mut stderr, &mut reader_tasks).await;
+    let output_complete = drain_output(
+        &mut receiver,
+        &mut stdout,
+        &mut stderr,
+        &mut reader_tasks,
+        &mut observe,
+    )
+    .await;
     if let Some(task) = stdin_task {
         match task.await {
             Ok(Ok(())) => {}
@@ -437,6 +459,7 @@ pub async fn run_contained_process(spec: ProcessSpec) -> Result<ProcessOutcome> 
         duration_ms: started_at.elapsed().as_millis(),
         stdout: stdout.finish(),
         stderr: stderr.finish(),
+        output_complete,
         network_audit: audit.finish(),
     })
 }
@@ -466,24 +489,122 @@ async fn drain_output(
     receiver: &mut mpsc::Receiver<(OutputStream, Vec<u8>)>,
     stdout: &mut TailBuffer,
     stderr: &mut TailBuffer,
-    reader_tasks: &mut Vec<tokio::task::JoinHandle<()>>,
-) {
+    reader_tasks: &mut Vec<tokio::task::JoinHandle<bool>>,
+    observe: &mut (impl FnMut(OutputStream, &[u8]) + Send),
+) -> bool {
     let deadline = tokio::time::Instant::now() + OUTPUT_DRAIN_TIMEOUT;
-    loop {
+    let mut complete = loop {
         let now = tokio::time::Instant::now();
         if now >= deadline {
-            break;
+            break false;
         }
         match tokio::time::timeout(deadline - now, receiver.recv()).await {
-            Ok(Some((stream, bytes))) => append_output(stdout, stderr, stream, &bytes),
-            Ok(None) | Err(_) => break,
+            Ok(Some((stream, bytes))) => {
+                observe(stream, &bytes);
+                append_output(stdout, stderr, stream, &bytes);
+            }
+            Ok(None) => break true,
+            Err(_) => break false,
         }
-    }
+    };
+    let drained = complete;
     for task in reader_tasks.drain(..) {
-        if !task.is_finished() {
+        if !drained && !task.is_finished() {
             task.abort();
         }
-        let _ = task.await;
+        complete &= matches!(task.await, Ok(true));
+    }
+    // Preserve chunks already received before a drain deadline or reader abort.
+    while let Ok((stream, bytes)) = receiver.try_recv() {
+        observe(stream, &bytes);
+        append_output(stdout, stderr, stream, &bytes);
+    }
+    complete
+}
+
+#[cfg(test)]
+mod output_capture_tests {
+    use super::*;
+    use std::pin::Pin;
+    use std::task::{Context as TaskContext, Poll};
+    use tokio::io::ReadBuf;
+
+    struct FailedRead;
+    impl AsyncRead for FailedRead {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _: &mut TaskContext<'_>,
+            _: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Err(std::io::Error::other("owned read failure")))
+        }
+    }
+
+    #[tokio::test]
+    async fn output_drain_deadline_preserves_received_bytes_but_marks_incomplete() {
+        let (mut writer, reader) = tokio::io::duplex(32);
+        writer.write_all(b"before stalled EOF").await.unwrap();
+        let (sender, mut receiver) = mpsc::channel(2);
+        let mut tasks = vec![tokio::spawn(capture_stream(
+            reader,
+            OutputStream::Stdout,
+            sender,
+        ))];
+        let mut stdout = TailBuffer::new();
+        let mut stderr = TailBuffer::new();
+        let mut observed = Vec::new();
+        let complete = drain_output(
+            &mut receiver,
+            &mut stdout,
+            &mut stderr,
+            &mut tasks,
+            &mut |_, bytes| observed.extend_from_slice(bytes),
+        )
+        .await;
+        assert!(!complete);
+        assert_eq!(observed, b"before stalled EOF");
+        assert_eq!(stdout.finish().text, "before stalled EOF");
+        assert!(tasks.is_empty());
+        drop(writer);
+    }
+
+    #[tokio::test]
+    async fn output_read_errors_are_distinguished_from_clean_eof() {
+        for failed in [false, true] {
+            let (sender, mut receiver) = mpsc::channel(2);
+            let task = if failed {
+                tokio::spawn(capture_stream(FailedRead, OutputStream::Stdout, sender))
+            } else {
+                tokio::spawn(capture_stream(
+                    &b"final bytes"[..],
+                    OutputStream::Stdout,
+                    sender,
+                ))
+            };
+            let mut stdout = TailBuffer::new();
+            let mut stderr = TailBuffer::new();
+            let mut observed = Vec::new();
+            let complete = drain_output(
+                &mut receiver,
+                &mut stdout,
+                &mut stderr,
+                &mut vec![task],
+                &mut |stream, bytes| {
+                    assert_eq!(stream, OutputStream::Stdout);
+                    observed.extend_from_slice(bytes);
+                },
+            )
+            .await;
+            assert_eq!(complete, !failed);
+            assert_eq!(
+                observed,
+                if failed {
+                    &b""[..]
+                } else {
+                    &b"final bytes"[..]
+                }
+            );
+        }
     }
 }
 

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use serde_json::{json, Map, Value};
 
 const STREAM_JSON_BYTES: usize = 64 * 1024;
-const DIAGNOSTIC_JSON_BYTES: usize = 96 * 1024;
+pub(super) const DIAGNOSTIC_JSON_BYTES: usize = 96 * 1024;
 const METADATA_JSON_BYTES: usize = 96 * 1024;
 const REPLY_JSON_BYTES: usize = 512 * 1024;
 
@@ -13,6 +13,9 @@ pub(super) struct ResponseOptions {
 }
 
 impl ResponseOptions {
+    pub fn diagnostic_limit(&self) -> usize {
+        self.diagnostic_limit
+    }
     pub fn parse(args: &Value) -> Result<Self> {
         Ok(Self {
             include_output: match args.get("include_output") {
@@ -76,41 +79,44 @@ fn bounded_text(text: &str, raw_limit: usize, json_limit: usize, tail: bool) -> 
     }
 }
 
-fn json_bytes(value: &Value) -> usize {
+pub(super) fn json_bytes(value: &Value) -> usize {
     // Values constructed here contain no fallible user-defined serializers.
     serde_json::to_vec(value)
         .expect("JSON value serialization")
         .len()
 }
 
-fn diagnostics(rows: Value, limit: usize) -> (Value, Value) {
+pub(super) fn bound_diagnostic(mut row: Value) -> Value {
+    let message = row["message"]
+        .as_str()
+        .expect("compiler diagnostic message");
+    let excerpt = bounded_text(message, 4096, 4096, false);
+    if excerpt.len() != message.len() {
+        let original_bytes = message.len();
+        row["message"] = json!(excerpt);
+        row["message_truncated"] = json!(true);
+        row["message_utf8_bytes"] = json!(original_bytes);
+    }
+    row
+}
+
+fn diagnostics(rows: Value, limit: usize, total: u64) -> (Value, Value) {
     let rows = rows.as_array().expect("compiler diagnostic array");
     let mut returned = Vec::new();
     let mut bytes = 2;
     let mut truncated_messages = 0;
     for row in rows.iter().take(limit) {
-        let mut row = row.clone();
-        let message = row["message"]
-            .as_str()
-            .expect("compiler diagnostic message");
-        let excerpt = bounded_text(message, 4096, 4096, false);
-        let truncated = excerpt.len() != message.len();
-        if truncated {
-            let original_bytes = message.len();
-            row["message"] = json!(excerpt);
-            row["message_truncated"] = json!(true);
-            row["message_utf8_bytes"] = json!(original_bytes);
-        }
+        let row = bound_diagnostic(row.clone());
         let row_bytes = json_bytes(&row) + usize::from(!returned.is_empty());
         if bytes + row_bytes > DIAGNOSTIC_JSON_BYTES {
             break;
         }
         bytes += row_bytes;
-        truncated_messages += usize::from(truncated);
+        truncated_messages += usize::from(row["message_truncated"] == true);
         returned.push(row);
     }
     let summary = json!({
-        "returned": returned.len(), "omitted": rows.len() - returned.len(),
+        "returned": returned.len(), "omitted": total - returned.len() as u64,
         "truncated_messages": truncated_messages,
     });
     (json!(returned), summary)
@@ -224,15 +230,18 @@ pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<Stri
             output.insert(name.into(), json!(excerpt));
         }
     }
-    let mut diagnostic_summary = json!({
+    let mut diagnostic_summary = result.as_object_mut().unwrap().remove("diagnostic_summary").unwrap_or_else(|| json!({
         "capture_complete": result["stdout_truncated_bytes"] == 0 && result["stderr_truncated_bytes"] == 0,
         "scope": "captured_output",
-    });
+    }));
     let mut diagnostic_rows = Map::new();
     for name in ["errors", "warnings"] {
         let rows = result.as_object_mut().unwrap().remove(name).unwrap();
-        diagnostic_summary[name] = json!(rows.as_array().unwrap().len());
-        let (rows, summary) = diagnostics(rows, options.diagnostic_limit);
+        let total = diagnostic_summary[name]
+            .as_u64()
+            .unwrap_or(rows.as_array().unwrap().len() as u64);
+        diagnostic_summary[name] = json!(total);
+        let (rows, summary) = diagnostics(rows, options.diagnostic_limit, total);
         diagnostic_summary[format!("{name}_detail")] = summary;
         diagnostic_rows.insert(name.into(), rows);
     }

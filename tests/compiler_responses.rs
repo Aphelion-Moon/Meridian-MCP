@@ -186,3 +186,128 @@ async fn compiler_response_controls_reject_invalid_values_before_execution() {
     std::fs::remove_dir_all(root).unwrap();
     assert!(failures.is_empty(), "{failures:?}");
 }
+
+#[tokio::test]
+async fn early_diagnostics_survive_tail_eviction_and_still_fail_the_build() {
+    let result = compile("early_error", json!({"include_output":false})).await;
+    let (_, data) = payload(&result);
+    assert_eq!(data["exit_code"], 0);
+    assert_eq!(data["dmb_exists"], true);
+    assert_eq!(data["success"], false);
+    assert_eq!(data["compiler_succeeded"], false);
+    assert_eq!(data["diagnostic_summary"]["errors"], 1);
+    assert_eq!(data["diagnostic_summary"]["warnings"], 1);
+    assert_eq!(data["errors"][0]["line"], 7);
+    assert_eq!(data["warnings"][0]["line"], 8);
+    assert_eq!(data["diagnostic_summary"]["scope"], "observed_output");
+    assert_eq!(data["diagnostic_summary"]["analysis_complete"], true);
+    assert_eq!(data["diagnostic_summary"]["capture_complete"], false);
+}
+
+#[tokio::test]
+async fn diagnostic_totals_cover_all_observed_lines_with_bounded_returned_rows() {
+    for limit in [0, 2, 200] {
+        let result = compile(
+            "many_diagnostics",
+            json!({"diagnostic_limit":limit,"include_output":false}),
+        )
+        .await;
+        let (text, data) = payload(&result);
+        assert!(text.len() <= 512 * 1024);
+        assert_eq!(data["success"], false);
+        assert_eq!(data["diagnostic_summary"]["errors"], 30_000);
+        assert_eq!(data["diagnostic_summary"]["warnings"], 20_000);
+        assert_eq!(data["diagnostic_summary"]["analysis_complete"], true);
+        for (name, total) in [("errors", 30_000), ("warnings", 20_000)] {
+            assert_eq!(data[name].as_array().unwrap().len(), limit);
+            assert_eq!(
+                data["diagnostic_summary"][format!("{name}_detail")]["omitted"],
+                total - limit
+            );
+            if limit > 0 {
+                assert_eq!(data[name][0]["line"], 1);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn incomplete_diagnostic_analysis_cannot_report_a_successful_build() {
+    let result = compile("overlong_line", json!({"include_output":false})).await;
+    let (_, data) = payload(&result);
+    assert_eq!(data["exit_code"], 0);
+    assert_eq!(data["success"], false);
+    assert_eq!(data["diagnostic_summary"]["analysis_complete"], false);
+    assert_eq!(data["diagnostic_summary"]["oversized_lines"], 1);
+    assert!(data["diagnostic_analysis_error"].is_string());
+}
+
+#[tokio::test]
+async fn an_evicted_error_cannot_create_verified_provenance() {
+    let root = root();
+    let workspace = root.join("workspace");
+    let private_path = root.join("private");
+    std::fs::create_dir(&workspace).unwrap();
+    std::fs::create_dir(&private_path).unwrap();
+    let dme = workspace.join("failure_after_success.dme");
+    std::fs::write(&dme, "/world\n    fps = 10\n").unwrap();
+    let policy = PathPolicy::new(vec![workspace], vec![compiler().clone()]).unwrap();
+    let private = std::sync::Arc::new(
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    let store = meridian_mcp::BuildProvenanceStore::new(private.clone(), policy.clone());
+    let context = ToolExecutionContext::with_features_and_state(
+        CapabilityMode::Development,
+        policy,
+        meridian_mcp::RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(private.clone()),
+    );
+    let state = ServerState::new();
+    let parsed = call_tool(
+        &context,
+        &state,
+        "dm_parse_environment",
+        json!({"dme_path":dme}),
+    )
+    .await
+    .unwrap();
+    assert_ne!(parsed.is_error, Some(true));
+    let previous = call_tool(
+        &context,
+        &state,
+        "dm_compile",
+        json!({"dme_path":dme,"timeout_ms":10000,"include_output":false}),
+    )
+    .await
+    .unwrap();
+    let (_, previous) = payload(&previous);
+    assert_eq!(previous["success"], true);
+    assert_eq!(previous["provenance_status"], "verified");
+    let result = call_tool(
+        &context,
+        &state,
+        "dm_compile",
+        json!({"dme_path":dme,"timeout_ms":10000,"include_output":false}),
+    )
+    .await
+    .unwrap();
+    let (_, data) = payload(&result);
+    assert_eq!(data["success"], false);
+    assert_eq!(data["provenance_status"], "stale");
+    assert_eq!(data["build_record_id"], previous["build_record_id"]);
+    let key = store.artifact_key(&dme.with_extension("dmb")).unwrap();
+    let attempt = private
+        .read_json::<Value>(&format!("attempts/{key}.json"))
+        .unwrap();
+    assert_eq!(
+        attempt["outcome"],
+        json!({"status":"failed","code":"compiler_failed"})
+    );
+    drop(context);
+    drop(store);
+    drop(private);
+    std::fs::remove_dir_all(root).unwrap();
+}

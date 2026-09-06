@@ -4,7 +4,7 @@ This initial audit covers upstream revision `351ddc0ffb2439876d4565ce5130bb6b027
 
 The subsequent [language-query audit and measurements](2026-09-06-language-queries/README.md) cover semantic descendants, variable assignments, declaration references, bounded compact pages and index storage. The broader [follow-up workplan](2026-09-06-functional-performance-followup.md) tracks remaining work.
 
-Latest local qualification is recorded in the [compiler-response follow-up](2026-09-06-compiler-responses/README.md): 450 Windows and 443 Linux/WSL 1 tests, strict Clippy on both, the source inventory and all 143 drift assertions, dmdoc execution, and focused native BYOND compiles. Explicit support boundaries below still apply; these checks do not qualify hosted CI or live debugger/Tracy sessions.
+Latest local qualification is recorded in the [streaming-diagnostic follow-up](2026-09-06-compiler-diagnostics/README.md): 458 Windows and 451 Linux/WSL 1 tests, strict Clippy on both, dmdoc execution, and focused native BYOND success/error cases. The [compiler-response follow-up](2026-09-06-compiler-responses/README.md) separately records the source inventory and all 143 drift assertions. The initial Linux run reproduced the unresolved guardian timeout before its final successful run. Explicit support boundaries below still apply; these checks do not qualify hosted CI or live debugger/Tracy sessions.
 
 The [source-identity follow-up](2026-09-06-source-identity.md) repairs case-sensitive file collisions in symbol and search results. It records Windows qualification, partial local Linux qualification and an unresolved intermittent WSL 1 guardian failure; it does not replace native Ubuntu CI.
 

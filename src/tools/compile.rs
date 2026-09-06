@@ -8,6 +8,7 @@ use std::time::Duration;
 use tracing::info;
 
 mod arguments;
+mod diagnostics;
 mod response;
 use arguments::CompileOptions;
 
@@ -18,7 +19,7 @@ use crate::build_provenance::{
 };
 use crate::fixture_manifest::{FixtureManifest, VerifiedFixtureManifest};
 use crate::mcp::ToolResult;
-use crate::process::{run_contained_process, ProcessSpec, TerminationReason};
+use crate::process::{run_contained_process_observed, ProcessSpec, TerminationReason};
 use crate::state::ServerState;
 
 const DEFAULT_IDLE_TIMEOUT_MS: u64 = 45_000;
@@ -31,12 +32,12 @@ enum DiagnosticSeverity {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct CompilerDiagnostic {
-    file: String,
+struct CompilerDiagnostic<'a> {
+    file: &'a str,
     line: u32,
     column: Option<u32>,
     severity: DiagnosticSeverity,
-    message: String,
+    message: &'a str,
 }
 
 fn diagnostic_regex() -> &'static Regex {
@@ -48,7 +49,7 @@ fn diagnostic_regex() -> &'static Regex {
     })
 }
 
-fn parse_diagnostic_line(line: &str) -> Option<CompilerDiagnostic> {
+fn parse_diagnostic_line(line: &str) -> Option<CompilerDiagnostic<'_>> {
     let captures = diagnostic_regex().captures(line.trim_end())?;
     let severity = match captures
         .name("severity")?
@@ -62,13 +63,13 @@ fn parse_diagnostic_line(line: &str) -> Option<CompilerDiagnostic> {
     };
 
     Some(CompilerDiagnostic {
-        file: captures.name("file")?.as_str().to_string(),
+        file: captures.name("file")?.as_str(),
         line: captures.name("line")?.as_str().parse().ok()?,
         column: captures
             .name("column")
             .and_then(|value| value.as_str().parse().ok()),
         severity,
-        message: captures.name("message")?.as_str().trim().to_string(),
+        message: captures.name("message")?.as_str().trim(),
     })
 }
 
@@ -85,7 +86,7 @@ fn diagnostic_to_value(diagnostic: &CompilerDiagnostic) -> Value {
     })
 }
 
-fn compile_succeeded(process_succeeded: bool, error_count: usize) -> bool {
+fn compile_succeeded(process_succeeded: bool, error_count: u64) -> bool {
     process_succeeded && error_count == 0
 }
 
@@ -371,38 +372,37 @@ pub async fn compile(
             .collect(),
         compiler_working_directory.to_owned(),
     )?;
-    let execution = run_contained_process(ProcessSpec {
-        program: compiler.clone(),
-        arguments,
-        working_directory: compiler_working_directory.to_owned(),
-        environment: compiler_environment(),
-        stdin: None,
-        timeout: Duration::from_millis(timeout_ms),
-        idle_timeout: Duration::from_millis(idle_timeout_ms),
-        capture_network,
-        cancellation: None,
-    })
+    let mut diagnostics = diagnostics::CompilerDiagnostics::new(response.diagnostic_limit());
+    let execution = run_contained_process_observed(
+        ProcessSpec {
+            program: compiler.clone(),
+            arguments,
+            working_directory: compiler_working_directory.to_owned(),
+            environment: compiler_environment(),
+            stdin: None,
+            timeout: Duration::from_millis(timeout_ms),
+            idle_timeout: Duration::from_millis(idle_timeout_ms),
+            capture_network,
+            cancellation: None,
+        },
+        |stream, bytes| diagnostics.observe(stream, bytes),
+    )
     .await?;
 
     let stdout = &execution.stdout.text;
     let stderr = &execution.stderr.text;
 
-    // Parse output for errors/warnings
-    let mut errors: Vec<Value> = Vec::new();
-    let mut warnings: Vec<Value> = Vec::new();
-
-    for line in stdout.lines().chain(stderr.lines()) {
-        if let Some(diagnostic) = parse_diagnostic_line(line) {
-            match &diagnostic.severity {
-                DiagnosticSeverity::Error => errors.push(diagnostic_to_value(&diagnostic)),
-                DiagnosticSeverity::Warning => warnings.push(diagnostic_to_value(&diagnostic)),
-            }
-        }
-    }
+    let diagnostics = diagnostics.finish(
+        execution.output_complete,
+        execution.stdout.truncated_bytes == 0 && execution.stderr.truncated_bytes == 0,
+    );
 
     let process_succeeded =
         execution.termination == TerminationReason::Exited && execution.exit_code == Some(0);
-    let compiler_succeeded = compile_succeeded(process_succeeded, errors.len());
+    let compiler_succeeded = compile_succeeded(
+        process_succeeded && diagnostics.complete,
+        diagnostics.error_count,
+    );
     let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path)?;
     let dmb_exists = artifact_after.exists;
     let success = compiler_succeeded && dmb_exists;
@@ -421,7 +421,9 @@ pub async fn compile(
         &artifact_after,
         success,
         dmb_updated,
-        if compiler_succeeded && !dmb_exists {
+        if process_succeeded && !diagnostics.complete {
+            "diagnostic_analysis_incomplete"
+        } else if compiler_succeeded && !dmb_exists {
             "artifact_missing"
         } else if timed_out {
             "compile_timed_out"
@@ -435,6 +437,7 @@ pub async fn compile(
     let result = json!({
         "success": success,
         "compiler_succeeded": compiler_succeeded,
+        "diagnostic_analysis_error": (!diagnostics.complete).then_some("Compiler output could not be fully analyzed; inspect oversized_lines and output_complete in diagnostic_summary."),
         "artifact_error": (compiler_succeeded && !dmb_exists).then_some("Compiler exited successfully without producing a DMB."),
         "timed_out": timed_out,
         "idle": idle,
@@ -453,8 +456,9 @@ pub async fn compile(
         "compiler": compiler.display().to_string(),
         "working_directory": working_directory.map(|directory| directory.display().to_string()),
         "defines": defines,
-        "errors": errors,
-        "warnings": warnings,
+        "errors": diagnostics.errors,
+        "warnings": diagnostics.warnings,
+        "diagnostic_summary": diagnostics.summary,
         "stdout": stdout,
         "stderr": stderr,
         "stdout_truncated_bytes": execution.stdout.truncated_bytes,

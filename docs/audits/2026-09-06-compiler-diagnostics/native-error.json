@@ -1,0 +1,37 @@
+{
+  "binary_sha256": "19537b5831aa16abc84f4d89d5c63bd1e673c85a3000444423b45f51ecd03304",
+  "byond_version": "5.0.516.1687",
+  "success": false,
+  "compiler_exit_code": -1,
+  "dmb_exists": false,
+  "diagnostic_summary": {
+    "analysis_complete": true,
+    "capture_complete": true,
+    "errors": 1,
+    "errors_detail": {
+      "omitted": 0,
+      "returned": 1,
+      "truncated_messages": 0
+    },
+    "output_complete": true,
+    "oversized_lines": 0,
+    "scope": "observed_output",
+    "warnings": 0,
+    "warnings_detail": {
+      "omitted": 0,
+      "returned": 0,
+      "truncated_messages": 0
+    }
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "column": null,
+      "line": 2,
+      "message": "meridian_missing_fixture_proc: undefined proc",
+      "file": "broken.dme"
+    }
+  ],
+  "provenance_status": "unverified",
+  "natural_mcp_exit_code": 0
+}

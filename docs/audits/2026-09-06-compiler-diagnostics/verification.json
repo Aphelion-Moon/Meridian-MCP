@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "base_revision": "ddebb0c",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "src/process.rs": "1fdc08b83511c39a336db3dc4b68cfabdcdecb4edace1381115d7ec260da018f",
+    "src/tools/compile.rs": "d93d6b1ec86b9bda45ccf5d942d76ddcf33d3e8a5c4736705c341c7c2c9ff2d7",
+    "src/tools/compile/diagnostics.rs": "bc2bf89845932e9b3de88f066da9c1d73ddffdc7fe7686553240debf86e136d5",
+    "src/tools/compile/response.rs": "d4d7f9d77018f72b44383f4783fab2d675b7a26e09d8176dd16f298cda5d1ea6",
+    "tests/compiler_responses.rs": "97dc6730092fcb10a07e69fc96460c0fc8a4134d13cd13a047fc5841cbefc566",
+    "tests/fixtures/compiler_output.rs": "47489d7c0c0cf2ea7d46dbc357216782f8b1c64a9f347e29db52a332e283a670",
+    "tests/process_runner.rs": "79659863cc75fc0ba38aec95d5975bb003fff80f794087f9929d5e9c58ff508a",
+    "docs/audits/2026-09-06-compiler-diagnostics/probe.ps1": "6b9b882700b67cb297965c3ee6f715fd697a37d247f60d93a74d56230e6f1a7b",
+    "docs/audits/2026-09-06-compiler-diagnostics/native-error-probe.ps1": "dcb73f154766789d2afc51f8d23d7203f029447a994f508e398d1dc3e3253410",
+    "docs/audits/2026-09-06-compiler-diagnostics/record.py": "3238c782d9b763c30c397e52b8100e99d540970b2140785269e1687d4e92b23a"
+  },
+  "gates": {
+    "windows": {
+      "passed": 458,
+      "failed": 0,
+      "ignored": 5,
+      "log_sha256": "2cedd407a5b448794680b540f778832c5fc0c6e06454a6979ca2f84f21e38334",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "d3be780d19752162935da1a5029793ed257f964af90d3977ca0babc9fdebd547"
+    },
+    "linux": {
+      "passed": 451,
+      "failed": 0,
+      "ignored": 6,
+      "log_sha256": "1515fb8554399118e8cf4057a1944cfbe81dcc79519c8a8136432caa45575d0f",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "9bf1bec2a71bfffae4b8c9bf3ace1fe9d7b32b83d2d19f12ba3b799aa0a53c82"
+    },
+    "dmdoc": {
+      "status": "passed",
+      "log_sha256": "91b2a6c2626f82519eae2b5747f381ac5c33877f8824d0d12eb4f457a76f9227"
+    }
+  },
+  "red": {
+    "passed": 5,
+    "failed": 3,
+    "ignored": 0,
+    "log_sha256": "bd327fcb00ba6add51c06457f96ca70faaaefea0b9604a89864da9d3042c60fd"
+  },
+  "initial_focused": {
+    "passed": 32,
+    "failed": 0,
+    "ignored": 1,
+    "log_sha256": "4f512ee4f366a8c0936ec4289d3fae4a250cdd28865429af8bbd5ccbdfc8e78a"
+  },
+  "strengthened_provenance_fixture": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "log_sha256": "aad4896527da24d174d1e7c5a5526a9e0c5b064ba8e93e871deeba014f8210f3"
+  },
+  "initial_full": {
+    "windows": {
+      "passed": 457,
+      "failed": 1,
+      "ignored": 5,
+      "log_sha256": "862479343e0c47c5a3fc7ce254d5e2358055a93a9fa2233eed1f434cfc05cf27"
+    },
+    "linux": {
+      "passed": 449,
+      "failed": 2,
+      "ignored": 6,
+      "log_sha256": "cc3b288f0d80cfc87e7ebe9260d1c80fdbe66c55700666dac9e5a542705956f8"
+    },
+    "explanation": "The new test incorrectly expected stale provenance without a prior verified build; its fixture now establishes that build and verifies failure invalidates it. Linux also reproduced the earlier guardian readiness timeout. The complete Linux rerun ran without concurrent Windows builds; the timeout cause remains unproved."
+  },
+  "comparison": {
+    "file": "comparison.json",
+    "cases": 72,
+    "sessions": 6,
+    "baseline_early_error_false_successes": 9,
+    "candidate_early_error_failures": 9,
+    "raw_sha256": {
+      "round-0-A/raw.json": "07d52243911b278f3a750db8d2ec05f6f3f12cd3a9aeae3d82747cb3b9518744",
+      "round-0-B/raw.json": "81af3720552924e1e8f3625a07b127cfce71d3553ad7bd65253624952d5d2fd1",
+      "round-1-B/raw.json": "85bfe6281e7e4d83f2372817d007e88f1dc6fe5b8e2ce254e0894b372cbec96a",
+      "round-1-A/raw.json": "299110c5810ca2970c6c92231a60059fa0a7d96ec30c8543e322aa826f791978",
+      "round-2-A/raw.json": "ecf38d861edc4071630c847f0383ccdd23431766dfcdd3d750511d54e5085c36",
+      "round-2-B/raw.json": "948fc5a378d67baac79e6fd95853751755bedab9009e573c21826ac0c7823cc3"
+    }
+  },
+  "native": {
+    "positive": "native.json",
+    "compiler_error": "native-error.json",
+    "verified_fresh_dmb_cases": 3,
+    "native_error_count": 1,
+    "native_error_line": 2,
+    "natural_mcp_exit_code": 0
+  },
+  "boundaries": [
+    "Local Linux/WSL 1 qualification does not replace hosted native Ubuntu CI.",
+    "The earlier guardian readiness timeout recurred in the initial parallel qualification and remains unexplained.",
+    "Synthetic output comparisons use debug MCP binaries and an owned fake compiler; artifact hashes match, but outcome and counts intentionally change.",
+    "Most streaming analysis now occurs inside the process runner, so duration_ms covers different work than the baseline; use end-to-end latency for comparisons.",
+    "Three alternating rounds and concurrent Windows qualification do not establish a compiler speedup, memory saving or model-token saving.",
+    "A line larger than 1 MiB or incomplete pipe reads leaves analysis incomplete and prevents verified build success.",
+    "Rift build tail classification, the remaining 62-tool inventory, live helper gates and release handoff remain active; the installed MCP is unchanged."
+  ]
+}

@@ -1,7 +1,7 @@
 use meridian_mcp::artifact::ArtifactSnapshot;
 use meridian_mcp::process::{
-    run_contained_process, ProcessSpec, TerminationReason, MAX_PROCESS_INPUT_BYTES,
-    MAX_PROCESS_OUTPUT_BYTES,
+    run_contained_process, run_contained_process_observed, OutputStream, ProcessSpec,
+    TerminationReason, MAX_PROCESS_INPUT_BYTES, MAX_PROCESS_OUTPUT_BYTES,
 };
 #[cfg(windows)]
 use std::ffi::OsString;
@@ -124,11 +124,15 @@ async fn artifact_snapshots_stream_hashes_and_detect_changes() {
 
 #[tokio::test]
 async fn output_is_tail_bounded_and_reports_truncation() {
-    let outcome = run_contained_process(fixture_spec(
-        "huge",
-        Duration::from_secs(10),
-        Duration::from_secs(5),
-    ))
+    let mut observed_stdout = 0_u64;
+    let mut observed_stderr = 0_u64;
+    let outcome = run_contained_process_observed(
+        fixture_spec("huge", Duration::from_secs(10), Duration::from_secs(5)),
+        |stream, bytes| match stream {
+            OutputStream::Stdout => observed_stdout += bytes.len() as u64,
+            OutputStream::Stderr => observed_stderr += bytes.len() as u64,
+        },
+    )
     .await
     .unwrap();
 
@@ -140,6 +144,15 @@ async fn output_is_tail_bounded_and_reports_truncation() {
     assert!(outcome.stderr.truncated_bytes > 0);
     assert!(outcome.stdout.text.contains("STDOUT_END"));
     assert!(outcome.stderr.text.contains("STDERR_END"));
+    assert!(outcome.output_complete);
+    assert_eq!(
+        observed_stdout,
+        outcome.stdout.captured_bytes as u64 + outcome.stdout.truncated_bytes
+    );
+    assert_eq!(
+        observed_stderr,
+        outcome.stderr.captured_bytes as u64 + outcome.stderr.truncated_bytes
+    );
 }
 
 #[tokio::test]
