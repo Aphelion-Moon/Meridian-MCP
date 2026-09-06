@@ -1,4 +1,5 @@
 mod analysis;
+mod build_response;
 mod compile;
 mod debugger;
 mod diagnostics;
@@ -585,6 +586,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                     "type": "boolean",
                     "description": "Remove only canonical root build artifacts before building (default: false)"
                 },
+                "include_output": {"type":"boolean","description":"Include bounded stdout/stderr tails (default: true)"},
+                "output_max_bytes": {"type":"integer","minimum":1,"maximum":65536,"description":"Maximum UTF-8 bytes per returned stream (default: 8192); JSON byte budget also applies"},
+                "diagnostic_limit": {"type":"integer","minimum":0,"maximum":200,"description":"Maximum returned error lines (default: 50); full error count is preserved"},
                 "fixture_manifest_path": {
                     "type": "string",
                     "description": "Optional contained declarative fixture manifest"

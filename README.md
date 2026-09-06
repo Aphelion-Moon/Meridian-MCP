@@ -101,7 +101,7 @@ Launch options and readiness regexes are validated before starting a process. In
 
 For `dm_compile`, `working_directory` also resolves relative DME paths. Malformed options are rejected before compilation. `success` requires a DMB as well as a successful compiler exit; check `dmb_updated` and provenance separately for freshness and verified inputs.
 
-Compiler replies include bounded log tails and up to 50 diagnostics per severity. Use `include_output: false` for shorter replies, or adjust `output_max_bytes` and `diagnostic_limit`. Errors are counted before log eviction; incomplete diagnostic analysis prevents verified build success. See [compiler output](docs/compiler-output.md).
+Both build tools return bounded log tails and diagnostic details. Use `include_output: false` for shorter replies, or adjust `output_max_bytes` and `diagnostic_limit`. Errors and Rift wrapper evidence are read before log eviction; incomplete analysis prevents build success. See [compiler output](docs/compiler-output.md).
 
 DreamDaemon binds to `127.0.0.1`. Set `working_directory` to resolve a relative DMB and run the game from that directory; otherwise it runs from the DMB's directory. Additional `daemon_args` cannot override the DMB, port, directory or bind address. World parameters passed with `-params` remain supported.
 

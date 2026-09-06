@@ -2,9 +2,9 @@ use super::{diagnostic_to_value, parse_diagnostic_line, response, DiagnosticSeve
 use crate::process::OutputStream;
 use serde_json::{json, Value};
 
-// Bound a pathological unterminated line independently of the total log volume.
-// Ordinary multi-line output is analyzed regardless of tail-buffer eviction.
-const MAX_LINE_BYTES: usize = 1024 * 1024;
+use crate::process::output::BoundedLines;
+#[cfg(test)]
+use crate::process::output::MAX_LINE_BYTES;
 
 #[derive(Default)]
 struct DiagnosticRows {
@@ -16,61 +16,55 @@ struct DiagnosticRows {
 
 #[derive(Default)]
 struct StreamDiagnostics {
-    line: Vec<u8>,
-    oversized: bool,
-    oversized_lines: u64,
+    lines: BoundedLines,
     errors: DiagnosticRows,
     warnings: DiagnosticRows,
 }
 
 impl StreamDiagnostics {
     fn push(&mut self, bytes: &[u8], limit: usize) {
-        for part in bytes.split_inclusive(|byte| *byte == b'\n') {
-            let newline = part.last() == Some(&b'\n');
-            let part = if newline {
-                &part[..part.len() - 1]
-            } else {
-                part
-            };
-            if !self.oversized {
-                if self.line.len() + part.len() > MAX_LINE_BYTES {
-                    self.oversized = true;
-                    self.line.clear();
-                } else {
-                    self.line.extend_from_slice(part);
-                }
-            }
-            if newline {
-                self.finish_line(limit);
-            }
-        }
+        let Self {
+            lines,
+            errors,
+            warnings,
+        } = self;
+        lines.push(bytes, |text| {
+            record_diagnostic(text, limit, errors, warnings)
+        });
     }
 
     fn finish_line(&mut self, limit: usize) {
-        if self.oversized {
-            self.oversized_lines += 1;
-        } else {
-            let text = String::from_utf8_lossy(&self.line);
-            if let Some(diagnostic) = parse_diagnostic_line(&text) {
-                let target = match diagnostic.severity {
-                    DiagnosticSeverity::Error => &mut self.errors,
-                    DiagnosticSeverity::Warning => &mut self.warnings,
-                };
-                target.total += 1;
-                if !target.full && target.rows.len() < limit {
-                    let row = response::bound_diagnostic(diagnostic_to_value(&diagnostic));
-                    let bytes = response::json_bytes(&row) + 1;
-                    if target.bytes + bytes + 2 <= response::DIAGNOSTIC_JSON_BYTES {
-                        target.bytes += bytes;
-                        target.rows.push(row);
-                    } else {
-                        target.full = true;
-                    }
-                }
+        let Self {
+            lines,
+            errors,
+            warnings,
+        } = self;
+        lines.finish(|text| record_diagnostic(text, limit, errors, warnings));
+    }
+}
+
+fn record_diagnostic(
+    text: &str,
+    limit: usize,
+    errors: &mut DiagnosticRows,
+    warnings: &mut DiagnosticRows,
+) {
+    if let Some(diagnostic) = parse_diagnostic_line(text) {
+        let target = match diagnostic.severity {
+            DiagnosticSeverity::Error => errors,
+            DiagnosticSeverity::Warning => warnings,
+        };
+        target.total += 1;
+        if !target.full && target.rows.len() < limit {
+            let row = response::bound_diagnostic(diagnostic_to_value(&diagnostic));
+            let bytes = response::json_bytes(&row) + 1;
+            if target.bytes + bytes + 2 <= response::DIAGNOSTIC_JSON_BYTES {
+                target.bytes += bytes;
+                target.rows.push(row);
+            } else {
+                target.full = true;
             }
         }
-        self.line.clear();
-        self.oversized = false;
     }
 }
 
@@ -110,7 +104,7 @@ impl CompilerDiagnostics {
         self.stderr.finish_line(self.limit);
         let errors = self.stdout.errors.total + self.stderr.errors.total;
         let warnings = self.stdout.warnings.total + self.stderr.warnings.total;
-        let oversized_lines = self.stdout.oversized_lines + self.stderr.oversized_lines;
+        let oversized_lines = self.stdout.lines.oversized_lines + self.stderr.lines.oversized_lines;
         let complete = output_complete && oversized_lines == 0;
         DiagnosticResult {
             errors: self

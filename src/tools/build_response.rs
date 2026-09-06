@@ -145,6 +145,16 @@ fn bound_metadata(result: &mut Value) {
         "/working_directory",
         "/artifact_before/path",
         "/artifact_after/path",
+        "/artifact_before/dmb/path",
+        "/artifact_before/rsc/path",
+        "/artifact_after/dmb/path",
+        "/artifact_after/rsc/path",
+        "/project_root",
+        "/human_build_entrypoint",
+        "/rift_build_entrypoint",
+        "/dme_path",
+        "/cache_evidence",
+        "/rift_result",
         "/network_audit/warning",
     ] {
         if let Some(value) = result.pointer(pointer) {
@@ -162,6 +172,7 @@ fn bound_metadata(result: &mut Value) {
         "/defines",
         "/provenance_reasons",
         "/network_audit/observations",
+        "/warnings",
     ] {
         let Some(rows) = result.pointer_mut(pointer).and_then(Value::as_array_mut) else {
             continue;
@@ -195,6 +206,13 @@ fn bound_metadata(result: &mut Value) {
             "defines",
             "provenance_reasons",
             "network_audit",
+            "project_root",
+            "human_build_entrypoint",
+            "rift_build_entrypoint",
+            "dme_path",
+            "cache_evidence",
+            "rift_result",
+            "warnings",
         ]
         .into_iter()
         .filter_map(|key| result.get(key).map(|value| (key, json_bytes(value))))
@@ -212,6 +230,14 @@ fn bound_metadata(result: &mut Value) {
 }
 
 pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<String> {
+    format_build(&mut result, options, false)
+}
+
+pub(super) fn format_rift(mut result: Value, options: ResponseOptions) -> Result<String> {
+    format_build(&mut result, options, true)
+}
+
+fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Result<String> {
     let mut output = Map::new();
     let mut output_summary = Map::new();
     for name in ["stdout", "stderr"] {
@@ -235,17 +261,28 @@ pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<Stri
         "scope": "captured_output",
     }));
     let mut diagnostic_rows = Map::new();
-    for name in ["errors", "warnings"] {
+    let names: &[&str] = if rift {
+        &["diagnostics"]
+    } else {
+        &["errors", "warnings"]
+    };
+    for &name in names {
+        let severity = if rift { "errors" } else { name };
         let rows = result.as_object_mut().unwrap().remove(name).unwrap();
-        let total = diagnostic_summary[name]
+        let total = diagnostic_summary[severity]
             .as_u64()
             .unwrap_or(rows.as_array().unwrap().len() as u64);
-        diagnostic_summary[name] = json!(total);
-        let (rows, summary) = diagnostics(rows, options.diagnostic_limit, total);
-        diagnostic_summary[format!("{name}_detail")] = summary;
+        diagnostic_summary[severity] = json!(total);
+        let (mut rows, summary) = diagnostics(rows, options.diagnostic_limit, total);
+        diagnostic_summary[format!("{severity}_detail")] = summary;
+        if rift {
+            for row in rows.as_array_mut().unwrap() {
+                *row = row["message"].take();
+            }
+        }
         diagnostic_rows.insert(name.into(), rows);
     }
-    bound_metadata(&mut result);
+    bound_metadata(result);
     result.as_object_mut().unwrap().extend(output);
     result.as_object_mut().unwrap().extend(diagnostic_rows);
     result["output_summary"] = Value::Object(output_summary);
@@ -258,6 +295,66 @@ pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rift_metadata_and_string_diagnostics_share_the_reply_budget() {
+        let row = json!({"message":"\u{1}🛰".repeat(2000)});
+        let mut result = json!({
+            "success":false,"code":"wrapper_result_invalid","evidence":"insufficient_evidence",
+            "stdout":"\u{1}".repeat(524288),"stderr":"🛰\n".repeat(100000),
+            "stdout_truncated_bytes":0,"stderr_truncated_bytes":0,
+            "diagnostics":vec![row;200],
+            "diagnostic_summary":{"errors":30000,"scope":"observed_output","analysis_complete":true},
+            "cache_evidence":"x".repeat(9000),"rift_result":{"command":"x".repeat(9000)},
+            "warnings":vec!["x".repeat(1000);100],
+            "provenance_status":"stale","build_record_id":"record",
+        });
+        for name in ["artifact_before", "artifact_after"] {
+            for kind in ["dmb", "rsc"] {
+                result[name][kind] =
+                    json!({"path":"p".repeat(9000),"exists":true,"sha256":"abc","size":16});
+            }
+        }
+        for name in [
+            "project_root",
+            "dme_path",
+            "human_build_entrypoint",
+            "rift_build_entrypoint",
+        ] {
+            result[name] = json!("p".repeat(8000));
+        }
+        let text = format_rift(
+            result,
+            ResponseOptions::parse(&json!({"output_max_bytes":65536,"diagnostic_limit":200}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(text.len() <= REPLY_JSON_BYTES);
+        let body: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["success"], false);
+        assert_eq!(body["code"], "wrapper_result_invalid");
+        assert_eq!(body["provenance_status"], "stale");
+        assert_eq!(body["build_record_id"], "record");
+        assert_eq!(body["diagnostic_summary"]["errors"], 30000);
+        let returned = body["diagnostics"].as_array().unwrap().len();
+        assert!((1..200).contains(&returned));
+        assert!(body["diagnostics"][0].is_string());
+        assert_eq!(
+            body["diagnostic_summary"]["errors_detail"]["truncated_messages"],
+            returned
+        );
+        assert_eq!(
+            body["diagnostic_summary"]["errors_detail"]["omitted"],
+            30000 - returned
+        );
+        assert!(body.get("rift_result").is_none());
+        assert_eq!(
+            body["response_omissions"]["/rift_result"]["field_omitted"],
+            true
+        );
+        assert_eq!(body["artifact_after"]["dmb"]["sha256"], "abc");
+        assert_eq!(body["artifact_after"]["rsc"]["size"], 16);
+    }
 
     #[test]
     fn combined_budgets_preserve_outcome_with_large_metadata_and_diagnostics() {

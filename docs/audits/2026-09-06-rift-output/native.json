@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "binary_sha256": "ba962124348678716b928878817933c4b8e156c3dc5849cf300fd6689879ee3c",
+  "byond_version": "5.0.516.1687",
+  "natural_mcp_exit_code": 0,
+  "build": {
+    "build_id": "b4f274b324d93c25b8a1f8acea5e568fa6042496d5dc3b131719193c8a542f1c",
+    "complete": true,
+    "executable_sha256": "ba962124348678716b928878817933c4b8e156c3dc5849cf300fd6689879ee3c",
+    "profile": "debug",
+    "schema": 1,
+    "source_dirty": true,
+    "source_revision": "59d11ac3943b7349936b36beaad460351cb4091e",
+    "target": "x86_64-pc-windows-msvc",
+    "version": "0.1.0"
+  },
+  "cases": [
+    {
+      "case": "success",
+      "success": true,
+      "code": null,
+      "is_error": false,
+      "evidence": "fresh_artifacts",
+      "exit_code": 0,
+      "provenance_status": "unverified",
+      "dmb_sha256": "449f39f554753847d4b0d0a264b5d6afd7a391de4122434440f1d2d6830a1902",
+      "rsc_sha256": "7920b5ba7623ca7be81d6dc087bc2b5d7fd7e983a872c8c13d84138ee1bb20b1",
+      "diagnostic_summary": {
+        "analysis_complete": true,
+        "capture_complete": false,
+        "errors": 0,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 0,
+          "truncated_messages": 0
+        },
+        "output_complete": true,
+        "oversized_lines": 0,
+        "scope": "observed_output"
+      },
+      "diagnostics": [],
+      "response_text_utf8_bytes": 2856,
+      "stdout_capture_truncated_bytes": 225861,
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      }
+    },
+    {
+      "case": "error",
+      "success": false,
+      "code": "build_failed",
+      "is_error": true,
+      "evidence": "build_failed",
+      "exit_code": -1,
+      "provenance_status": "unverified",
+      "dmb_sha256": null,
+      "rsc_sha256": "4676f73bfc301d0064de86492bccf53975b0fd88842b58f3054f3d8858d0d461",
+      "diagnostic_summary": {
+        "analysis_complete": true,
+        "capture_complete": false,
+        "errors": 1,
+        "errors_detail": {
+          "omitted": 0,
+          "returned": 1,
+          "truncated_messages": 0
+        },
+        "output_complete": true,
+        "oversized_lines": 0,
+        "scope": "observed_output"
+      },
+      "diagnostics": [
+        "fixture.dm:5:error: missing_audit_proc: undefined proc"
+      ],
+      "response_text_utf8_bytes": 2930,
+      "stdout_capture_truncated_bytes": 225894,
+      "output_summary": {
+        "stderr": {
+          "available_utf8_bytes": 0,
+          "included": false,
+          "omitted_utf8_bytes": 0,
+          "returned_utf8_bytes": 0
+        },
+        "stdout": {
+          "available_utf8_bytes": 524288,
+          "included": false,
+          "omitted_utf8_bytes": 524288,
+          "returned_utf8_bytes": 0
+        }
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "status": "failed",
+      "code": "build_failed"
+    },
+    {
+      "status": "unverified",
+      "code": "rift_compiler_closure_not_proved"
+    }
+  ]
+}

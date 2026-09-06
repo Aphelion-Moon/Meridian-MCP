@@ -25,6 +25,9 @@ pub struct RiftCompileParams {
     pub capture_network: bool,
     #[serde(default)]
     pub force_rebuild: bool,
+    pub include_output: Option<bool>,
+    pub output_max_bytes: Option<u64>,
+    pub diagnostic_limit: Option<u64>,
     pub fixture_manifest_path: Option<PathBuf>,
 }
 

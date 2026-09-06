@@ -9,7 +9,7 @@ use tracing::info;
 
 mod arguments;
 mod diagnostics;
-mod response;
+use super::build_response as response;
 use arguments::CompileOptions;
 
 use super::ToolExecutionContext;

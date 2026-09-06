@@ -161,6 +161,9 @@ fn rift_compile_schema_has_no_caller_controlled_paths_or_commands() {
             "capture_network",
             "force_rebuild",
             "fixture_manifest_path",
+            "include_output",
+            "output_max_bytes",
+            "diagnostic_limit",
         ]
         .into_iter()
         .collect()
@@ -173,6 +176,11 @@ fn rift_compile_schema_has_no_caller_controlled_paths_or_commands() {
     assert_eq!(properties["timeout_ms"]["maximum"], 1_800_000);
     assert_eq!(properties["idle_timeout_ms"]["minimum"], 1_000);
     assert_eq!(properties["idle_timeout_ms"]["maximum"], 900_000);
+    assert_eq!(properties["include_output"]["type"], "boolean");
+    assert_eq!(properties["output_max_bytes"]["minimum"], 1);
+    assert_eq!(properties["output_max_bytes"]["maximum"], 65_536);
+    assert_eq!(properties["diagnostic_limit"]["minimum"], 0);
+    assert_eq!(properties["diagnostic_limit"]["maximum"], 200);
 }
 
 #[test]

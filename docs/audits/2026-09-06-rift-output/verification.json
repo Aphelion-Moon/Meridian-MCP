@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "base_revision": "59d11ac",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "src/parameters.rs": "3aa6d91104f143a8e3133241abf255dd1d1e572cb82c944277f9da78cbc278d5",
+    "src/process.rs": "192912cf067e2a961aa71a7b987ebb274183c3a3d21f4f03c1092acb29b2442c",
+    "src/process/output.rs": "42d17aecab70dfa769830aa2bb9b9f0e944cce5c77690ee73408c0ae603b1a65",
+    "src/tools/mod.rs": "6f78d94c1f2bac51b0df81b4d413941470d4b9ae523a358a3d5f41d9ae70e986",
+    "src/tools/compile.rs": "4d7d8b496b0c41b045c5db38d7a3aea430d94c60345fe0fe435997faba23c133",
+    "src/tools/compile/diagnostics.rs": "36c17903637e75af5f3eb5db8cc80afd12cad6fb2e02de11c80afafe2266a180",
+    "src/tools/build_response.rs": "6391f00a28d78af66271a954f4f192d09bcfc1e80a3a3ff055bbb29df5c9fea2",
+    "src/tools/rift.rs": "f27a3d5cc8a1b1b723b1303dd2e3843994f85f6a66a0cc29d34ae290412162eb",
+    "src/tools/rift/output.rs": "2cc7303436e40c81d53b3d60b54bb211c629b5d7ce2aa3b9cc27b8c2bfb564aa",
+    "tests/mcp_conformance.rs": "12d9c5b23bc97ea74702ed49b3b883e0de1601159473fbd09a71e48bd75571c8",
+    "tests/rift_output.rs": "218e96c8a65e42941b98b813d45974ed8c34e5d1b67e0e8bed989cba88c70ad6",
+    "tests/fixtures/rift_output.rs": "8de186a3923a2e4b9e041ee37279c7a6d8183ea3926950851033fb80062db396",
+    "docs/audits/2026-09-06-rift-output/probe.ps1": "2d4dec0681f07f9a16d8d654645222b6dbe40d957e64dc0f902f1c683c3a9799",
+    "docs/audits/2026-09-06-rift-output/native-probe.ps1": "6dbef453006a9a424373d387780610207a22618ba1fdf6f935c0df5fa4999606",
+    "docs/audits/2026-09-06-rift-output/record.py": "d5ac5b438b30788d8e25826635fb300816c41d8f7cfe5de1cbc23a3740801c0e"
+  },
+  "gates": {
+    "windows": {
+      "passed": 466,
+      "failed": 0,
+      "ignored": 5,
+      "log_sha256": "e034109bced35a097432855087cf935c7ce5298345bd9aabe72d70497587e345",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "9aae36ebf32b25156f965bd2bc24ab0b0159a633fb9cd3b4159114868b0f8330"
+    },
+    "linux": {
+      "passed": 454,
+      "failed": 0,
+      "ignored": 6,
+      "log_sha256": "6b39a1fa12efd3c289e9fba673f2c6c44c19a1e50578db12ba1b4dfa048dc780",
+      "strict_clippy": "passed",
+      "clippy_log_sha256": "24c015b8c4c7784b9e3466e2efdef092797ef15f94b661eb7522f7447fbb1ef7"
+    }
+  },
+  "red": {
+    "passed": 1,
+    "failed": 4,
+    "ignored": 0,
+    "log_sha256": "b404af8bb80fb41a8150ee078d4ba29af9fdfbf4db8bc1be9e2722fc6929c063"
+  },
+  "focused": {
+    "passed": 22,
+    "failed": 0,
+    "ignored": 0,
+    "log_sha256": "de155204ed6a1e15fba12039b552568e89df29f8fc1ee525a017cc7ff18e1005"
+  },
+  "initial_windows": {
+    "passed": 465,
+    "failed": 1,
+    "ignored": 5,
+    "log_sha256": "b94cb7ab5a959a897e1ba3adb73f0b4215207c6285eb10d5f325cec33d603de8"
+  },
+  "initial_windows_explanation": "The exact schema-field conformance test still expected the old option set. Updated its explicit allowlist and added output-bound assertions; the full rerun passed.",
+  "probe_harness_correction": "The first baseline-only session completed normally; the recorder then indexed a missing diagnostics array in a transport size-error reply. Kept that raw run and corrected null handling before starting six fresh sessions.",
+  "comparison": {
+    "file": "comparison.json",
+    "cases": 66,
+    "matched_default_calls": 54,
+    "candidate_output_control_calls": 12,
+    "sessions": 6,
+    "baseline_false_successes": 12,
+    "baseline_lost_cache_hits": 3,
+    "baseline_transport_size_errors": 6,
+    "baseline_missing_failed_attempts": 3,
+    "identical_synthetic_artifact_pairs": 60,
+    "raw_sha256": {
+      "round-0-A/raw.json": "4ec16b0c11f5f92fc8208967570ea37c961d5575fce238bc4987343b999d866d",
+      "round-0-B/raw.json": "91fd6e56b49f85ec4a5877cc4bfaa9cfb5120e88f4e8ea502d98d670adbad18d",
+      "round-1-B/raw.json": "0bc0c38a0b4da6b15d90b76849ff8bd988f18b9683557abf37f7bd4bdc7c1f28",
+      "round-1-A/raw.json": "8b7759a6eeff520448bffa65531459532a1b0c249cacff24c16e19bdace4df87",
+      "round-2-A/raw.json": "0d65951c10c91b92288c297eb8de6ba86e20b60084eeaf49bcab2f75e30787a4",
+      "round-2-B/raw.json": "b84e59d53f6a4022cd7b47bcda9f40871f0362feecac763aa020cf57dc837fe4"
+    }
+  },
+  "native": {
+    "file": "native.json",
+    "cases": 2,
+    "raw_sha256": "504fb544a07ff48552ee7c12fe43b3c0dd2cd4be81ae1814997f0b05c54edb46"
+  },
+  "boundaries": [
+    "Local Linux under WSL 1 does not replace hosted native Ubuntu CI; Rift launch is Windows-only and Linux exercises the portable collector/formatter and unsupported-platform gate.",
+    "The previously observed WSL 1 guardian readiness timeout remains unexplained; a passing run does not establish a repair.",
+    "Synthetic comparisons use debug MCP binaries and an owned fake compiler, with equal artifacts and deliberately changed failure classification.",
+    "The native gate uses a small owned RIFT_BUILD.cmd wrapper and actual DreamMaker, not the Meridian-Rift production build or playtest.",
+    "Successful Rift wrappers still do not prove the compiler input closure or establish verified provenance.",
+    "Three alternating rounds measure response bytes and record latency; they do not establish a speedup, memory saving, model-token saving or reduced reasoning cost.",
+    "Output analysis occurs during pipe reads, changing what duration_ms includes; prefer end-to-end latency when inspecting timings.",
+    "Hosted CI, installation, documentation cleanup, remaining tool inventory and release handoff remain separate work."
+  ]
+}

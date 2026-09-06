@@ -1,3 +1,4 @@
+pub(crate) mod output;
 use crate::network_audit::{NetworkAuditCollector, NetworkAuditReport};
 use anyhow::{Context, Result};
 use serde::Serialize;

@@ -1,12 +1,16 @@
-use super::ToolExecutionContext;
+mod output;
+
+use super::{build_response as response, ToolExecutionContext};
 use crate::artifact::ArtifactSnapshot;
 use crate::build_provenance::{
-    BuildAttempt, BuildAttemptOutcome, BuildInputIdentity, PreparedBuild, ProvenanceStatus,
+    BuildAttempt, BuildAttemptOutcome, BuildInputIdentity, PreparedBuild,
 };
-use crate::fixture_manifest::{FixtureManifest, VerifiedFixtureManifest};
+use crate::fixture_manifest::FixtureManifest;
 use crate::mcp::ToolResult;
 use crate::parameters::{RiftCompileParams, RiftNetworkMode};
-use crate::process::{run_contained_process, ProcessOutcome, ProcessSpec, TerminationReason};
+use crate::process::{
+    run_contained_process_observed, ProcessOutcome, ProcessSpec, TerminationReason,
+};
 use crate::state::ServerState;
 use crate::{ProjectProfile, RiftBuildAccess};
 #[cfg(windows)]
@@ -77,6 +81,16 @@ pub async fn compile(
     state: &ServerState,
     args: Value,
 ) -> Result<ToolResult> {
+    let response = match response::ResponseOptions::parse(&args) {
+        Ok(options) => options,
+        Err(error) => {
+            return Ok(ToolResult::structured_error(
+                "invalid_arguments",
+                error.to_string(),
+                "Use output controls within the advertised types and bounds.",
+            ))
+        }
+    };
     let params: RiftCompileParams = match serde_json::from_value(args) {
         Ok(params) => params,
         Err(error) => {
@@ -256,23 +270,27 @@ pub async fn compile(
             "build_entrypoint",
         )?);
     }
-    let outcome = match run_contained_process(ProcessSpec {
-        program: command_processor,
-        arguments: vec![
-            "/D".into(),
-            "/S".into(),
-            "/C".into(),
-            "call".into(),
-            script_argument,
-        ],
-        working_directory: command_path(&project.root),
-        environment,
-        stdin: None,
-        timeout: Duration::from_millis(timeout_ms),
-        idle_timeout: timeout_policy.outer_idle_timeout,
-        capture_network: params.capture_network,
-        cancellation: None,
-    })
+    let mut output = output::BuildOutput::new(response.diagnostic_limit());
+    let outcome = match run_contained_process_observed(
+        ProcessSpec {
+            program: command_processor,
+            arguments: vec![
+                "/D".into(),
+                "/S".into(),
+                "/C".into(),
+                "call".into(),
+                script_argument,
+            ],
+            working_directory: command_path(&project.root),
+            environment,
+            stdin: None,
+            timeout: Duration::from_millis(timeout_ms),
+            idle_timeout: timeout_policy.outer_idle_timeout,
+            capture_network: params.capture_network,
+            cancellation: None,
+        },
+        |stream, bytes| output.observe(stream, bytes),
+    )
     .await
     {
         Ok(outcome) => outcome,
@@ -305,10 +323,13 @@ pub async fn compile(
             ));
         }
     };
+    let analysis = output.finish(
+        outcome.output_complete,
+        outcome.stdout.truncated_bytes == 0 && outcome.stderr.truncated_bytes == 0,
+    );
     classify_result(
         context,
         &prepared,
-        fixture.as_ref(),
         &profile,
         &project,
         generation,
@@ -319,6 +340,8 @@ pub async fn compile(
         before,
         after,
         outcome,
+        analysis,
+        response,
         warnings,
     )
 }
@@ -516,7 +539,6 @@ fn command_path(path: &Path) -> PathBuf {
 fn classify_result(
     context: &ToolExecutionContext,
     prepared: &PreparedBuild,
-    fixture: Option<&VerifiedFixtureManifest>,
     profile: &ProjectProfile,
     project: &ValidatedProject,
     generation: u64,
@@ -527,12 +549,12 @@ fn classify_result(
     before: ArtifactPair,
     after: ArtifactPair,
     outcome: ProcessOutcome,
+    analysis: output::Analysis,
+    response: response::ResponseOptions,
     warnings: Vec<String>,
 ) -> Result<ToolResult> {
-    let combined_output = format!("{}\n{}", outcome.stdout.text, outcome.stderr.text);
-    let diagnostics = parsed_error_lines(&combined_output);
-    let cache_evidence = dm_cache_marker(&combined_output);
-    let rift_result = parse_rift_result(&combined_output);
+    let rift_result = analysis.rift_result;
+    let cache_evidence = analysis.cache_evidence;
     let artifacts_valid = valid_artifact(&after.dmb) && valid_artifact(&after.rsc);
     let artifacts_changed =
         artifact_changed(&before.dmb, &after.dmb) || artifact_changed(&before.rsc, &after.rsc);
@@ -543,10 +565,15 @@ fn classify_result(
         (BuildEvidence::BuildFailed, Some("build_idle_timed_out"))
     } else if outcome.termination == TerminationReason::SpawnFailed {
         (BuildEvidence::BuildFailed, Some("build_spawn_failed"))
-    } else if outcome.exit_code != Some(0) || !diagnostics.is_empty() {
+    } else if outcome.exit_code != Some(0) || analysis.error_count > 0 {
         (
             BuildEvidence::BuildFailed,
-            explicit_wrapper_failure(&combined_output).or(Some("build_failed")),
+            analysis.wrapper_failure.or(Some("build_failed")),
+        )
+    } else if !analysis.complete {
+        (
+            BuildEvidence::InsufficientEvidence,
+            Some("output_analysis_incomplete"),
         )
     } else if !artifacts_valid {
         (BuildEvidence::BuildFailed, Some("artifact_missing"))
@@ -575,15 +602,8 @@ fn classify_result(
     };
 
     let recovery = failure_code.map(recovery_for).unwrap_or("");
-    let provenance = record_rift_provenance(
-        context,
-        prepared,
-        fixture,
-        project,
-        &after,
-        &evidence,
-        failure_code,
-    )?;
+    let provenance =
+        record_rift_provenance(context, prepared, project, &after, &evidence, failure_code)?;
     let result = json!({
         "success": failure_code.is_none(),
         "code": failure_code,
@@ -612,7 +632,8 @@ fn classify_result(
         "stderr": outcome.stderr.text,
         "stdout_truncated_bytes": outcome.stdout.truncated_bytes,
         "stderr_truncated_bytes": outcome.stderr.truncated_bytes,
-        "diagnostics": diagnostics,
+        "diagnostics": analysis.diagnostics,
+        "diagnostic_summary": analysis.summary,
         "cache_evidence": cache_evidence,
         "rift_result": rift_result.ok().flatten(),
         "artifact_before": {
@@ -631,7 +652,7 @@ fn classify_result(
         "provenance_reasons": provenance["reasons"],
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
     });
-    let text = serde_json::to_string_pretty(&result)?;
+    let text = response::format_rift(result, response)?;
     if failure_code.is_some() {
         Ok(ToolResult::error(text))
     } else {
@@ -642,7 +663,6 @@ fn classify_result(
 fn record_rift_provenance(
     context: &ToolExecutionContext,
     prepared: &PreparedBuild,
-    fixture: Option<&VerifiedFixtureManifest>,
     project: &ValidatedProject,
     after: &ArtifactPair,
     evidence: &BuildEvidence,
@@ -687,36 +707,23 @@ fn record_rift_provenance(
         }));
     }
 
-    if after.dmb.exists || fixture.is_some() {
-        store.record_attempt(&BuildAttempt {
-            schema: 1,
-            attempt_id: rift_random_id()?,
-            artifact_key,
-            outcome: BuildAttemptOutcome::Failed {
-                code: failure_code.unwrap_or("insufficient_evidence").to_owned(),
-            },
-            observed_inputs: inputs,
-            retained_dmb_sha256: after.dmb.sha256.clone(),
-            created_at_unix_ms,
-        })?;
-        let decision = store.evaluate_launch(&project.dmb, false)?;
-        return Ok(json!({
-            "status": match decision.status {
-                ProvenanceStatus::Verified => "verified",
-                ProvenanceStatus::Unverified => "unverified",
-                ProvenanceStatus::Stale => "stale",
-            },
-            "record_id": decision.record_id,
-            "reasons": decision.reasons,
-            "retained_dmb_sha256": after.dmb.sha256,
-        }));
-    }
-
+    store.record_attempt(&BuildAttempt {
+        schema: 1,
+        attempt_id: rift_random_id()?,
+        artifact_key,
+        outcome: BuildAttemptOutcome::Failed {
+            code: failure_code.unwrap_or("insufficient_evidence").to_owned(),
+        },
+        observed_inputs: inputs,
+        retained_dmb_sha256: after.dmb.sha256.clone(),
+        created_at_unix_ms,
+    })?;
+    let decision = store.evaluate_launch(&project.dmb, false)?;
     Ok(json!({
-        "status": "unverified",
-        "record_id": null,
-        "reasons": [{"code": "managed_artifact_missing"}],
-        "retained_dmb_sha256": null,
+        "status": decision.status,
+        "record_id": decision.record_id,
+        "reasons": decision.reasons,
+        "retained_dmb_sha256": after.dmb.sha256,
     }))
 }
 
@@ -851,15 +858,6 @@ fn diagnostic_regex() -> &'static Regex {
     })
 }
 
-fn parsed_error_lines(output: &str) -> Vec<String> {
-    output
-        .lines()
-        .filter(|line| diagnostic_regex().is_match(line))
-        .map(str::trim)
-        .map(str::to_owned)
-        .collect()
-}
-
 fn explicit_wrapper_failure(output: &str) -> Option<&'static str> {
     ["offline_preflight_failed"]
         .into_iter()
@@ -868,6 +866,9 @@ fn explicit_wrapper_failure(output: &str) -> Option<&'static str> {
 
 fn recovery_for(code: &str) -> &'static str {
     match code {
+        "output_analysis_incomplete" => {
+            "Inspect the build's output source for oversized lines or incomplete pipe reads, then rerun to obtain complete build evidence."
+        }
         "offline_preflight_failed" => {
             "Warm the pinned repository dependency cache using an explicitly approved network build, then retry offline."
         }
