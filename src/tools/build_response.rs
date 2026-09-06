@@ -149,6 +149,11 @@ fn bound_metadata(result: &mut Value) {
         "/artifact_before/rsc/path",
         "/artifact_after/dmb/path",
         "/artifact_after/rsc/path",
+        "/output_directory",
+        "/index",
+        "/helper",
+        "/backup_directory",
+        "/staging_directory",
         "/project_root",
         "/human_build_entrypoint",
         "/rift_build_entrypoint",
@@ -206,6 +211,11 @@ fn bound_metadata(result: &mut Value) {
             "defines",
             "provenance_reasons",
             "network_audit",
+            "output_directory",
+            "index",
+            "helper",
+            "backup_directory",
+            "staging_directory",
             "project_root",
             "human_build_entrypoint",
             "rift_build_entrypoint",
@@ -229,15 +239,10 @@ fn bound_metadata(result: &mut Value) {
     }
 }
 
-pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<String> {
-    format_build(&mut result, options, false)
-}
-
-pub(super) fn format_rift(mut result: Value, options: ResponseOptions) -> Result<String> {
-    format_build(&mut result, options, true)
-}
-
-fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Result<String> {
+fn take_output(
+    result: &mut Value,
+    options: &ResponseOptions,
+) -> (Map<String, Value>, Map<String, Value>) {
     let mut output = Map::new();
     let mut output_summary = Map::new();
     for name in ["stdout", "stderr"] {
@@ -256,6 +261,61 @@ fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Res
             output.insert(name.into(), json!(excerpt));
         }
     }
+    (output, output_summary)
+}
+
+pub(super) fn format_helper(mut result: Value, options: ResponseOptions) -> Result<String> {
+    let (output, output_summary) = take_output(&mut result, &options);
+    let capture_truncated = ["stdout_truncated_bytes", "stderr_truncated_bytes"]
+        .iter()
+        .any(|key| result[key].as_u64().unwrap_or(0) != 0);
+    let reply_omitted = output_summary
+        .values()
+        .any(|summary| summary["omitted_utf8_bytes"].as_u64().unwrap_or(0) != 0);
+    for name in ["message", "cleanup_error", "staging_cleanup_error"] {
+        if let Some(message) = result[name].as_str() {
+            let excerpt = bounded_text(message, 4096, 4096, false);
+            if excerpt.len() != message.len() {
+                let excerpt = excerpt.to_owned();
+                result[name] = json!(excerpt);
+                result[format!("{name}_truncated")] = json!(true);
+            }
+        }
+    }
+    bound_metadata(&mut result);
+    let mut reasons = Vec::new();
+    if capture_truncated {
+        reasons.push("output_capture_limit");
+    }
+    if reply_omitted {
+        reasons.push(if options.include_output {
+            "output_reply_limit"
+        } else {
+            "output_omitted"
+        });
+    }
+    if result.get("response_omissions").is_some() {
+        reasons.push("metadata_reply_limit");
+    }
+    result["truncated"] = json!(!reasons.is_empty());
+    result["truncation_reasons"] = json!(reasons);
+    result.as_object_mut().unwrap().extend(output);
+    result["output_summary"] = Value::Object(output_summary);
+    let text = serde_json::to_string(&result)?;
+    debug_assert!(text.len() <= 256 * 1024, "helper response budget");
+    Ok(text)
+}
+
+pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<String> {
+    format_build(&mut result, options, false)
+}
+
+pub(super) fn format_rift(mut result: Value, options: ResponseOptions) -> Result<String> {
+    format_build(&mut result, options, true)
+}
+
+fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Result<String> {
+    let (output, output_summary) = take_output(result, &options);
     let mut diagnostic_summary = result.as_object_mut().unwrap().remove("diagnostic_summary").unwrap_or_else(|| json!({
         "capture_complete": result["stdout_truncated_bytes"] == 0 && result["stderr_truncated_bytes"] == 0,
         "scope": "captured_output",
@@ -295,6 +355,39 @@ fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn helper_reply_keeps_install_and_recovery_state_under_its_smaller_ceiling() {
+        let mut result = json!({"success":false,"installed":true,"cleanup_complete":false,
+            "code":"documentation_cleanup_incomplete","files":100000,"bytes":1073741824,
+            "backup_name":"owned-backup","message":"\u{1}".repeat(9000),
+            "cleanup_error":"🛰".repeat(9000),"source_revision":"revision",
+            "stdout":"\u{1}".repeat(524288),"stderr":"🛰\n".repeat(100000),
+            "stdout_truncated_bytes":100,"stderr_truncated_bytes":200,"truncated":false});
+        for key in ["output_directory", "index", "helper", "backup_directory"] {
+            result[key] = json!("p".repeat(9000));
+        }
+        let text = format_helper(
+            result,
+            ResponseOptions::parse(&json!({"output_max_bytes":65536})).unwrap(),
+        )
+        .unwrap();
+        assert!(text.len() <= 262144);
+        let body: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["success"], false);
+        assert_eq!(body["installed"], true);
+        assert_eq!(body["cleanup_complete"], false);
+        assert_eq!(body["backup_name"], "owned-backup");
+        assert_eq!(body["code"], "documentation_cleanup_incomplete");
+        assert_eq!(body["files"], 100000);
+        assert_eq!(body["bytes"], 1073741824);
+        assert_eq!(body["truncated"], true);
+        assert_eq!(body["message_truncated"], true);
+        assert_eq!(
+            body["response_omissions"]["/backup_directory"]["field_omitted"],
+            true
+        );
+    }
 
     #[test]
     fn rift_metadata_and_string_diagnostics_share_the_reply_budget() {

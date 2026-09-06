@@ -1,0 +1,301 @@
+use meridian_mcp::result::ToolContent;
+use meridian_mcp::state::ServerState;
+use meridian_mcp::tools::{call_tool, ToolExecutionContext};
+use meridian_mcp::{CapabilityMode, PathPolicy, RiftBuildAccess};
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, OnceLock,
+};
+use std::time::Duration;
+
+fn root() -> PathBuf {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "meridian-docs-audit-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&path).unwrap();
+    path
+}
+
+fn helper() -> &'static PathBuf {
+    static BINARY: OnceLock<PathBuf> = OnceLock::new();
+    BINARY.get_or_init(|| {
+        let binary = root().join(if cfg!(windows) {
+            "helper.exe"
+        } else {
+            "helper"
+        });
+        let output = std::process::Command::new("rustc")
+            .args([
+                "+1.95.0",
+                "--edition=2021",
+                "tests/fixtures/docs_helper.rs",
+                "-o",
+            ])
+            .arg(&binary)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        binary
+    })
+}
+
+struct Fixture {
+    root: PathBuf,
+    workspace: PathBuf,
+    project: PathBuf,
+    context: Arc<ToolExecutionContext>,
+    state: Arc<ServerState>,
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+impl Fixture {
+    async fn new(mode: &str) -> Self {
+        let root = root();
+        let workspace = root.join("workspace");
+        let project = workspace.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("fixture.dme"), "/world\n    fps = 10\n").unwrap();
+        std::fs::write(project.join("mode.txt"), mode).unwrap();
+        let context = Arc::new(ToolExecutionContext::with_features(
+            CapabilityMode::Development,
+            PathPolicy::new(vec![workspace.clone()], vec![]).unwrap(),
+            RiftBuildAccess::Disabled,
+            Some(helper().clone()),
+            None,
+            None,
+        ));
+        let state = Arc::new(ServerState::new());
+        let parsed = call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path":project.join("fixture.dme")}),
+        )
+        .await
+        .unwrap();
+        assert_ne!(parsed.is_error, Some(true));
+        Self {
+            root,
+            workspace,
+            project,
+            context,
+            state,
+        }
+    }
+    fn output(&self) -> PathBuf {
+        self.workspace.join("html")
+    }
+    async fn call(&self, args: Value) -> (bool, usize, Value) {
+        let mut request = json!({"output_directory":self.output()});
+        request
+            .as_object_mut()
+            .unwrap()
+            .extend(args.as_object().unwrap().clone());
+        match call_tool(&self.context, &self.state, "dm_generate_docs", request).await {
+            Ok(result) => {
+                let ToolContent::Text { text } = &result.content[0];
+                (
+                    result.is_error == Some(true),
+                    text.len(),
+                    serde_json::from_str(text).unwrap_or_else(|_| json!({"message":text})),
+                )
+            }
+            Err(error) => (
+                true,
+                error.to_string().len(),
+                json!({"message":error.to_string()}),
+            ),
+        }
+    }
+    fn leftovers(&self) -> Vec<PathBuf> {
+        [&self.root, &self.workspace, &self.project]
+            .into_iter()
+            .filter(|p| p.is_dir())
+            .flat_map(|p| std::fs::read_dir(p).unwrap())
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".meridian-mcp-dmdoc-")
+            })
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn late_collision_cleans_only_owned_staging() {
+    let f = Fixture::new("collision").await;
+    assert!(f.call(json!({})).await.0);
+    assert_eq!(
+        std::fs::read_to_string(f.output().join("sentinel.txt")).unwrap(),
+        "preserve collision"
+    );
+    assert!(
+        f.leftovers().is_empty(),
+        "staging leaked after late collision"
+    );
+}
+
+#[tokio::test]
+async fn output_files_and_source_directories_are_rejected_before_execution() {
+    let mut observations = Vec::new();
+    for kind in ["file", "project", "workspace"] {
+        let f = Fixture::new("quiet").await;
+        let output = match kind {
+            "file" => {
+                std::fs::write(f.output(), "preserve file").unwrap();
+                f.output()
+            }
+            "project" => f.project.clone(),
+            _ => f.workspace.clone(),
+        };
+        let (error, _, _) = f
+            .call(json!({"output_directory":output,"overwrite":true}))
+            .await;
+        let preserved = kind != "file"
+            || std::fs::read_to_string(&output).ok().as_deref() == Some("preserve file");
+        observations.push((
+            kind,
+            error,
+            f.project.join("fixture.dme").is_file(),
+            f.project.join("helper.pid").exists(),
+            preserved,
+            f.leftovers().len(),
+        ));
+    }
+    assert_eq!(
+        observations,
+        vec![
+            ("file", true, true, false, true, 0),
+            ("project", true, true, false, true, 0),
+            ("workspace", true, true, false, true, 0)
+        ]
+    );
+}
+
+#[tokio::test]
+async fn malformed_output_arguments_are_rejected_before_execution() {
+    for args in [
+        json!({"overwrite":"false"}),
+        json!({"overwrite":null}),
+        json!({"unknown":1}),
+        json!({"include_output":null}),
+        json!({"output_max_bytes":0}),
+        json!({"output_max_bytes":65537}),
+    ] {
+        let f = Fixture::new("quiet").await;
+        assert!(f.call(args).await.0);
+        assert!(!f.project.join("helper.pid").exists());
+        assert!(f.leftovers().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn helper_failure_and_missing_index_preserve_existing_docs_and_clean_staging() {
+    for mode in ["fail", "missing_index"] {
+        let f = Fixture::new(mode).await;
+        std::fs::create_dir(f.output()).unwrap();
+        std::fs::write(f.output().join("sentinel.txt"), "old docs").unwrap();
+        assert!(f.call(json!({"overwrite":true})).await.0);
+        assert_eq!(
+            std::fs::read_to_string(f.output().join("sentinel.txt")).unwrap(),
+            "old docs"
+        );
+        assert!(f.leftovers().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn successful_replacement_installs_complete_docs_without_backups() {
+    let f = Fixture::new("quiet").await;
+    std::fs::create_dir(f.output()).unwrap();
+    std::fs::write(f.output().join("old.html"), "old docs").unwrap();
+    let (error, _, body) = f.call(json!({"overwrite":true})).await;
+    assert!(!error);
+    assert_eq!(body["files"], 2);
+    assert!(f.output().join("types/example.html").is_file());
+    assert!(!f.output().join("old.html").exists());
+    assert!(f.leftovers().is_empty());
+}
+
+#[tokio::test]
+async fn bounded_logs_preserve_install_and_failure_results() {
+    for mode in ["flood", "flood_fail"] {
+        for options in [
+            json!({}),
+            json!({"include_output":false}),
+            json!({"output_max_bytes":65536}),
+        ] {
+            let f = Fixture::new(mode).await;
+            let (error, bytes, body) = f.call(options.clone()).await;
+            assert!(bytes <= 262144, "reply bytes: {bytes}");
+            assert_eq!(error, mode == "flood_fail");
+            assert_eq!(body["installed"], mode == "flood");
+            assert_eq!(body["truncated"], true);
+            if options["include_output"] == false {
+                assert!(body.get("stdout").is_none() && body.get("stderr").is_none());
+            }
+            if mode == "flood" {
+                assert!(f.output().join("index.html").is_file());
+            }
+            assert!(f.leftovers().is_empty());
+        }
+    }
+}
+
+async fn wait_file(path: &Path) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !path.is_file() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("helper did not become ready");
+}
+
+#[tokio::test]
+async fn cancellation_stops_the_helper_then_removes_locked_staging() {
+    let f = Fixture::new("wait").await;
+    let (context, state, output) = (f.context.clone(), f.state.clone(), f.output());
+    let task = tokio::spawn(async move {
+        call_tool(
+            &context,
+            &state,
+            "dm_generate_docs",
+            json!({"output_directory":output}),
+        )
+        .await
+    });
+    wait_file(&f.project.join("ready")).await;
+    wait_file(&f.project.join("heartbeat")).await;
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !f.leftovers().is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancelled generation leaked staging");
+    let heartbeat = std::fs::read(f.project.join("heartbeat")).unwrap();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        heartbeat,
+        std::fs::read(f.project.join("heartbeat")).unwrap(),
+        "cancelled helper remains active"
+    );
+    assert!(!f.output().exists());
+}

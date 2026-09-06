@@ -1,0 +1,41 @@
+{
+  "kernel": "4.4.0-19041-Microsoft",
+  "cases": [
+    {
+      "kind": "file",
+      "flags": 0,
+      "result": 0,
+      "errno": 0,
+      "error": "Success",
+      "source_exists": false,
+      "destination_exists": true
+    },
+    {
+      "kind": "file",
+      "flags": 1,
+      "result": -1,
+      "errno": 22,
+      "error": "Invalid argument",
+      "source_exists": true,
+      "destination_exists": false
+    },
+    {
+      "kind": "directory",
+      "flags": 0,
+      "result": 0,
+      "errno": 0,
+      "error": "Success",
+      "source_exists": false,
+      "destination_exists": true
+    },
+    {
+      "kind": "directory",
+      "flags": 1,
+      "result": -1,
+      "errno": 22,
+      "error": "Invalid argument",
+      "source_exists": true,
+      "destination_exists": false
+    }
+  ]
+}

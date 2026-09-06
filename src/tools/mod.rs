@@ -494,7 +494,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 	});
 
     // Compile tool
-    tools.push(ToolDefinition { name:"dm_generate_docs".to_string(), description:"Generate contained DreamMaker HTML documentation with the hash-verified exact-revision dmdoc helper.".to_string(), input_schema:json!({"type":"object","properties":{"output_directory":{"type":"string"},"overwrite":{"type":"boolean"}},"required":["output_directory"]}) });
+    tools.push(ToolDefinition { name:"dm_generate_docs".to_string(), description:"Generate contained DreamMaker HTML documentation with the hash-verified exact-revision dmdoc helper.".to_string(), input_schema:json!({"type":"object","properties":{"output_directory":{"type":"string"},"overwrite":{"type":"boolean"},"include_output":{"type":"boolean","description":"Include bounded stdout/stderr tails (default: true)"},"output_max_bytes":{"type":"integer","minimum":1,"maximum":65536,"description":"Maximum UTF-8 bytes per returned stream (default: 8192); JSON byte budget also applies"}},"required":["output_directory"],"additionalProperties":false}) });
 
     tools.push(ToolDefinition {
         name: "dm_compile".to_string(),

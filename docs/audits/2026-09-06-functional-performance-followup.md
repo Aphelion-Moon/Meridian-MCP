@@ -2,6 +2,10 @@
 
 Objective: continue evidence-backed audits and repairs across Meridian-MCP, including practical response/token efficiency. Work stays in the existing checkout; commits are authorized and subagents are not used.
 
+## Stopping checkpoint
+
+The user requested a stopping point. The [documentation repair checkpoint](2026-09-06-docs-checkpoint/README.md) is uncommitted: 28 focused Windows tests, strict Clippy and the real pinned dmdoc smoke test pass, but Linux/WSL 1 rejects the new no-replace rename operation and has two failed installation cases. Resolve that compatibility issue and run full qualification before committing. The last completed full local qualification is the Rift batch (`f84a1bf`). The installed MCP is unchanged; the broad goal remains incomplete.
+
 ## Current work
 
 - Committed the exploration comparison as `1a093fd` and the prior SpacemanDMM repair/audit as `288cf49`. The comparison remains an immutable historical baseline, including its failed inherited-variable query.

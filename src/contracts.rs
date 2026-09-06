@@ -392,7 +392,7 @@ static CONTRACTS: &[ToolContract] = &[
         Development,
         COMPILE,
         Experimental,
-        Some(300_000),
+        Some(600_000),
         262_144
     ),
     contract!(

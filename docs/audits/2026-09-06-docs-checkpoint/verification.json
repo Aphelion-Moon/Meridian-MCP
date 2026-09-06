@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "work_status": "stopped_at_user_request",
+  "patch_status": "uncommitted_incomplete",
+  "base_revision": "f84a1bf649df1089c909d983cfc741e76ff7873b",
+  "rust_version": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_sha256_lf": {
+    "Cargo.toml": "6f178cc07f9936649b1f8e184dfa5810d5624ae522b1820c019d78b8fb904c1a",
+    "src/contracts.rs": "99b20b591d4498fd689fbaf335dfe28488dee657e23cdabf1edde3ffab6ad53a",
+    "src/tools/build_response.rs": "277cc8b024b33c8cc655504ee8f3ea7009a7caaba47878cd136fae9e9028b692",
+    "src/tools/docs.rs": "831d94b8bde685de3448bf15b50b650a3b3d4b032757ac56ff08977573805ca1",
+    "src/tools/docs/installation.rs": "7da61a4d8446a89be44bd9a6f691355cb226b280fbd2bb672cd32ff817366aea",
+    "src/tools/mod.rs": "f95d26f2b03ba9edca001cfc9ca71ae169e91c166403a41d851eae551ce528bb",
+    "tests/docs_generation.rs": "68dfb3a93e5f69ea5a5389c626ef989624ebb3dcad91d23ccd1005d558d363c2",
+    "tests/fixtures/docs_helper.rs": "71f9a47505bdaa7f882baf5474f94082e4ea5ff09cf0870543830889770c956f"
+  },
+  "gates": {
+    "windows_focused": {
+      "passed": 21,
+      "failed": 0,
+      "ignored": 0,
+      "log_sha256": "a475332215e63280ef67bc818d684083d598b19d202e32416833681dfde425ad"
+    },
+    "windows_installation": {
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "log_sha256": "8b79c989709e38c247960637594320991478ccdb98492dd50872bfe7403d1b6e"
+    },
+    "windows_response": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "log_sha256": "36f741c7d590d9ab52f8307b0771324bcf0ea0de058473ce99f79989a2bc9775"
+    },
+    "linux_focused": {
+      "passed": 14,
+      "failed": 2,
+      "ignored": 0,
+      "log_sha256": "7c9437d0a4961b7d0c3fbea61bfdd1ffd65881ead7a51ac6ee7cbb4bb71d3d2d"
+    },
+    "initial_red": {
+      "passed": 2,
+      "failed": 5,
+      "ignored": 0,
+      "log_sha256": "61ed1371e2f04cc576c8e0c1963b8284edf8c7259eec799fb2b7f64b3a72fe86"
+    },
+    "overlap_red": {
+      "passed": 0,
+      "failed": 1,
+      "ignored": 0,
+      "log_sha256": "458b934b43713f8bbd3820e9590f0ec7116c7a6a983f2b4cbba44d94dff03840"
+    },
+    "initial_installation": {
+      "passed": 2,
+      "failed": 2,
+      "ignored": 0,
+      "log_sha256": "ade6443f7411d6785b272c64c6d83b031c5153e2f7aeb47a3e41a2b6c79f01d7"
+    },
+    "windows_clippy": {
+      "result": "passed",
+      "log_sha256": "4a03a0506e85b3506b5d5d65d6139249732f2ddd374f60635386a7032d9f8c0b"
+    },
+    "native_dmdoc": {
+      "result": "passed",
+      "log_sha256": "91b2a6c2626f82519eae2b5747f381ac5c33877f8824d0d12eb4f457a76f9227"
+    }
+  },
+  "candidate_binary_sha256": "8fa7fc6285dff0ca983264292645cf9fbf4c257c9c2945cd7508e61984625861",
+  "helper_sha256": "0c6f8733550163e38f3dc5382f527113c27c912e65a1e3c169fa5cc7f944ff68",
+  "helper_source_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+  "open_gate": "Linux/WSL 1 rejects RENAME_NOREPLACE with EINVAL; valid documentation installation regresses and must be resolved before committing.",
+  "unrun": [
+    "Linux installation/response unit tests after the focused failure",
+    "Linux strict Clippy",
+    "Complete Windows and Linux suites for the documentation patch",
+    "Hosted native Linux/macOS qualification",
+    "Full project documentation",
+    "Transport cancellation and abrupt server shutdown for documentation generation",
+    "Installation/release handoff"
+  ],
+  "boundary": "The frozen candidate and logs identify this stopping checkpoint; do not relabel them as evidence for later edits."
+}
