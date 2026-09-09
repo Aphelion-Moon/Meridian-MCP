@@ -1,5 +1,22 @@
 # Documentation repair: stopping checkpoint
 
+## Status update: 2026-09-09
+
+Stopped at the user's renewed request. The documentation patch is now committed in `9c599fef8a23b7058b2f392b60815d07afa10f82` (`sprint done`), and the worktree was clean before this handoff update. All eight implementation/test file hashes in [verification.json](verification.json) still match after LF normalization. No implementation changes or new test runs were made for this update; the results below remain the September 6 evidence.
+
+The Linux/WSL 1 installation failure remains unresolved in the current source. The recorded focused Windows checks and pinned dmdoc smoke passed, but this patch has no complete cross-platform qualification. `f84a1bf` remains the last batch with full local Windows and Linux/WSL test-and-Clippy qualification. This checkpoint does not replace the installed MCP or require a restart.
+
+A read-only review also identified two source-level concerns to reproduce before release:
+
+- The output-overlap check in `src/tools/docs.rs` protects directories containing the environment file or helper, but does not check every parsed source input. Test an existing nested source directory selected as the output with `overwrite=true`.
+- `PathPolicy::output_path` resolves an existing output to its canonical target before documentation target validation. Test an output symlink to determine whether its original identity must be rejected before canonicalization.
+
+Resume with these preservation fixtures and the Linux no-replace compatibility issue, then run the focused and full gates listed below. Keep late-created destinations and recoverable previous documentation intact. The broader inventory remains open in the [workplan](../2026-09-06-functional-performance-followup.md).
+
+## Historical checkpoint: 2026-09-06
+
+The remainder of this report and its JSON artifacts preserve the original stopping state. References below to an uncommitted patch or committing next describe that earlier state, superseded by the update above.
+
 Work stopped at the user's request to find a good stopping point. The documentation patch is **uncommitted and incomplete**. `f84a1bf` is the last committed batch with full local Windows and Linux/WSL test-and-Clippy qualification. The installed MCP has not been replaced, and no restart is needed for it.
 
 ## Current patch

@@ -1,10 +1,10 @@
 # Functional, performance and response-efficiency follow-up
 
-Objective: continue evidence-backed audits and repairs across Meridian-MCP, including practical response/token efficiency. Work stays in the existing checkout; commits are authorized and subagents are not used.
+Objective: continue evidence-backed audits and repairs across Meridian-MCP, including practical response/token efficiency. Work stays in the existing checkout; commits are authorized. Current user guidance calls for a Luna High subagent for routine testing and read-only work.
 
 ## Stopping checkpoint
 
-The user requested a stopping point. The [documentation repair checkpoint](2026-09-06-docs-checkpoint/README.md) is uncommitted: 28 focused Windows tests, strict Clippy and the real pinned dmdoc smoke test pass, but Linux/WSL 1 rejects the new no-replace rename operation and has two failed installation cases. Resolve that compatibility issue and run full qualification before committing. The last completed full local qualification is the Rift batch (`f84a1bf`). The installed MCP is unchanged; the broad goal remains incomplete.
+The user requested a stopping point on September 9. The [documentation repair checkpoint](2026-09-06-docs-checkpoint/README.md) is committed in `9c599fe`; all eight recorded implementation/test hashes still match. Its September 6 evidence records 28 focused Windows tests, strict Clippy and the pinned dmdoc smoke passing, but two Linux/WSL 1 installation cases failing because the no-replace rename operation is rejected. No tests were rerun for this handoff. Resolve Linux compatibility, reproduce the nested-source-output and symlink concerns recorded in the checkpoint, and run full qualification before release. The last completed full local qualification is the Rift batch (`f84a1bf`). This checkpoint does not replace the installed MCP or require a restart; the broad goal remains incomplete.
 
 ## Current work
 
@@ -47,7 +47,7 @@ The current `src/contracts.rs` inventory contains **62 tools**. Startup configur
 | DMI inspection, comparison, duplicates, audit and extraction | 5 | SpacemanDMM capability/functional fixtures; fresh budget and output-install review remains. |
 | Map inspection, diff, lookup and rendering | 6 | SpacemanDMM parsing/render fixtures; fresh batch/output and resource-budget review remains. |
 | Direct compiler and Rift build | 2 | Direct compiler input/response repairs and streaming diagnostic follow-up; Rift streaming evidence, reply budgets and no-artifact failure recording now qualified by focused, stdio and tiny native-wrapper fixtures. Full Meridian-Rift production build evidence remains separate. |
-| Documentation generation | 1 | Source/pinned-helper execution and initial overwrite rejection qualified. Next reproduce late output collisions, cancellation/setup failures and an existing file with overwrite=true; review temporary/backup cleanup and restoration. These are source observations until reproduced. |
+| Documentation generation | 1 | Committed staging, collision/restoration, input-validation and bounded-response repairs have focused Windows and pinned-helper evidence. Linux/WSL 1 installation still fails; full suites remain unrun. Resume with Linux compatibility and the nested-source-output/symlink concerns in the stopping checkpoint. |
 | Standard runtime launch, output, Topic, status and stop | 5 | Directory/loopback, validation, cancellation, Topic and native launch evidence above. The intermittent WSL guardian readiness timeout remains unresolved. |
 | Auxtools debugger | 15 | Upstream wire-layout and portable protocol fixtures; fresh request/output review and live supported-platform gate remain. |
 | Tracy preparation, launch, capture, status, stop and queries | 10 | Prior helper/protocol/native evidence; fresh response-volume/ownership review and live supported-platform gate remain. |
