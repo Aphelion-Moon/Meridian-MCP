@@ -1,13 +1,19 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$BinaryPath,
-    [Parameter(Mandatory)][string]$HelperManifestPath
+    [Parameter(Mandatory)][string]$HelperManifestPath,
+    [string]$FixtureParent
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 Import-Module (Join-Path $PSScriptRoot 'MeridianMcpSession.psm1') -Force
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$fixture = Join-Path $repoRoot ('target/spacemandmm-docs-' + [guid]::NewGuid().ToString('N'))
+$fixtureRoot = Join-Path $repoRoot 'target'
+if ($PSBoundParameters.ContainsKey('FixtureParent')) {
+    $fixtureRoot = (Resolve-Path -LiteralPath $FixtureParent).Path
+    if (-not [IO.Directory]::Exists($fixtureRoot)) { throw 'FixtureParent must be an existing directory.' }
+}
+$fixture = Join-Path $fixtureRoot ('spacemandmm-docs-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
 $stateName = '.meridian-spacemandmm-docs-state-' + [guid]::NewGuid().ToString('N')
 $stateDirectory = Join-Path ([IO.Path]::GetTempPath()) $stateName

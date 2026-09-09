@@ -182,6 +182,10 @@ Analysis tools are read-only. Development mode adds compilation, file generation
 | `dm_stop` | Stop the owned DreamDaemon and finalize integrity checks. |
 | `dm_topic` | Call a project-provided `world.Topic()` handler on the owned runtime. |
 
+`dm_generate_docs` needs a parsed project and an output directory whose parent exists. `overwrite=true` replaces that directory; files, directory links and outputs containing parsed inputs are rejected. Use `include_output=false` to omit helper logs, or `output_max_bytes` to cap each returned stream (default 8 KiB, maximum 64 KiB).
+
+On a documentation error, check `installed` and `cleanup_complete`: new HTML may already be installed while an old backup needs cleanup. Linux output filesystems must support no-replace directory renames; when a mounted Windows drive is rejected, use an authorized output path on native Linux storage. Unsupported filesystems are rejected before the helper runs.
+
 ### Auxtools debugger
 
 Enable `MERIDIAN_MCP_DEBUGGER=auxtools` in development mode with the verified auxtools v2.3.7 DLL and x86 Microsoft Visual C++ runtime. The adapter is Windows-only and experimental.

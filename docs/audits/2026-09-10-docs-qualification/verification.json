@@ -1,0 +1,385 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-09-09T22:29:16.6687700Z",
+  "status": "local_documentation_and_readiness_batch_qualified",
+  "base_commit": "2d0bb15d5683814eed989c4b7080ea2714dbbccf",
+  "prior_checkpoint": "../2026-09-09-docs-preservation/verification.json",
+  "source_identity_note": "These normalized source hashes describe the qualified implementation/test files. Later audit prose and commits change build identity inputs; frozen binaries retain their recorded hashes.",
+  "rust_toolchain": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "linux_environment": {
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "powershell": "7.6.5",
+    "ordinary_test_tmpdir": "/tmp"
+  },
+  "gates": {
+    "windows_full": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --no-fail-fast",
+      "exit_code": 0,
+      "passed": 481,
+      "failed": 0,
+      "ignored": 5
+    },
+    "linux_full": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --no-fail-fast",
+      "exit_code": 0,
+      "passed": 467,
+      "failed": 0,
+      "ignored": 7
+    },
+    "windows_clippy": {
+      "command": "cargo +1.95.0 clippy --offline --locked --all-targets --all-features -- -D warnings",
+      "exit_code": 0
+    },
+    "linux_clippy": {
+      "command": "cargo +1.95.0 clippy --offline --locked --all-targets --all-features -- -D warnings",
+      "exit_code": 0
+    },
+    "mounted_rejection": {
+      "command": "docs_generation unsupported_filesystem_is_rejected_before_execution --ignored --exact",
+      "exit_code": 0,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "source_files": [
+    {
+      "path": "README.md",
+      "sha256_lf_normalized": "9e61693cf3800f78898467afd792476eeddb9678e1ba2aec8765a646f0afc074"
+    },
+    {
+      "path": "TESTING.md",
+      "sha256_lf_normalized": "01205d7d3c4f8b784ea97e0c01356bd00b6eeea5a9000d9b62505267c5b68956"
+    },
+    {
+      "path": "docs/tool-contracts.md",
+      "sha256_lf_normalized": "922c181d14c6ffc8f626528367a1dfcf8a5f2944b30556e3890e3414795d27ca"
+    },
+    {
+      "path": "scripts/test-spacemandmm-docs.ps1",
+      "sha256_lf_normalized": "1c5727612ca1e652c43ebb696083945ed2952f0bc655b78a301c043b6be9981a"
+    },
+    {
+      "path": "scripts/process-readiness.psm1",
+      "sha256_lf_normalized": "30b477746b93f1cf752c842393f8a36100f81772ae80e14c705a2c61dcdcf575"
+    },
+    {
+      "path": "src/path_policy.rs",
+      "sha256_lf_normalized": "bc5df144359fc281bf290ece084cc14594691cf698358833aa6785ea47447fbf"
+    },
+    {
+      "path": "src/tools/docs.rs",
+      "sha256_lf_normalized": "e32653c2db78ac9a6713d09d58a8106e026443acf28c2e84aa93365803275d37"
+    },
+    {
+      "path": "src/tools/docs/installation.rs",
+      "sha256_lf_normalized": "e2c2aa5b09b068864e835993201500949e04f7d4e46abe155bb2ba7c756636a9"
+    },
+    {
+      "path": "src/tools/mod.rs",
+      "sha256_lf_normalized": "e9cb5980b51dfd93489ca545eea1c43c38caaac387cb32e4250c8fa60b1dd0b6"
+    },
+    {
+      "path": "tests/docs_generation.rs",
+      "sha256_lf_normalized": "519ac8dc25ab095e954a3d9e348b410dd23d85519410813ac300f9d9735b1027"
+    },
+    {
+      "path": "tests/process_readiness.rs",
+      "sha256_lf_normalized": "4b318eb4e0c5eb848a7c538803ed7ac58e11493ef9a59a33fa86447c196919e1"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256_lf_normalized": "97aab3493c1fb14fe9a21c760433577f434714f5725bbb176e67048dde581afe"
+    }
+  ],
+  "logs": [
+    {
+      "path": "target/readiness-final-sample-red.log",
+      "sha256": "3c6ba06e70f65416efd4c3ecf0147db499d10115594fd4c5abb2e1b3f96b3527",
+      "test_totals": {
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/readiness-final-sample-windows-green.log",
+      "sha256": "1d2dc6f1470bc7e3a1dab6c8c7c60d1493072ea0214e6021d9e5a0f93849168c",
+      "test_totals": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/process-readiness-busy-group.log",
+      "sha256": "a91a73d79abe6cc428ee80bd9e4eb7ef3bbd2204b596c77798a0734bc6813788",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-windows-final-full.log",
+      "sha256": "c361af038a86b1c5692be06e4b93c12cbca208152df275e3075353b46ab5d121",
+      "test_totals": {
+        "passed": 481,
+        "failed": 0,
+        "ignored": 5
+      }
+    },
+    {
+      "path": "target/docs-preservation-windows-final-clippy.log",
+      "sha256": "7b623a903a0a4d4aff7da599d1a63c10dba24ff27ed1c8f43529cd6517831de0",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-windows-final-native.log",
+      "sha256": "91b2a6c2626f82519eae2b5747f381ac5c33877f8824d0d12eb4f457a76f9227",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-linux-helper-build-dirty-wsl.log",
+      "sha256": "07e5302a1feaa4e29998ef737fede341c9cff23721c4355e0174fb30f10eac8e",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-linux-helper-build.log",
+      "sha256": "5d0773ee071b50cd3d4536e65c0c6a899a63787209fdab801a1d49ad326cfd89",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-linux-final-full.log",
+      "sha256": "df53046667291a321e838fc4c3d8e538e40c65381bbed8b48f703fef60dcb15b",
+      "test_totals": {
+        "passed": 467,
+        "failed": 0,
+        "ignored": 7
+      }
+    },
+    {
+      "path": "target/docs-preservation-linux-final-clippy.log",
+      "sha256": "2b318a7700c64779851bd7c3f839587f49abd296eb1dfacfae320ac83b063eb2",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-linux-final-mounted.log",
+      "sha256": "8e92c9da1d013dfddbeb5fe703bf6a61e723534ddde07aab4bf5a5ba7369df7b",
+      "test_totals": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-preservation-linux-final-native.log",
+      "sha256": "41b70a9cd1925b1f80d7b0e8d324677afd47764955c19b6b04641380f5691b9b",
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-spaceman-source.log",
+      "sha256": "e29a92dab7d0a04a9987bc843aefaa7092b351f1a030bee41cfb5014d7254bf4",
+      "test_totals": null
+    }
+  ],
+  "native_candidates": [
+    {
+      "platform": "windows",
+      "mcp_path": "target/docs-preservation-qualified-windows/mcp.exe",
+      "mcp_sha256": "873100a676fbede7416b6665812dad2a6a64329fd79180d588c54e69d17d3b55",
+      "manifest_path": "target/native-memory-release-final-package/helpers/manifest.json",
+      "dmdoc_sha256": "0c6f8733550163e38f3dc5382f527113c27c912e65a1e3c169fa5cc7f944ff68",
+      "dmdoc_source_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+      "native_smoke_exit_code": 0,
+      "fixture_storage": "workspace_target"
+    },
+    {
+      "platform": "linux",
+      "mcp_path": "target/docs-preservation-qualified-linux/mcp",
+      "mcp_sha256": "9c4ea0b6c7c88e4c5cab62c297eaf91a14c2e3fa0e4bdac94259d59862c5d799",
+      "manifest_path": "target/docs-preservation-linux-helper/helpers/manifest.json",
+      "dmdoc_sha256": "0bc36a609a5dc0eca3651f9ee329c7dd4b1132f3dc16d71b8b48de49a488fc07",
+      "dmdoc_source_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+      "native_smoke_exit_code": 0,
+      "fixture_storage": "native_linux_temp"
+    }
+  ],
+  "delayed_poll_regression": {
+    "red_exit_code": 101,
+    "red_elapsed_milliseconds": 1250,
+    "red_sample_count": 1,
+    "red_sample_elapsed_milliseconds": 4,
+    "red_last_progress_milliseconds": 0,
+    "behavior": "Retain final actual process progress without accepting a marker first observed after the deadline.",
+    "original_linux_busy_failure_cause": "Not directly reproduced. Three matched probes passed; controlled delay independently proved the missing-final-reading defect."
+  },
+  "matched_busy_probes": [
+    {
+      "name": "busy-a",
+      "harness_pid": 414,
+      "frequency": 1000000000,
+      "start_ms": 11.436,
+      "child_pid": 477,
+      "child_launch_return_ms": 26.965,
+      "first_call_start_ms": 27.513,
+      "first_call_return_ms": 2060.978,
+      "first_result": {
+        "status": "timed_out",
+        "elapsed_milliseconds": 2018,
+        "elapsed_seconds": 2.0176505,
+        "samples": [
+          {
+            "elapsed_milliseconds": 2,
+            "pid": 477,
+            "has_exited": false,
+            "total_processor_milliseconds": 10,
+            "working_set_bytes": 14888960,
+            "private_memory_bytes": 49274880,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 1259,
+            "pid": 477,
+            "has_exited": false,
+            "total_processor_milliseconds": 1500,
+            "working_set_bytes": 102801408,
+            "private_memory_bytes": 192196608,
+            "marker_exists": false,
+            "main_window_present": false
+          }
+        ],
+        "last_progress_milliseconds": 1764,
+        "process_exit_code": null
+      },
+      "first_sample_count": 2,
+      "second_call_attempted": false,
+      "second_call_start_ms": null,
+      "second_call_return_ms": null,
+      "second_result": null,
+      "second_sample_count": null,
+      "child_cpu_milliseconds_before_cleanup": 2310,
+      "child_working_set_bytes_before_cleanup": 102801408,
+      "child_private_memory_bytes_before_cleanup": 192196608,
+      "child_exited_before_cleanup": false,
+      "child_exit_code_before_cleanup": null,
+      "cleanup_ms": 2116.321,
+      "error": null
+    },
+    {
+      "name": "busy-b",
+      "harness_pid": 416,
+      "frequency": 1000000000,
+      "start_ms": 32.97,
+      "child_pid": 519,
+      "child_launch_return_ms": 65.228,
+      "first_call_start_ms": 66.326,
+      "first_call_return_ms": 2173.203,
+      "first_result": {
+        "status": "timed_out",
+        "elapsed_milliseconds": 2085,
+        "elapsed_seconds": 2.085415,
+        "samples": [
+          {
+            "elapsed_milliseconds": 2,
+            "pid": 519,
+            "has_exited": false,
+            "total_processor_milliseconds": 20,
+            "working_set_bytes": 17264640,
+            "private_memory_bytes": 58023936,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 1580,
+            "pid": 519,
+            "has_exited": false,
+            "total_processor_milliseconds": 1810,
+            "working_set_bytes": 102141952,
+            "private_memory_bytes": 183504896,
+            "marker_exists": false,
+            "main_window_present": false
+          }
+        ],
+        "last_progress_milliseconds": 1833,
+        "process_exit_code": null
+      },
+      "first_sample_count": 2,
+      "second_call_attempted": false,
+      "second_call_start_ms": null,
+      "second_call_return_ms": null,
+      "second_result": null,
+      "second_sample_count": null,
+      "child_cpu_milliseconds_before_cleanup": 2340,
+      "child_working_set_bytes_before_cleanup": 102141952,
+      "child_private_memory_bytes_before_cleanup": 183504896,
+      "child_exited_before_cleanup": false,
+      "child_exit_code_before_cleanup": null,
+      "cleanup_ms": 2206.077,
+      "error": null
+    },
+    {
+      "name": "busy-c",
+      "harness_pid": 417,
+      "frequency": 1000000000,
+      "start_ms": 11.211,
+      "child_pid": 478,
+      "child_launch_return_ms": 26.727,
+      "first_call_start_ms": 27.275,
+      "first_call_return_ms": 2063.919,
+      "first_result": {
+        "status": "timed_out",
+        "elapsed_milliseconds": 2020,
+        "elapsed_seconds": 2.0203761,
+        "samples": [
+          {
+            "elapsed_milliseconds": 2,
+            "pid": 478,
+            "has_exited": false,
+            "total_processor_milliseconds": 0,
+            "working_set_bytes": 14790656,
+            "private_memory_bytes": 49143808,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 1258,
+            "pid": 478,
+            "has_exited": false,
+            "total_processor_milliseconds": 1460,
+            "working_set_bytes": 102412288,
+            "private_memory_bytes": 183353344,
+            "marker_exists": false,
+            "main_window_present": false
+          }
+        ],
+        "last_progress_milliseconds": 1767,
+        "process_exit_code": null
+      },
+      "first_sample_count": 2,
+      "second_call_attempted": false,
+      "second_call_start_ms": null,
+      "second_call_return_ms": null,
+      "second_result": null,
+      "second_sample_count": null,
+      "child_cpu_milliseconds_before_cleanup": 2270,
+      "child_working_set_bytes_before_cleanup": 102412288,
+      "child_private_memory_bytes_before_cleanup": 183353344,
+      "child_exited_before_cleanup": false,
+      "child_exit_code_before_cleanup": null,
+      "cleanup_ms": 2116.017,
+      "error": null
+    }
+  ],
+  "setup_notes": [
+    "The first Windows Clippy wrapper invocation failed argument parsing before Clippy ran; the corrected argument-array invocation completed successfully.",
+    "Raw WSL Git initially reported CRLF checkout differences in upstream SpacemanDMM. Windows Git and WSL Git with the checkout normalization reported clean exact-pinned source."
+  ],
+  "unqualified": [
+    "additional_live_dmdoc_inputs_and_stale_snapshots",
+    "full_project_docs",
+    "hosted_native_ubuntu",
+    "macos",
+    "transport_cancellation_and_abrupt_server_shutdown",
+    "remaining_tool_inventory"
+  ],
+  "installed_mcp_changed": false,
+  "performance_or_model_token_saving_claimed": false
+}

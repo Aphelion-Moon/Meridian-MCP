@@ -27,6 +27,31 @@ impl StagingDirectory {
         &self.path
     }
 
+    pub fn check_installation_support(&self) -> Result<()> {
+        // Probe only owned, empty children on the destination filesystem. An
+        // unsupported rename must fail before running a potentially costly helper
+        // or moving any existing documentation into a backup.
+        let source = self.path.join("rename-probe");
+        let destination = self.path.join("rename-probe-complete");
+        std::fs::create_dir(&source)?;
+        if let Err(error) = rename_without_replace(&source, &destination) {
+            #[cfg(target_os = "linux")]
+            if matches!(
+                error.raw_os_error(),
+                Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)
+            ) {
+                return Err(anyhow!(
+                    "documentation output filesystem does not support RENAME_NOREPLACE; \
+                     choose an output on a supported Linux filesystem (for example, \
+                     native WSL storage instead of a mounted Windows drive): {error}"
+                ));
+            }
+            return Err(error.into());
+        }
+        std::fs::remove_dir(&destination)?;
+        Ok(())
+    }
+
     // Cancellation drops the contained process before this guard. Windows may
     // briefly retain its file handles after termination; bound that cleanup wait.
     pub fn cleanup(&mut self) -> Option<String> {

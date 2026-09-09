@@ -32,7 +32,7 @@ Generated from `src/contracts.rs`; do not edit by hand.
 | `dm_find_implementations` | Analysis | Provisional | memory | - | 1048576 | Find type or member implementations. |
 | `dm_find_on_map` | Analysis | Provisional | read | - | 1048576 | Find exact type instances in a DMM/TGM map. |
 | `dm_find_references` | Analysis | Experimental | read | - | 1048576 | Find bounded exact member references. |
-| `dm_generate_docs` | Development | Experimental | read, write, process, destructive | 300000 | 262144 | Generate contained HTML through the verified exact dmdoc helper. |
+| `dm_generate_docs` | Development | Experimental | read, write, process, destructive | 600000 | 262144 | Generate contained HTML through the verified exact dmdoc helper. |
 | `dm_get_definition` | Analysis | Provisional | memory | - | 262144 | Locate an exact parsed definition. |
 | `dm_get_proc` | Analysis | Provisional | read | - | 1048576 | Inspect exact proc implementations and source excerpts. |
 | `dm_get_type` | Analysis | Provisional | memory | - | 1048576 | Inspect an exact DreamMaker type. |

@@ -1277,7 +1277,7 @@ fn contain_arguments(
                 .get("overwrite")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            let output = policy.output_path(output, overwrite)?;
+            let output = policy.directory_output_path(output, overwrite)?;
             args["output_directory"] = Value::String(output.display().to_string());
         }
     }

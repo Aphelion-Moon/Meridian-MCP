@@ -79,8 +79,12 @@ pub async fn generate(
             .ok_or_else(|| anyhow!("output has no parent"))?,
     )?;
     anyhow::ensure!(
-        !snapshot.environment_path.starts_with(&output) && !helper.starts_with(&output),
-        "documentation output must not contain the active project or helper"
+        !helper.starts_with(&output)
+            && !snapshot
+                .source_inputs()
+                .iter()
+                .any(|input| input.starts_with(&output)),
+        "documentation output must not contain parsed project inputs or the helper"
     );
     let exists = validate_directory_target(&output)?;
     anyhow::ensure!(
@@ -94,22 +98,26 @@ pub async fn generate(
         .to_owned();
     let mut staging = StagingDirectory::create(&parent)?;
     let limits = ServerLimits::default();
-    let outcome = run_contained_process(ProcessSpec {
-        program: helper.to_owned(),
-        arguments: vec![
-            "-e".into(),
-            snapshot.environment_path.as_os_str().to_owned(),
-            "--output".into(),
-            staging.path().as_os_str().to_owned(),
-        ],
-        working_directory,
-        environment: Vec::new(),
-        stdin: None,
-        timeout: Duration::from_millis(limits.max_docs_duration_ms),
-        idle_timeout: Duration::from_millis(limits.max_docs_duration_ms),
-        capture_network: false,
-        cancellation: None,
-    })
+    let outcome = async {
+        staging.check_installation_support()?;
+        run_contained_process(ProcessSpec {
+            program: helper.to_owned(),
+            arguments: vec![
+                "-e".into(),
+                snapshot.environment_path.as_os_str().to_owned(),
+                "--output".into(),
+                staging.path().as_os_str().to_owned(),
+            ],
+            working_directory,
+            environment: Vec::new(),
+            stdin: None,
+            timeout: Duration::from_millis(limits.max_docs_duration_ms),
+            idle_timeout: Duration::from_millis(limits.max_docs_duration_ms),
+            capture_network: false,
+            cancellation: None,
+        })
+        .await
+    }
     .await;
     let mut result = json!({"output_directory":output,"helper":helper,"source_revision":snapshot.spacemandmm_revision,
         "installed":false,"success":false,"cleanup_complete":true,"stdout":"","stderr":"",

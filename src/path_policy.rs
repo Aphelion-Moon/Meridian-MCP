@@ -182,6 +182,37 @@ impl PathPolicy {
         self.require_contained(candidate)
     }
 
+    /// Validate the requested directory before canonicalization can erase its
+    /// identity as a symbolic link or Windows junction.
+    pub fn directory_output_path(
+        &self,
+        path: impl AsRef<Path>,
+        overwrite: bool,
+    ) -> Result<PathBuf, PolicyError> {
+        // Strip trailing separators and `.` so `link/` and `link/.` cannot make
+        // symlink_metadata follow the final link instead of inspecting it.
+        let input: PathBuf = path.as_ref().components().collect();
+        match std::fs::symlink_metadata(&input) {
+            Ok(metadata) if !metadata.is_dir() || metadata.file_type().is_symlink() => {
+                return Err(self.error(
+                    "invalid_output_path",
+                    input,
+                    "output must be a directory, not a file or link",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(self.error(
+                    "invalid_output_path",
+                    input,
+                    format!("cannot inspect output directory: {error}"),
+                ));
+            }
+        }
+        self.output_path(input, overwrite)
+    }
+
     pub fn executable(&self, path: impl AsRef<Path>) -> Result<PathBuf, PolicyError> {
         let input = path.as_ref();
         let canonical = input.canonicalize().map_err(|_| {

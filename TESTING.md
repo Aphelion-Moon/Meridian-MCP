@@ -30,6 +30,10 @@ cargo +1.95.0 test --locked --test variable_resolution
 
 Use `./target/release/meridian-mcp` on Linux. CI runs the source inventory, mutation checks and documentation stdio fixture on Windows and Ubuntu. Omitting `-UpstreamPath` checks only the registry and vendored-file integrity. The real Meridian-Rift analysis gates also check inherited variable values and declaration ownership.
 
+`cargo +1.95.0 test --locked --all-features --test docs_generation` covers documentation output preservation, bounded logs and cancellation cleanup. The ignored Linux test `unsupported_filesystem_is_rejected_before_execution` requires `TMPDIR` on a filesystem that rejects `RENAME_NOREPLACE` (the audited WSL Windows-drive mount does); select that test explicitly with `-- --ignored --exact`. It verifies rejection before helper execution, preservation of old docs and staging cleanup. Run ordinary success tests with a supported filesystem such as native WSL storage; this failure-path test is a separate gate.
+
+The documentation stdio script defaults to fixtures under `target/`. Use `-FixtureParent /tmp` when running it in WSL from a Windows-mounted checkout so the fixture and its generated output use native Linux storage.
+
 The audit regressions use small owned inputs and deterministic worker/process barriers. Run the focused ownership gates after building the actual server executable, because Unix tests launch its private guardian entry point:
 
 ```powershell

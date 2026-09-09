@@ -1,5 +1,9 @@
 # Documentation repair: stopping checkpoint
 
+## Latest qualification: September 10
+
+The [September 10 qualification](../2026-09-10-docs-qualification/README.md) supersedes the current-state guidance below. It records repaired nested-source/link overwrites, early unsupported-filesystem rejection, a final readiness sample at timeout, full Windows/Linux qualification and native dmdoc checks. The installed MCP is unchanged. The [September 9 checkpoint](../2026-09-09-docs-preservation/README.md), entries below and their JSON artifacts remain historical evidence.
+
 ## Status update: 2026-09-09
 
 Stopped at the user's renewed request. The documentation patch is now committed in `9c599fef8a23b7058b2f392b60815d07afa10f82` (`sprint done`), and the worktree was clean before this handoff update. All eight implementation/test file hashes in [verification.json](verification.json) still match after LF normalization. No implementation changes or new test runs were made for this update; the results below remain the September 6 evidence.

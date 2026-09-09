@@ -1,0 +1,627 @@
+{
+  "schema_version": 1,
+  "recorded_local_date": "2026-09-09",
+  "status": "stopped_at_user_request_partial_uncommitted",
+  "base_commit": "2d0bb15d5683814eed989c4b7080ea2714dbbccf",
+  "installed_mcp_changed": false,
+  "rust_toolchain": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "linux_powershell": "7.6.5",
+  "scope_notes": [
+    "Windows full tests and Clippy predate the final test-only readiness edit.",
+    "Linux full tests failed two marker readiness cases before that edit; final focused tests passed both marker cases and failed the busy-process progress-sample assertion.",
+    "No rerun or diagnosis of the new busy-process sample failure was performed before stopping.",
+    "The separate mounted-filesystem green run predates the final equivalent Unix validation simplification.",
+    "Native Linux dmdoc, final full suites and strict Clippy, hosted gates, full-project docs and abrupt shutdown remain unqualified.",
+    "The initial nonmatching readiness probe is retained but is not matched evidence.",
+    "Source hashes describe the current dirty patch; they do not relabel the frozen earlier MCP binary.",
+    "Raw logs and binaries are local ignored artifacts. Embedded probe records contain no machine profile paths.",
+    "No performance or model-token saving is claimed."
+  ],
+  "final_readiness_gates": [
+    {
+      "platform": "windows",
+      "command": "cargo +1.95.0 test --offline --locked --all-features --test process_readiness",
+      "exit_code": 0,
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "platform": "linux_wsl2",
+      "command": "cargo +1.95.0 test --offline --locked --all-features --test process_readiness",
+      "exit_code": 101,
+      "passed": 6,
+      "failed": 1,
+      "ignored": 0,
+      "failure": "readiness_timeout_retains_progress_samples_for_a_busy_process",
+      "cause": "unestablished"
+    }
+  ],
+  "windows_native_candidate": {
+    "path": "target/docs-preservation-native-windows/mcp.exe",
+    "sha256": "cb21ec46f925f5af5824c48aaefefc304f38d1a82911452b5ea82c3f06afc1e5",
+    "manifest": "target/native-memory-release-final-package/helpers/manifest.json",
+    "dmdoc_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
+    "dmdoc_sha256": "0c6f8733550163e38f3dc5382f527113c27c912e65a1e3c169fa5cc7f944ff68"
+  },
+  "source_files": [
+    {
+      "path": "README.md",
+      "sha256_lf_normalized": "9e61693cf3800f78898467afd792476eeddb9678e1ba2aec8765a646f0afc074"
+    },
+    {
+      "path": "TESTING.md",
+      "sha256_lf_normalized": "01205d7d3c4f8b784ea97e0c01356bd00b6eeea5a9000d9b62505267c5b68956"
+    },
+    {
+      "path": "docs/tool-contracts.md",
+      "sha256_lf_normalized": "922c181d14c6ffc8f626528367a1dfcf8a5f2944b30556e3890e3414795d27ca"
+    },
+    {
+      "path": "scripts/test-spacemandmm-docs.ps1",
+      "sha256_lf_normalized": "1c5727612ca1e652c43ebb696083945ed2952f0bc655b78a301c043b6be9981a"
+    },
+    {
+      "path": "scripts/process-readiness.psm1",
+      "sha256_lf_normalized": "2512112add15d39bde9c4a8fbf24d1aee3d476070ca4b794306fc34fa94bf97c"
+    },
+    {
+      "path": "src/path_policy.rs",
+      "sha256_lf_normalized": "bc5df144359fc281bf290ece084cc14594691cf698358833aa6785ea47447fbf"
+    },
+    {
+      "path": "src/tools/docs.rs",
+      "sha256_lf_normalized": "e32653c2db78ac9a6713d09d58a8106e026443acf28c2e84aa93365803275d37"
+    },
+    {
+      "path": "src/tools/docs/installation.rs",
+      "sha256_lf_normalized": "e2c2aa5b09b068864e835993201500949e04f7d4e46abe155bb2ba7c756636a9"
+    },
+    {
+      "path": "src/tools/mod.rs",
+      "sha256_lf_normalized": "e9cb5980b51dfd93489ca545eea1c43c38caaac387cb32e4250c8fa60b1dd0b6"
+    },
+    {
+      "path": "tests/docs_generation.rs",
+      "sha256_lf_normalized": "519ac8dc25ab095e954a3d9e348b410dd23d85519410813ac300f9d9735b1027"
+    },
+    {
+      "path": "tests/process_readiness.rs",
+      "sha256_lf_normalized": "e9509bd78d4218d391f1e80bd9ba0066218b20d9858b84d8a849c9ccb56c2b67"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256_lf_normalized": "97aab3493c1fb14fe9a21c760433577f434714f5725bbb176e67048dde581afe"
+    }
+  ],
+  "logs": [
+    {
+      "path": "target/docs-preservation-red.log",
+      "sha256": "0f005c9c7d5d8a671a528e58be4e1bc4ebd76e57c6bae4f37e12072d59c9c2b1",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 0,
+        "failed": 2,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-contract-drift-red.log",
+      "sha256": "b57a762773762a43ef003c9b4c1475231d4a2459b1810ba372ead1482cbe57e5",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-preservation-render-contracts.log",
+      "sha256": "b757dbe72a4bb8a41d04c53e73f1368986a6d73b590eadc454251ff98c661217",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-windows-focused.log",
+      "sha256": "116222f6ccbec9e8f599f33977a4d99a2cb7e87a23e46196abcaffcdf048f919",
+      "test_summary_count": 3,
+      "test_totals": {
+        "passed": 21,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-preservation-windows-full.log",
+      "sha256": "4596112e25db864a098241b36478e864c51e57479b1f0e04a5958286f390db3d",
+      "test_summary_count": 62,
+      "test_totals": {
+        "passed": 480,
+        "failed": 0,
+        "ignored": 5
+      }
+    },
+    {
+      "path": "target/docs-preservation-windows-clippy.log",
+      "sha256": "73a52e20e4e90b8e3e4edb04fa5f216dfb7021448106c0255ee4c8fdc352e5da",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-native-windows.log",
+      "sha256": "91b2a6c2626f82519eae2b5747f381ac5c33877f8824d0d12eb4f457a76f9227",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-native-windows-override.log",
+      "sha256": "91b2a6c2626f82519eae2b5747f381ac5c33877f8824d0d12eb4f457a76f9227",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-preservation-spaceman-source.log",
+      "sha256": "e29a92dab7d0a04a9987bc843aefaa7092b351f1a030bee41cfb5014d7254bf4",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-filesystem-red.log",
+      "sha256": "267bc25dcf9e8fe972ca3c10c2ce03121623e840ce6424c41fcf772016698f09",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-filesystem-green.log",
+      "sha256": "a7cebda7a487e7bb588a419d294b026cee4e7c723d9a19f57dcad909bb3a7df0",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-preservation-linux-focused.log",
+      "sha256": "050b5d92b5bc5f4ae21bdefa39a943e257913ce93ad0a225cb15bc20951bec49",
+      "test_summary_count": 4,
+      "test_totals": {
+        "passed": 30,
+        "failed": 0,
+        "ignored": 1
+      }
+    },
+    {
+      "path": "target/docs-preservation-linux-install.log",
+      "sha256": "46b619d1e79a8292f850737b6856c33c18067a2ba2ef53c5a7c423f16c0aa412",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-preservation-linux-full.log",
+      "sha256": "6a76a71f75877eb0bafe2afde3ba69d968e0cb696213acb9b07e798f488611bb",
+      "test_summary_count": 62,
+      "test_totals": {
+        "passed": 464,
+        "failed": 2,
+        "ignored": 7
+      }
+    },
+    {
+      "path": "target/process-readiness-instrumented-probe-initial-nonmatching.log",
+      "sha256": "186f8e1dbea428d81537cfd4e1f902b28291692edf41ab37cbaaa54b4424ee35",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/process-readiness-independent-group.log",
+      "sha256": "afcfb19eb464e1420a21542203bf2c4686044b6abdd4e13757414eec927b78fd",
+      "test_summary_count": 0,
+      "test_totals": null
+    },
+    {
+      "path": "target/docs-stop-readiness-windows.log",
+      "sha256": "ccb606cc654231774e3bb3885321459bc9bf3ca9a4ecd168b4829498fbda230b",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "path": "target/docs-stop-readiness-linux.log",
+      "sha256": "929f8b8649f088f87d67368457f5460d7737b375fb7859a26a5a7ff802265d83",
+      "test_summary_count": 1,
+      "test_totals": {
+        "passed": 6,
+        "failed": 1,
+        "ignored": 0
+      }
+    }
+  ],
+  "linux_rename_probe": {
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "cases": [
+      {
+        "scope": "linux_temp",
+        "kind": "file",
+        "flags": 0,
+        "collision": false,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": "source"
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "file",
+        "flags": 0,
+        "collision": true,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": "source"
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "file",
+        "flags": 1,
+        "collision": false,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": "source"
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "file",
+        "flags": 1,
+        "collision": true,
+        "result": -1,
+        "errno": 17,
+        "source_exists": true,
+        "destination_exists": true,
+        "destination_text": "late writer"
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "directory",
+        "flags": 0,
+        "collision": false,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": null
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "directory",
+        "flags": 0,
+        "collision": true,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": null
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "directory",
+        "flags": 1,
+        "collision": false,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": null
+      },
+      {
+        "scope": "linux_temp",
+        "kind": "directory",
+        "flags": 1,
+        "collision": true,
+        "result": -1,
+        "errno": 17,
+        "source_exists": true,
+        "destination_exists": true,
+        "destination_text": null
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "file",
+        "flags": 0,
+        "collision": false,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": "source"
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "file",
+        "flags": 0,
+        "collision": true,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": "source"
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "file",
+        "flags": 1,
+        "collision": false,
+        "result": -1,
+        "errno": 22,
+        "source_exists": true,
+        "destination_exists": false,
+        "destination_text": null
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "file",
+        "flags": 1,
+        "collision": true,
+        "result": -1,
+        "errno": 17,
+        "source_exists": true,
+        "destination_exists": true,
+        "destination_text": "late writer"
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "directory",
+        "flags": 0,
+        "collision": false,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": null
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "directory",
+        "flags": 0,
+        "collision": true,
+        "result": 0,
+        "errno": 0,
+        "source_exists": false,
+        "destination_exists": true,
+        "destination_text": null
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "directory",
+        "flags": 1,
+        "collision": false,
+        "result": -1,
+        "errno": 22,
+        "source_exists": true,
+        "destination_exists": false,
+        "destination_text": null
+      },
+      {
+        "scope": "workspace_target",
+        "kind": "directory",
+        "flags": 1,
+        "collision": true,
+        "result": -1,
+        "errno": 17,
+        "source_exists": true,
+        "destination_exists": true,
+        "destination_text": null
+      }
+    ]
+  },
+  "corrected_readiness_probes": [
+    {
+      "name": "live-a",
+      "mode": "live",
+      "delay_milliseconds": 300,
+      "harness_pid": 450,
+      "frequency": 1000000000,
+      "start_ms": 18.3,
+      "launcher_pid": null,
+      "launcher_exit_ms": null,
+      "writer_pid": 512,
+      "writer_launch_return_ms": 48.879,
+      "wait_process_pid": 512,
+      "wait_return_ms": 2870.758,
+      "bootstrap_child_ms": 1026.044,
+      "ready_child_ms": 2575.881,
+      "readiness": {
+        "status": "ready",
+        "elapsed_milliseconds": 2780,
+        "elapsed_seconds": 2.7804866,
+        "samples": [
+          {
+            "elapsed_milliseconds": 5,
+            "pid": 512,
+            "has_exited": false,
+            "total_processor_milliseconds": 30,
+            "working_set_bytes": 18370560,
+            "private_memory_bytes": 58028032,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 1736,
+            "pid": 512,
+            "has_exited": false,
+            "total_processor_milliseconds": 1390,
+            "working_set_bytes": 101232640,
+            "private_memory_bytes": 170246144,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 2750,
+            "pid": 512,
+            "has_exited": false,
+            "total_processor_milliseconds": 1860,
+            "working_set_bytes": 108986368,
+            "private_memory_bytes": 175611904,
+            "marker_exists": true,
+            "main_window_present": false
+          }
+        ],
+        "last_progress_milliseconds": 2750,
+        "process_exit_code": null
+      },
+      "post_timeout_observations": [],
+      "wait_process_exited_before_cleanup": false,
+      "wait_process_exit_code": null,
+      "writer_exited_before_cleanup": false,
+      "writer_exit_code": null,
+      "cleanup_ms": 2924.598,
+      "error": null
+    },
+    {
+      "name": "live-b",
+      "mode": "live",
+      "delay_milliseconds": 300,
+      "harness_pid": 452,
+      "frequency": 1000000000,
+      "start_ms": 19.962,
+      "launcher_pid": null,
+      "launcher_exit_ms": null,
+      "writer_pid": 513,
+      "writer_launch_return_ms": 50.879,
+      "wait_process_pid": 513,
+      "wait_return_ms": 2879.945,
+      "bootstrap_child_ms": 1027.857,
+      "ready_child_ms": 2608.081,
+      "readiness": {
+        "status": "ready",
+        "elapsed_milliseconds": 2786,
+        "elapsed_seconds": 2.7860487,
+        "samples": [
+          {
+            "elapsed_milliseconds": 3,
+            "pid": 513,
+            "has_exited": false,
+            "total_processor_milliseconds": 30,
+            "working_set_bytes": 18497536,
+            "private_memory_bytes": 58028032,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 1703,
+            "pid": 513,
+            "has_exited": false,
+            "total_processor_milliseconds": 1320,
+            "working_set_bytes": 101376000,
+            "private_memory_bytes": 187199488,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 2758,
+            "pid": 513,
+            "has_exited": false,
+            "total_processor_milliseconds": 1780,
+            "working_set_bytes": 109178880,
+            "private_memory_bytes": 192454656,
+            "marker_exists": true,
+            "main_window_present": false
+          }
+        ],
+        "last_progress_milliseconds": 2758,
+        "process_exit_code": null
+      },
+      "post_timeout_observations": [],
+      "wait_process_exited_before_cleanup": false,
+      "wait_process_exit_code": null,
+      "writer_exited_before_cleanup": false,
+      "writer_exit_code": null,
+      "cleanup_ms": 2927.462,
+      "error": null
+    },
+    {
+      "name": "launcher-exits",
+      "mode": "launcher",
+      "delay_milliseconds": 500,
+      "harness_pid": 453,
+      "frequency": 1000000000,
+      "start_ms": 38.553,
+      "launcher_pid": 553,
+      "launcher_exit_ms": 9885.511,
+      "writer_pid": 590,
+      "writer_launch_return_ms": 9893.008,
+      "wait_process_pid": 553,
+      "wait_return_ms": 13158.892,
+      "bootstrap_child_ms": 10870.389,
+      "ready_child_ms": 13110.952,
+      "readiness": {
+        "status": "process_exited",
+        "elapsed_milliseconds": 3242,
+        "elapsed_seconds": 3.2424378,
+        "samples": [
+          {
+            "elapsed_milliseconds": 3,
+            "pid": 553,
+            "has_exited": true,
+            "total_processor_milliseconds": null,
+            "working_set_bytes": null,
+            "private_memory_bytes": null,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 1984,
+            "pid": 553,
+            "has_exited": true,
+            "total_processor_milliseconds": null,
+            "working_set_bytes": null,
+            "private_memory_bytes": null,
+            "marker_exists": false,
+            "main_window_present": false
+          },
+          {
+            "elapsed_milliseconds": 2990,
+            "pid": 553,
+            "has_exited": true,
+            "total_processor_milliseconds": null,
+            "working_set_bytes": null,
+            "private_memory_bytes": null,
+            "marker_exists": false,
+            "main_window_present": false
+          }
+        ],
+        "last_progress_milliseconds": 0,
+        "process_exit_code": 0
+      },
+      "post_timeout_observations": [
+        {
+          "elapsed_ms": 13178.759,
+          "bootstrap_exists": true,
+          "ready_exists": true,
+          "writer_exited": false
+        }
+      ],
+      "wait_process_exited_before_cleanup": true,
+      "wait_process_exit_code": 0,
+      "writer_exited_before_cleanup": false,
+      "writer_exit_code": null,
+      "cleanup_ms": 13197.705,
+      "error": null
+    }
+  ]
+}

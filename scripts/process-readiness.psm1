@@ -18,6 +18,7 @@ function Wait-ProcessReadiness {
 	$lastRetainedSampleMilliseconds = -1000
 	do {
 		$elapsedMilliseconds = [int64]$stopwatch.Elapsed.TotalMilliseconds
+		$finalSample = $stopwatch.Elapsed.TotalSeconds -ge $TimeoutSeconds
 		$markerExists = Test-Path -LiteralPath $MarkerPath -PathType Leaf
 		$cpuMilliseconds = $null
 		$workingSetBytes = $null
@@ -46,7 +47,7 @@ function Wait-ProcessReadiness {
 		if ($null -ne $workingSetBytes) { $lastWorkingSetBytes = $workingSetBytes }
 		if ($null -ne $privateMemoryBytes) { $lastPrivateMemoryBytes = $privateMemoryBytes }
 
-		if ($samples.Count -eq 0 -or ($elapsedMilliseconds - $lastRetainedSampleMilliseconds) -ge 1000) {
+		if ($samples.Count -eq 0 -or $finalSample -or ($elapsedMilliseconds - $lastRetainedSampleMilliseconds) -ge 1000) {
 			$samples.Add([pscustomobject]@{
 				elapsed_milliseconds = $elapsedMilliseconds
 				pid = $Process.Id
@@ -60,9 +61,13 @@ function Wait-ProcessReadiness {
 			$lastRetainedSampleMilliseconds = $elapsedMilliseconds
 		}
 
+		# Retain one final observation after a delayed poll or sleep. It can
+		# establish process progress/exit, but cannot make a late marker ready.
+		if ($finalSample) { break }
+
 		if ($markerExists) {
 			$marker = Get-Content -Raw -LiteralPath $MarkerPath -ErrorAction SilentlyContinue
-			if ($null -ne $marker -and $marker.TrimEnd() -eq $ExpectedMarker) {
+			if ($null -ne $marker -and $marker.TrimEnd() -eq $ExpectedMarker -and $stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
 				$stopwatch.Stop()
 				return [pscustomobject]@{
 					status = 'ready'
@@ -76,7 +81,7 @@ function Wait-ProcessReadiness {
 		}
 
 		Start-Sleep -Milliseconds 250
-	} while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds)
+	} while ($true)
 
 	$stopwatch.Stop()
 	return [pscustomobject]@{

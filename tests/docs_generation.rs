@@ -97,6 +97,17 @@ impl Fixture {
     fn output(&self) -> PathBuf {
         self.workspace.join("html")
     }
+    async fn parse(&self) {
+        let parsed = call_tool(
+            &self.context,
+            &self.state,
+            "dm_parse_environment",
+            json!({"dme_path":self.project.join("fixture.dme"),"force":true}),
+        )
+        .await
+        .unwrap();
+        assert_ne!(parsed.is_error, Some(true));
+    }
     async fn call(&self, args: Value) -> (bool, usize, Value) {
         let mut request = json!({"output_directory":self.output()});
         request
@@ -187,6 +198,80 @@ async fn output_files_and_source_directories_are_rejected_before_execution() {
 }
 
 #[tokio::test]
+async fn nested_source_output_is_rejected_before_execution() {
+    let original = "/datum/docs_source\n    var/keep = 1\n";
+    for include in ["code", "../shared"] {
+        let f = Fixture::new("quiet").await;
+        let source_dir = f.project.join(include);
+        std::fs::create_dir(&source_dir).unwrap();
+        let source = source_dir.join("example.dm");
+        std::fs::write(&source, original).unwrap();
+        std::fs::write(
+            f.project.join("fixture.dme"),
+            format!("#include \"{include}/example.dm\"\n"),
+        )
+        .unwrap();
+        f.parse().await;
+
+        let (error, _, _) = f
+            .call(json!({"output_directory":source_dir,"overwrite":true}))
+            .await;
+        let observed = (
+            error,
+            f.project.join("helper.pid").exists(),
+            std::fs::read_to_string(&source).ok(),
+            f.leftovers().len(),
+        );
+        assert_eq!(observed, (true, false, Some(original.to_owned()), 0));
+    }
+}
+
+#[cfg(any(windows, unix))]
+#[tokio::test]
+async fn linked_output_is_rejected_before_execution_and_preserves_its_target() {
+    let f = Fixture::new("quiet").await;
+    let target = f.workspace.join("previous-docs");
+    std::fs::create_dir(&target).unwrap();
+    let sentinel = target.join("sentinel.txt");
+    std::fs::write(&sentinel, "preserve target").unwrap();
+    let link = f.output();
+    #[cfg(windows)]
+    assert!(std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&target)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let mut observations = Vec::new();
+    for output in [link.clone(), link.join(""), link.join(".")] {
+        let (error, _, _) = f
+            .call(json!({"output_directory":output,"overwrite":true}))
+            .await;
+        observations.push((
+            error,
+            f.project.join("helper.pid").exists(),
+            std::fs::read_to_string(&sentinel).ok(),
+            std::fs::symlink_metadata(&link).is_ok(),
+            f.leftovers().len(),
+        ));
+    }
+    // Remove only the fixture link before the fixture's recursive cleanup.
+    #[cfg(windows)]
+    std::fs::remove_dir(&link).unwrap();
+    #[cfg(unix)]
+    std::fs::remove_file(&link).unwrap();
+    assert_eq!(
+        observations,
+        vec![(true, false, Some("preserve target".to_owned()), true, 0); 3]
+    );
+}
+
+#[tokio::test]
 async fn malformed_output_arguments_are_rejected_before_execution() {
     for args in [
         json!({"overwrite":"false"}),
@@ -201,6 +286,29 @@ async fn malformed_output_arguments_are_rejected_before_execution() {
         assert!(!f.project.join("helper.pid").exists());
         assert!(f.leftovers().is_empty());
     }
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+#[ignore = "requires TMPDIR on a filesystem that rejects RENAME_NOREPLACE"]
+async fn unsupported_filesystem_is_rejected_before_execution() {
+    let f = Fixture::new("quiet").await;
+    std::fs::create_dir(f.output()).unwrap();
+    std::fs::write(f.output().join("old.html"), "old docs").unwrap();
+    let (error, _, body) = f.call(json!({"overwrite":true})).await;
+    let observed = (
+        error,
+        f.project.join("helper.pid").exists(),
+        std::fs::read_to_string(f.output().join("old.html")).ok(),
+        f.leftovers().len(),
+        body["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("RENAME_NOREPLACE")),
+    );
+    assert_eq!(
+        observed,
+        (true, false, Some("old docs".to_owned()), 0, true)
+    );
 }
 
 #[tokio::test]
@@ -221,14 +329,18 @@ async fn helper_failure_and_missing_index_preserve_existing_docs_and_clean_stagi
 #[tokio::test]
 async fn successful_replacement_installs_complete_docs_without_backups() {
     let f = Fixture::new("quiet").await;
-    std::fs::create_dir(f.output()).unwrap();
-    std::fs::write(f.output().join("old.html"), "old docs").unwrap();
-    let (error, _, body) = f.call(json!({"overwrite":true})).await;
-    assert!(!error);
-    assert_eq!(body["files"], 2);
-    assert!(f.output().join("types/example.html").is_file());
-    assert!(!f.output().join("old.html").exists());
-    assert!(f.leftovers().is_empty());
+    for output in [f.output(), f.project.join("html")] {
+        std::fs::create_dir(&output).unwrap();
+        std::fs::write(output.join("old.html"), "old docs").unwrap();
+        let (error, _, body) = f
+            .call(json!({"output_directory":output,"overwrite":true}))
+            .await;
+        assert!(!error);
+        assert_eq!(body["files"], 2);
+        assert!(output.join("types/example.html").is_file());
+        assert!(!output.join("old.html").exists());
+        assert!(f.leftovers().is_empty());
+    }
 }
 
 #[tokio::test]
