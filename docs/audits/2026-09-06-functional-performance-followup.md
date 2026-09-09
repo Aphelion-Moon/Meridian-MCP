@@ -6,7 +6,7 @@ Objective: continue evidence-backed audits and repairs across Meridian-MCP, incl
 
 The [September 10 documentation qualification](2026-09-10-docs-qualification/README.md) repairs nested-source/link overwrites and rejects unsupported output filesystems before helper execution. A controlled delayed-poll regression also reproduced missing timeout progress evidence; the readiness helper now retains a final reading without accepting a late marker. Full suites passed 481 Windows tests and 467 Linux tests, with strict Clippy and pinned native dmdoc smoke checks on both. Native WSL storage supports installation; the audited Windows-drive mount passes its separate early-rejection gate. The original Linux failures remain preserved in the [September 9 checkpoint](2026-09-09-docs-preservation/README.md). The installed MCP is unchanged, no restart is required, and the broad goal remains incomplete.
 
-Next: reproduce fixture synchronization's stale active-snapshot reuse, then address repeated whole-file token reads and intermediate response size. Additional live dmdoc inputs, full-project documentation, hosted gates and the older intermittent WSL 1 guardian timeout remain separate open work.
+Stopped after reproducing fixture synchronization's stale active-snapshot reuse: removing a required procedure still returned `verified` until a forced reparse. The [September 10 stopping point](2026-09-10-fixture-sync-checkpoint/README.md) preserves the native probe and executable next steps. Resume with a freshness regression and repair, then measure repeated whole-file token reads and intermediate response size. Additional live dmdoc inputs, full-project documentation, hosted gates and the older intermittent WSL 1 guardian timeout remain separate open work.
 
 ## Current work
 
@@ -44,7 +44,7 @@ The current `src/contracts.rs` inventory contains **62 tools**. Startup configur
 | --- | ---: | --- |
 | Server status | 1 | Startup/build identity fixtures; include in final installed-state handoff. |
 | Parser, exact inspection, language listings, diagnostics and search | 12 | Completed source, inheritance, paging, excerpt and storage audits above; retain full-suite qualification. |
-| Fixture synchronization | 1 | Source review found active snapshots reused by DME path alone, repeated whole-file reads per required token, and issue serialization before the transport size check. Reproduce these cases next; no repair or runtime conclusion yet. |
+| Fixture synchronization | 1 | An owned native stdio probe reproduced incorrect `verified` classification after a required procedure was removed; forced reparse detects it. Repair is pending. Source review also found repeated whole-file reads per token and issue serialization before the transport size check; those costs remain unmeasured. See the stopping point above. |
 | Process-memory and native-evidence summary/compare | 4 | Earlier evidence-format tests; fresh input-volume, comparison-identity and response-budget review remains. |
 | DMI inspection, comparison, duplicates, audit and extraction | 5 | SpacemanDMM capability/functional fixtures; fresh budget and output-install review remains. |
 | Map inspection, diff, lookup and rendering | 6 | SpacemanDMM parsing/render fixtures; fresh batch/output and resource-budget review remains. |
