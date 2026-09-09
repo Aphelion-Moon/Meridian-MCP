@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-09-09T23:36:59.735129+00:00",
+  "status": "local_fixture_metadata_freshness_qualified",
+  "base_commit": "b2961ed1be41652c2619f91f0e05060e58ee7e76",
+  "rust_toolchain": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_identity_note": "The four normalized source hashes describe the qualified patch. Audit prose and later commits change build identity inputs; frozen binaries retain the identities below.",
+  "source_files": [
+    {
+      "path": "src/tools/fixture.rs",
+      "sha256_lf_normalized": "d24f58ef83de0c43984217554b8e95f77aee9a3b7635989652344ac72ad8bc66"
+    },
+    {
+      "path": "src/tools/parse.rs",
+      "sha256_lf_normalized": "9bf842f6aea981dae8490e04479ca59d3301bf6551359bbb5fe87198881d3029"
+    },
+    {
+      "path": "tests/fixture_manifest.rs",
+      "sha256_lf_normalized": "2692ef24bc2327abe1de54c76f4d4a405a6e4fa220dd7453760e89e0e5dd0128"
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256_lf_normalized": "c91413f573c099da20168b5977a4ea43dd957b73b6b8f75536e9404abef13085"
+    }
+  ],
+  "gates": {
+    "windows_green": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --test fixture_manifest --test analysis_snapshot",
+      "exit_code": 0,
+      "passed": 20,
+      "failed": 0,
+      "ignored": 0,
+      "result_lines": 2,
+      "log": "target/fixture-sync-freshness-windows-green.log",
+      "exit_evidence": "completed command terminal result"
+    },
+    "windows_full": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --no-fail-fast",
+      "exit_code": 0,
+      "passed": 485,
+      "failed": 0,
+      "ignored": 5,
+      "result_lines": 62,
+      "log": "target/fixture-sync-freshness-windows-full.log",
+      "exit_evidence": "completed command terminal result"
+    },
+    "linux_green": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --test fixture_manifest --test analysis_snapshot",
+      "exit_code": 0,
+      "passed": 21,
+      "failed": 0,
+      "ignored": 0,
+      "result_lines": 2,
+      "log": "target/fixture-sync-freshness-linux-green.log",
+      "exit_evidence": "embedded log marker"
+    },
+    "linux_full": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --no-fail-fast",
+      "exit_code": 0,
+      "passed": 471,
+      "failed": 0,
+      "ignored": 7,
+      "result_lines": 62,
+      "log": "target/fixture-sync-freshness-linux-full.log",
+      "exit_evidence": "embedded log marker"
+    },
+    "windows_red_resumed": {
+      "command": "cargo +1.95.0 test --offline --locked --all-features --test fixture_manifest",
+      "exit_code": 101,
+      "passed": 3,
+      "failed": 4,
+      "ignored": 0,
+      "result_lines": 1,
+      "log": "target/fixture-sync-freshness-windows-red-resumed.log",
+      "exit_evidence": "completed command terminal result"
+    },
+    "windows_clippy": {
+      "command": "cargo +1.95.0 clippy --offline --locked --all-targets --all-features -- -D warnings",
+      "exit_code": 0,
+      "log": "target/fixture-sync-freshness-windows-clippy.log",
+      "exit_evidence": "completed command terminal result"
+    },
+    "linux_clippy": {
+      "command": "cargo +1.95.0 clippy --offline --locked --all-targets --all-features -- -D warnings",
+      "exit_code": 0,
+      "log": "target/fixture-sync-freshness-linux-clippy.log",
+      "exit_evidence": "embedded log marker"
+    }
+  },
+  "candidates": [
+    {
+      "platform": "windows",
+      "profile": "test/debug all-features candidate",
+      "path": "target/fixture-sync-freshness-qualified-windows/mcp.exe",
+      "sha256": "c266705912f687f6bf04426a84e3846cacf5912bafe5ca37ae0abe31d89972a3",
+      "build_id": "02fcb4b521d1275d84b2c85fc931762654cc783ea675308a998af02b4d57504a",
+      "portable_result": "windows-stdio.json",
+      "natural_server_exit_code": 0,
+      "launcher_exit_code": 0,
+      "stderr_status": "empty",
+      "exit_evidence": "probe success requires natural server exit 0; completed launcher terminal result"
+    },
+    {
+      "platform": "linux",
+      "profile": "test/debug all-features candidate",
+      "path": "target/fixture-sync-freshness-qualified-linux/mcp",
+      "sha256": "70ce890be5d3e3bc90fb000e6ae1911e5fb833504d0b2a1bf1b367f2c778349a",
+      "build_id": "34e4dd96b35c7449528e4dcdb1a482dc8ac36701520735510b4119ac7bf78b41",
+      "portable_result": "linux-stdio.json",
+      "natural_server_exit_code": 0,
+      "launcher_exit_code": 0,
+      "stderr_status": "ordinary INFO tracing only",
+      "exit_evidence": "probe success requires natural server exit 0; completed launcher terminal result"
+    }
+  ],
+  "raw_artifacts": [
+    {
+      "path": "target/fixture-sync-freshness-stdio-probe.json",
+      "sha256": "207ffbb3da6b7c41bc8e14cdd5cc60beb0bd27a4b1cc9a771f582201703cbd01",
+      "bytes": 1413,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-stdio-probe.ps1",
+      "sha256": "3971510de997b18c3811e15d96b3e8fbb799209f76b0593b5fae3ab65b0748f0",
+      "bytes": 10051,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-stdio-probe.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-stdio-probe-launcher-error.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-stdio-probe.json",
+      "sha256": "b6e153c530d43b06633194596cd847be49ec0875eadd230d28be715f11e01984",
+      "bytes": 1418,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-stdio-probe.ps1",
+      "sha256": "84b168eca6f6d8b9f3a0e76956a7586d18bfe67531462ce2fa11ea82b46cafc6",
+      "bytes": 10081,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-stdio-probe.stderr.log",
+      "sha256": "e96e57ac305ba507d06cae2bc8322cbd15add22c410e1129721c60177be39cc5",
+      "bytes": 1162,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-stdio-probe-launcher-error.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "retained"
+    },
+    {
+      "path": "target/fixture-sync-freshness-windows-red.log",
+      "sha256": "5308486ca716734ce5a5bff82d0defcd8b7c0b0a99a1d14fb11d95ed02a4c1a7",
+      "bytes": 2216,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-windows-red-complete.log",
+      "sha256": "da9d1fff0bce75df8da0ebd70aa630f85d353d6ca7996f254190aaddcf7f6366",
+      "bytes": 322,
+      "status": "incomplete compilation only; no terminal test result"
+    },
+    {
+      "path": "target/fixture-sync-freshness-windows-red-resumed.log",
+      "sha256": "7f73195020d836f8b88a8f05c284d44b92d22ac309ae8f44e53e9a4fe39e6feb",
+      "bytes": 3217,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-windows-green.log",
+      "sha256": "00d50165b5ce6413de9f393825158220af625614ae6aa27d138027e556f07262",
+      "bytes": 2194,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-windows-full.log",
+      "sha256": "517f971b838041c634bf2ebb8c10d443c255027c55e5b2a7d18f493b263be5de",
+      "bytes": 51521,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-windows-clippy.log",
+      "sha256": "6a4f54c724e7cffb93f1c5c5be7804a80afde549c60157573747c50e996691b7",
+      "bytes": 396,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-green.log",
+      "sha256": "6308db66d4c7b565ab4e5b42566d7b77d9151f05b8d32ce3cf58ce8a1826ab84",
+      "bytes": 2026,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-full.log",
+      "sha256": "fe1569e91f2fedab5fb1a893d261c7c95d0ff4e006aa234d9d8de4c318e78be1",
+      "bytes": 49788,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-sync-freshness-linux-clippy.log",
+      "sha256": "f0cd5b7acedb14e9e412d47ac627757c633dcc8a7e5381d31443da31412d647e",
+      "bytes": 689,
+      "status": "completed gate"
+    },
+    {
+      "path": "target/fixture-token-cost-probe.ps1",
+      "sha256": "7c08f00cb180ebb867226fabbafd74e7435161794aa4ce32ff3248aa2ca6d6c6",
+      "bytes": 19369,
+      "status": "incomplete cost-probe attempt"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline.json",
+      "sha256": "090fc2154bff3616119fca307684895d2e52450aa1ce3e8efe2c9e8f69830481",
+      "bytes": 15111,
+      "status": "incomplete cost-probe attempt"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline.stderr.log",
+      "sha256": "191333944c56a07f8954116cf4b10bde2ca78ad7c8c502eeb76b4b3cdb67785c",
+      "bytes": 42,
+      "status": "incomplete cost-probe attempt"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline.launcher.stdout.log",
+      "sha256": "716ff9de299b0da69d7679f14b8c9d67874bdc0dc8b553f5796b655d80d6e5a7",
+      "bytes": 11346,
+      "status": "incomplete cost-probe attempt"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline.launcher.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "incomplete cost-probe attempt"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline.launcher.exit.txt",
+      "sha256": "cefbbceccbcd25756e216fc900d9877f47a51ce991b286e66a8440210c1be2dd",
+      "bytes": 11,
+      "status": "incomplete cost-probe attempt"
+    },
+    {
+      "path": "target/fixture-input-output-probe.ps1",
+      "sha256": "1d81ffc347ee069bb26d6b50efef30baee634d9eee7223742b866f60bfc4126a",
+      "bytes": 18186,
+      "status": "unexecuted draft"
+    }
+  ],
+  "interrupted_gate": {
+    "log": "target/fixture-sync-freshness-windows-red-complete.log",
+    "qualification": "incomplete",
+    "note": "The original execution handle was missing and no Rust processes remained before a separately tracked red run. The compilation-only log is retained, not counted as a product failure or completed gate."
+  },
+  "next_probe_attempt": {
+    "status": "failed_harness_validation; benchmark_unqualified",
+    "result": "target/fixture-token-cost-baseline.json",
+    "rows_preserved": 7,
+    "expected_rows": 10,
+    "launcher_exit_code": 1,
+    "natural_server_exit_code": 0,
+    "error_message": "unexpected_issue_digest_absent-01-rep-03",
+    "harness_observation": "A controlled PowerShell expression reproduces one-item pipeline unwrapping: required_tokens serializes as a string instead of the schema array.",
+    "evidence_limit": "Failed row and raw transport stdout were not retained; exact server error is unknown. Partial timings are not a qualified baseline or model-token evidence.",
+    "functional_input_output_probe": "prepared, not executed"
+  },
+  "boundaries": [
+    "Metadata-only freshness does not establish content identity for same-size preserved-mtime edits or isolate concurrent edits.",
+    "Changing a library caller path policy while reusing ServerState is outside the immutable production startup policy invariant.",
+    "Disposable fixture parsing has a separate parse mutex and can overlap main-state parsing.",
+    "Repeated token reads, input/work bounds, text encoding and intermediate response construction remain open.",
+    "Five Windows and seven Linux ignored tests remain separate gates; full inventory and hosted/live/release acceptance are incomplete.",
+    "No push, installed MCP replacement or registration change; existing installation requires no restart."
+  ]
+}

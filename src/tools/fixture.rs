@@ -88,7 +88,15 @@ async fn matching_or_fixture_snapshot(
     dme_path: &Path,
 ) -> Result<Arc<AnalysisSnapshot>> {
     if let Some(snapshot) = state.active_snapshot().await {
-        if snapshot.environment_path == dme_path {
+        let path = dme_path.to_owned();
+        // Match the parser's freshness rules, including DME/configuration and
+        // parsed inputs absent from the fixture manifest. Filesystem checks
+        // belong on the blocking pool, just as they do for an explicit parse.
+        let reusable = tokio::task::spawn_blocking(move || {
+            super::parse::reusable_snapshot(Some(snapshot), &path)
+        })
+        .await?;
+        if let Some(snapshot) = reusable {
             return Ok(snapshot);
         }
     }

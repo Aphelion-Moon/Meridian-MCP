@@ -5,6 +5,8 @@ use meridian_mcp::{CapabilityMode, FixtureInputRole, FixtureManifest, PathPolicy
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -141,6 +143,137 @@ async fn fixture_sync_reports_a_missing_generated_proc() {
         "/proc/meridian_fixture_state_batch"
     );
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+async fn fixture_sync_after_edit(
+    name: &str,
+    file: &str,
+    replacement: &str,
+) -> anyhow::Result<Value> {
+    let directory = temporary_fixture(name);
+    let manifest = write_document(&directory, &document());
+    // Establish a reusable baseline without timing-dependent sleeps. The edit
+    // below must invalidate a previously settled, otherwise usable snapshot.
+    for file in ["fixture.dme", "fixture.dm", "generated_bindings.dm"] {
+        std::fs::File::options()
+            .write(true)
+            .open(directory.join(file))
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(60))
+            .unwrap();
+    }
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap(),
+    );
+    let state = ServerState::new();
+    let parsed = call_tool(
+        &context,
+        &state,
+        "dm_parse_environment",
+        json!({"dme_path": directory.join("fixture.dme")}),
+    )
+    .await
+    .unwrap();
+    assert_ne!(parsed.is_error, Some(true));
+    let active = state.snapshot().await.unwrap();
+    assert!(active.source_fingerprint.is_reusable());
+    let baseline = call_tool(
+        &context,
+        &state,
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": manifest}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(payload(&baseline)["classification"], "verified");
+
+    std::fs::write(directory.join(file), replacement).unwrap();
+    let checked = call_tool(
+        &context,
+        &state,
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": manifest}),
+    )
+    .await;
+    let after = state.snapshot().await.unwrap();
+    assert_eq!(after.generation, active.generation);
+    assert!(
+        Arc::ptr_eq(&active, &after),
+        "validation must preserve active analysis"
+    );
+    let result = checked.map(|checked| payload(&checked));
+    if let Ok(result) = &result {
+        assert_eq!(result["provenance_status"], "unverified");
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+    result
+}
+
+#[tokio::test]
+async fn fixture_sync_detects_proc_removed_after_active_parse() {
+    let checked = fixture_sync_after_edit(
+        "removed-after-parse",
+        "generated_bindings.dm",
+        "#define MERIDIAN_FIXTURE_PROTOCOL 4\n",
+    )
+    .await
+    .unwrap();
+    assert_eq!(checked["classification"], "invalid");
+    assert_eq!(checked["issues"][0]["code"], "required_proc_missing");
+}
+
+#[tokio::test]
+async fn fixture_sync_detects_signature_changed_after_active_parse() {
+    let checked = fixture_sync_after_edit(
+        "signature-after-parse",
+        "generated_bindings.dm",
+        "#define MERIDIAN_FIXTURE_PROTOCOL 4\n/proc/meridian_fixture_state_batch(changed_payload)\n\treturn length(changed_payload)\n",
+    )
+    .await
+    .unwrap();
+    assert_eq!(checked["classification"], "invalid");
+    assert_eq!(
+        checked["issues"][0]["code"],
+        "required_proc_arguments_mismatch"
+    );
+    assert_eq!(
+        checked["issues"][0]["expected_arguments"],
+        json!(["payload"])
+    );
+    assert_eq!(
+        checked["issues"][0]["actual_arguments"],
+        json!(["changed_payload"])
+    );
+}
+
+#[tokio::test]
+async fn fixture_sync_detects_changed_dme_outside_declared_inputs() {
+    let checked = fixture_sync_after_edit(
+        "dme-after-parse",
+        "fixture.dme",
+        "#include \"fixture.dm\"\n",
+    )
+    .await
+    .unwrap();
+    // The binding still exists and satisfies the text token, but the current
+    // DME no longer includes it. Manifest input hashes alone cannot catch this.
+    assert_eq!(checked["classification"], "invalid");
+    assert_eq!(checked["issues"][0]["code"], "required_proc_missing");
+}
+
+#[tokio::test]
+async fn fixture_sync_rejects_incomplete_parse_after_active_parse() {
+    let error = fixture_sync_after_edit(
+        "missing-include-after-parse",
+        "fixture.dme",
+        "#include \"fixture.dm\"\n#include \"generated_bindings.dm\"\n#include \"missing.dm\"\n",
+    )
+    .await
+    .expect_err("an unreadable include must not validate against the old tree");
+    assert!(error
+        .to_string()
+        .contains("fixture DreamMaker parse failed"));
 }
 
 #[cfg(unix)]

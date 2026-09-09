@@ -361,7 +361,7 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
 ///
 /// Returns `None` whenever reuse cannot be proven safe: a different environment,
 /// or source files whose on-disk state does not match the snapshot's fingerprint.
-fn reusable_snapshot(
+pub(super) fn reusable_snapshot(
     snapshot: Option<Arc<AnalysisSnapshot>>,
     path: &std::path::Path,
 ) -> Option<Arc<AnalysisSnapshot>> {
