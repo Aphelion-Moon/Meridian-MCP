@@ -1,0 +1,349 @@
+{
+  "schema": 1,
+  "recorded_at_utc": "2026-09-10T00:18:57.952297+00:00",
+  "status": "local_fixture_token_scan_qualified",
+  "base_commit": "41fadae",
+  "rust_toolchain": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "source_identity_note": "Source hashes describe the qualified code/tests. Audit prose changes later build identity inputs; frozen binaries retain their measured identities.",
+  "source_files": [
+    {
+      "path": "src/tools/fixture.rs",
+      "sha256_lf_normalized": "fe8ac12389904cbd86d29792181a922bf275d933e09bb76622fe5761e1989e4c"
+    },
+    {
+      "path": "src/source.rs",
+      "sha256_lf_normalized": "301daf2cbe030cb1ffdba310c13ec7b59239db87c51c5ba5eb22da914ec210b8"
+    },
+    {
+      "path": "tests/fixture_manifest.rs",
+      "sha256_lf_normalized": "d113df75e7dbcbde1f0f59550d984e54f6dac1b9484496dd74eb77964f523704"
+    },
+    {
+      "path": "tests/analysis_snapshot.rs",
+      "sha256_lf_normalized": "eff04d33ffb17b67d7317cd9f675cac63970879ca374badd963047846111a4f7"
+    }
+  ],
+  "candidates": [
+    {
+      "platform": "windows",
+      "path": "target/fixture-token-scan-final-windows/mcp.exe",
+      "sha256": "8a75194ab64f81d7057d69ba52973357463704de55e4f75c489551b12a9779b8",
+      "profile": "test/debug all-features"
+    },
+    {
+      "platform": "linux",
+      "path": "target/fixture-token-scan-final-linux/mcp",
+      "sha256": "0cb6de32292611e8a75b81401daf4e7875eed6c4f9b784b07ca5152ac747c66e",
+      "profile": "test/debug all-features"
+    }
+  ],
+  "gates": {
+    "windows-red": {
+      "exit_code": 101,
+      "passed": 8,
+      "failed": 1,
+      "ignored": 0,
+      "result_lines": 1,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "windows-green": {
+      "exit_code": 101,
+      "passed": 12,
+      "failed": 1,
+      "ignored": 0,
+      "result_lines": 1,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "windows-green-v2": {
+      "exit_code": 0,
+      "passed": 22,
+      "failed": 0,
+      "ignored": 0,
+      "result_lines": 2,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "windows-green-final": {
+      "exit_code": 0,
+      "passed": 22,
+      "failed": 0,
+      "ignored": 0,
+      "result_lines": 2,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "windows-full": {
+      "exit_code": 0,
+      "passed": 487,
+      "failed": 0,
+      "ignored": 5,
+      "result_lines": 62,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "linux-green": {
+      "exit_code": 0,
+      "passed": 23,
+      "failed": 0,
+      "ignored": 0,
+      "result_lines": 2,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "linux-full": {
+      "exit_code": 0,
+      "passed": 473,
+      "failed": 0,
+      "ignored": 7,
+      "result_lines": 62,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "windows-clippy": {
+      "exit_code": 0,
+      "exit_evidence": "completed tracked command terminal result"
+    },
+    "linux-clippy": {
+      "exit_code": 0,
+      "exit_evidence": "completed tracked command terminal result"
+    }
+  },
+  "raw_artifacts": [
+    {
+      "path": "target/fixture-token-scan-windows-red.log",
+      "sha256": "8ce93bd55849532094c86ded65d21db79f752ee862588e578a89617e397c2118",
+      "bytes": 1708,
+      "status": "expected pre-repair regression"
+    },
+    {
+      "path": "target/fixture-token-scan-windows-green.log",
+      "sha256": "bf521d53d71f84cfdaee03d24136092e812eaa3cb6a806051b8fed210ab2c75c",
+      "bytes": 2561,
+      "status": "test directory contamination"
+    },
+    {
+      "path": "target/fixture-token-scan-windows-green-v2.log",
+      "sha256": "8aaa401600f4ccf7244efd1d33cd4ceead65aeafb00a76191e70de08b6875081",
+      "bytes": 2324,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-scan-windows-green-final.log",
+      "sha256": "02a3b69730cdaa93a9c6d5d6cd347d5e48b0964dfa0cc40fbf8ff5b380ea9553",
+      "bytes": 2324,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-scan-windows-full.log",
+      "sha256": "17778dbf06fbcf4dc226f85bb61c2e462e825e62a633f0e4e38e534bbd8acea3",
+      "bytes": 51651,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-scan-linux-green.log",
+      "sha256": "2a22f2ef60daa947aee27a5aa973e9c2afcc23d9feb42d0fc390d3eed7df3abb",
+      "bytes": 2156,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-scan-linux-full.log",
+      "sha256": "ce8adc360647770a982078381015308218045716af3cc9daf1d357fd84a1ca68",
+      "bytes": 49916,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-scan-windows-clippy.log",
+      "sha256": "7cc965163cfa37d3079e1fa431b254d7daf4c3f3d4fb8cb59795f8ede4c6e025",
+      "bytes": 396,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-scan-linux-clippy.log",
+      "sha256": "42426faf7ad5ebab9e67de311d046d2d89b1756b3693a6995edae27c94701788",
+      "bytes": 351,
+      "status": "passed"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline-v2.json",
+      "sha256": "903b420b809899e666c518ce7cc6034a5794951e3bb25c9228ce4290e1bdc48d",
+      "bytes": 17674,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline-v2.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline-v2.mcp.stdout.log",
+      "sha256": "cea9b29f99e61cb62da3f2686f67006c0708dbeed73e119aa81dbe772d740c86",
+      "bytes": 49747,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline-v2.launcher.stdout.log",
+      "sha256": "f8cab4610d4c2512f51943de3414fc3ac383db1a5cccfc1cc4db26737fd7f592",
+      "bytes": 13338,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline-v2.launcher.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-baseline-v2.launcher.exit.txt",
+      "sha256": "ba7115f3f84ed660be214f0cedc32a7850269bff0be96b109d7b4b3344a31622",
+      "bytes": 11,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-candidate.json",
+      "sha256": "9c28523114ada8dc1260d4c258d2621e0ff8b53e9139dd7147dd37e2e7bb2481",
+      "bytes": 17670,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-candidate.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-candidate.mcp.stdout.log",
+      "sha256": "f3ace7913388ca07c0275eb528e798270c293cb7e362f2627e00a9d21cc3d71c",
+      "bytes": 49746,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-candidate.launcher.stdout.log",
+      "sha256": "238cf5e003904ffaa5e5d20ed9079fbe095e97bf1de44094448841983becca09",
+      "bytes": 13334,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-candidate.launcher.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-token-cost-candidate.launcher.exit.txt",
+      "sha256": "ba7115f3f84ed660be214f0cedc32a7850269bff0be96b109d7b4b3344a31622",
+      "bytes": 11,
+      "status": "passed cost probe"
+    },
+    {
+      "path": "target/fixture-input-output-baseline.json",
+      "sha256": "5b1d907d940b11d92c9222b3cce71e5ee09ffa5057899c979514eb961ad17e37",
+      "bytes": 11964,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-baseline.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-baseline.launcher.stdout.log",
+      "sha256": "1c2f240cde27e840d0b59e1b09f340094f4fc8bf298d5bb1687e13ceb5b4ee0a",
+      "bytes": 10713,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-baseline.launcher.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-baseline.launcher.exit.txt",
+      "sha256": "ba7115f3f84ed660be214f0cedc32a7850269bff0be96b109d7b4b3344a31622",
+      "bytes": 11,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-candidate.json",
+      "sha256": "e52b0b26539c4997a8471eedbff608f6b5a0152445cb2bfbdd25dfe722ddf457",
+      "bytes": 13274,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-candidate.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-candidate.launcher.stdout.log",
+      "sha256": "5f9f4b9d882a5d22fd3456ec332b22d065add6257afb18071ec308e706a6cca2",
+      "bytes": 12023,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-candidate.launcher.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-input-output-candidate.launcher.exit.txt",
+      "sha256": "ba7115f3f84ed660be214f0cedc32a7850269bff0be96b109d7b4b3344a31622",
+      "bytes": 11,
+      "status": "functional observations; oversized output remains unrepaired"
+    },
+    {
+      "path": "target/fixture-token-cost-probe-v2.ps1",
+      "sha256": "3016fb70674251efa069410068405101074e3181cf21aaf72b079b6f9ae4fd68",
+      "bytes": 20087,
+      "status": "retained reproducibility evidence"
+    },
+    {
+      "path": "target/fixture-input-output-probe.ps1",
+      "sha256": "1d81ffc347ee069bb26d6b50efef30baee634d9eee7223742b866f60bfc4126a",
+      "bytes": 18186,
+      "status": "retained reproducibility evidence"
+    },
+    {
+      "path": "target/compare-fixture-token-probes.py",
+      "sha256": "d010fadb3102dfb7027a929699e8919839dd3c348db1894e9475410ee1cb2b89",
+      "bytes": 5461,
+      "status": "retained reproducibility evidence"
+    },
+    {
+      "path": "target/fixture-token-scan-directory-collision.json",
+      "sha256": "91fb673e5eaaebe53ce05f3089ed857eba8c33a22e6a5efdca08ddf035e44ae1",
+      "bytes": 596,
+      "status": "retained reproducibility evidence"
+    },
+    {
+      "path": "target/fixture-token-scan-source-identity.json",
+      "sha256": "77be9e993c8d674530f7cc9f519cfdb9ae812f018204ac3f30d03d91e8bd0d1e",
+      "bytes": 530,
+      "status": "retained reproducibility evidence"
+    },
+    {
+      "path": "target/fixture-token-scan-qualified-source-identity.json",
+      "sha256": "dc529a4d32f9d2b896aab26de70b2cd58673276ebefe5df262b93ff9d3b79d67",
+      "bytes": 688,
+      "status": "retained reproducibility evidence"
+    },
+    {
+      "path": "target/fixture-token-scan-final-source-identity.json",
+      "sha256": "567f358809c976e607a590a7932460ff6007e3ff6cfb1422d4533b5e099af5c7",
+      "bytes": 688,
+      "status": "retained reproducibility evidence"
+    }
+  ],
+  "commands": {
+    "focused": "cargo +1.95.0 test --offline --locked --all-features --no-fail-fast --test fixture_manifest --test analysis_snapshot",
+    "full": "cargo +1.95.0 test --offline --locked --all-features --no-fail-fast",
+    "clippy": "cargo +1.95.0 clippy --offline --locked --all-targets --all-features -- -D warnings"
+  },
+  "boundaries": [
+    "Input hashing and token scanning remain synchronous and have no total file/work bound.",
+    "Raw bytes and decoded text coexist; memory remains proportional to the largest eligible text input.",
+    "UTF-8/Latin-1 fallback is per physical line, not a DreamMaker lexical parse.",
+    "Large fixture replies still lose classification at the transport cap; the controlled finding is the next repair.",
+    "Matched timing is Windows test/debug stdio evidence, not release/production speed or model-token savings.",
+    "Hosted/live full-inventory and release/installed acceptance remain open. No installation or registration change."
+  ]
+}

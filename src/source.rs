@@ -4,6 +4,25 @@ use dreammaker::Location;
 pub(crate) const MAX_SOURCE_LINES: usize = 200;
 pub(crate) const DEFAULT_PROC_SOURCE_LINES: usize = 80;
 
+/// Decode physical lines independently, as source excerpts do, and normalize
+/// CRLF to LF. Token search retains a leading BOM and lone CR bytes as text.
+pub(crate) fn normalize_source_text(bytes: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.replace("\r\n", "\n");
+    }
+    let mut text = String::with_capacity(bytes.len());
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        if let Some(line) = line.strip_suffix(b"\n") {
+            let line = line.strip_suffix(b"\r").unwrap_or(line);
+            text.push_str(&from_utf8_or_latin1_borrowed(line));
+            text.push('\n');
+        } else {
+            text.push_str(&from_utf8_or_latin1_borrowed(line));
+        }
+    }
+    text
+}
+
 /// Bounded physical source from the same parse snapshot as its symbol metadata.
 #[derive(Clone, Debug)]
 pub(crate) struct SourceExcerpt {

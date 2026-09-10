@@ -145,6 +145,126 @@ async fn fixture_sync_reports_a_missing_generated_proc() {
     std::fs::remove_dir_all(directory).unwrap();
 }
 
+#[tokio::test]
+async fn fixture_tokens_accept_utf8_and_latin1_source() {
+    for (name, comment, tokens) in [
+        (
+            "utf8-token",
+            &b"\n// caf\xc3\xa9\n"[..],
+            vec!["caf\u{e9}", "caf\u{e9}"],
+        ),
+        (
+            "latin1-token",
+            &b"\n// caf\xe9\n"[..],
+            vec!["caf\u{e9}", "caf\u{e9}"],
+        ),
+        (
+            "mixed-encoding-lines",
+            &b"\n// caf\xe9\r\n\n// snowman: \xe2\x98\x83\r\n"[..],
+            vec!["caf\u{e9}\n\n// snowman: \u{2603}", "caf\u{e9}", "\u{2603}"],
+        ),
+    ] {
+        let directory = temporary_fixture(name);
+        let binding = directory.join("generated_bindings.dm");
+        let mut bytes = std::fs::read(&binding).unwrap();
+        bytes.extend_from_slice(comment);
+        std::fs::write(&binding, bytes).unwrap();
+        let mut document = document();
+        let mut required_tokens = vec!["#define MERIDIAN_FIXTURE_PROTOCOL 4"];
+        required_tokens.extend(tokens);
+        document["required_tokens"] = json!(required_tokens);
+        let manifest = write_document(&directory, &document);
+        let context = ToolExecutionContext::new(
+            CapabilityMode::Analysis,
+            PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap(),
+        );
+        let state = ServerState::new();
+        let parsed = call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path": directory.join("fixture.dme")}),
+        )
+        .await
+        .unwrap();
+        assert_ne!(parsed.is_error, Some(true), "{name}");
+        assert_eq!(payload(&parsed)["error_count"], 0, "{name}");
+        let before = state.snapshot().await.unwrap();
+        let checked = call_tool(
+            &context,
+            &state,
+            "dm_check_fixture_sync",
+            json!({"fixture_manifest_path": manifest}),
+        )
+        .await;
+        assert!(Arc::ptr_eq(&before, &state.snapshot().await.unwrap()));
+        std::fs::remove_dir_all(directory).unwrap();
+        let checked = checked.expect("parser-supported source must be searchable for tokens");
+        assert_ne!(checked.is_error, Some(true), "{name}");
+        assert_eq!(payload(&checked)["classification"], "verified", "{name}");
+        assert_eq!(payload(&checked)["issues"], json!([]), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn fixture_tokens_preserve_membership_roles_and_missing_order() {
+    let directory = temporary_fixture("token-membership");
+    std::fs::write(
+        directory.join("configuration.txt"),
+        b"\xef\xbb\xbfFILE\nBANNER\r\nCONFIG_TOKEN\r\nLONE\rCR\nEND\r",
+    )
+    .unwrap();
+    std::fs::write(directory.join("native_module.bin"), b"\xffONLY_NATIVE").unwrap();
+    std::fs::write(directory.join("service.bin"), b"\xffONLY_SERVICE").unwrap();
+    let mut document = document();
+    document["inputs"].as_array_mut().unwrap().push(json!({
+        "path": "configuration.txt", "role": "configuration",
+    }));
+    document["required_tokens"] = json!([
+        "CONFIG_TOKEN",
+        "TOKEN",
+        "BANNER\nCONFIG_TOKEN",
+        "BANNER\r\nCONFIG_TOKEN",
+        "\u{feff}FILE",
+        "LONE\rCR",
+        "END\r",
+        "#define MERIDIAN_FIXTURE_PROTOCOL 4",
+        "MISSING",
+        "ONLY_NATIVE",
+        "MISSING",
+        "ONLY_SERVICE",
+        // Configuration sorts immediately before the generated binding. This
+        // token would exist if the scanner concatenated those files.
+        "END\r#define MERIDIAN_FIXTURE_PROTOCOL 4",
+    ]);
+    let manifest = write_document(&directory, &document);
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap(),
+    );
+    let checked = call_tool(
+        &context,
+        &ServerState::new(),
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": manifest}),
+    )
+    .await;
+    std::fs::remove_dir_all(directory).unwrap();
+    let checked = checked.unwrap();
+    assert_ne!(checked.is_error, Some(true));
+    assert_eq!(payload(&checked)["classification"], "invalid");
+    assert_eq!(
+        payload(&checked)["issues"],
+        json!([
+            {"code": "required_token_missing", "path": "MISSING"},
+            {"code": "required_token_missing", "path": "ONLY_NATIVE"},
+            {"code": "required_token_missing", "path": "MISSING"},
+            {"code": "required_token_missing", "path": "ONLY_SERVICE"},
+            {"code": "required_token_missing", "path": "END\r#define MERIDIAN_FIXTURE_PROTOCOL 4"},
+        ]),
+    );
+}
+
 async fn fixture_sync_after_edit(
     name: &str,
     file: &str,

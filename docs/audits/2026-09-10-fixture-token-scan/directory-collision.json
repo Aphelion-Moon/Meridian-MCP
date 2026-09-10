@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "old_directory_created_utc": "2026-09-05T12:46:38.1209503Z",
+  "failed_gate_started_utc": "2026-09-09T23:46:28.1425278Z",
+  "failed_gate_log_sha256": "bf521d53d71f84cfdaee03d24136092e812eaa3cb6a806051b8fed210ab2c75c",
+  "failed_assertion": "After removing config, expected baseline configured=true but actual configured=false",
+  "source_observation": "The helper used process ID and counter with create_dir_all, accepting an existing directory",
+  "scope": "Existing directory preserved; this is test-fixture contamination, not evidence of a new parser regression"
+}

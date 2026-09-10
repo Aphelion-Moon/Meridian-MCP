@@ -8,6 +8,7 @@ use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -43,8 +44,9 @@ pub async fn check_sync(
     for required in &fixture.required_procs {
         check_required_proc(&snapshot, required, &mut issues);
     }
-    for token in &fixture.required_tokens {
-        if !required_token_present(&fixture.inputs, token)? {
+    let present = required_tokens_present(&fixture.inputs, &fixture.required_tokens)?;
+    for (token, present) in fixture.required_tokens.iter().zip(present) {
+        if !present {
             issues.push(FixtureIssue {
                 code: "required_token_missing",
                 path: token.clone(),
@@ -159,11 +161,18 @@ fn split_proc_path(path: &str) -> Option<(&str, &str)> {
     (!proc_name.is_empty()).then_some((owner, proc_name))
 }
 
-fn required_token_present(
+fn required_tokens_present(
     inputs: &[crate::fixture_manifest::VerifiedFixtureInput],
-    token: &str,
-) -> Result<bool> {
-    let token = token.replace("\r\n", "\n");
+    tokens: &[String],
+) -> Result<Vec<bool>> {
+    let normalized = tokens
+        .iter()
+        .map(|token| token.replace("\r\n", "\n"))
+        .collect::<Vec<_>>();
+    let mut unmatched = normalized
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     for input in inputs.iter().filter(|input| {
         matches!(
             input.role,
@@ -172,10 +181,17 @@ fn required_token_present(
                 | FixtureInputRole::Configuration
         )
     }) {
-        let text = std::fs::read_to_string(&input.canonical_path)?.replace("\r\n", "\n");
-        if text.contains(&token) {
-            return Ok(true);
+        if unmatched.is_empty() {
+            break;
         }
+        // Keep one file's decoded text at a time. Read errors still abort the
+        // check: unreadable input is not evidence that a token is missing.
+        let bytes = std::fs::read(&input.canonical_path)?;
+        let text = crate::source::normalize_source_text(&bytes);
+        unmatched.retain(|token| !text.contains(*token));
     }
-    Ok(false)
+    Ok(normalized
+        .iter()
+        .map(|token| !unmatched.contains(token.as_str()))
+        .collect())
 }

@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "status": "encoding_repair_verified_output_limit_finding_unrepaired",
+  "note": "Raw probe results contain host paths in successful reply strings and remain ignored. This portable summary retains relevant outcomes and hashes; raw results are unchanged.",
+  "runs": [
+    {
+      "variant": "baseline",
+      "binary_sha256": "c266705912f687f6bf04426a84e3846cacf5912bafe5ca37ae0abe31d89972a3",
+      "build_id": "02fcb4b521d1275d84b2c85fc931762654cc783ea675308a998af02b4d57504a",
+      "raw_result_sha256": "5b1d907d940b11d92c9222b3cce71e5ee09ffa5057899c979514eb961ad17e37",
+      "probe_script_sha256": "1d81ffc347ee069bb26d6b50efef30baee634d9eee7223742b866f60bfc4126a",
+      "natural_server_exit_code": 0,
+      "launcher_exit_code": 0,
+      "cases": [
+        {
+          "case": "control",
+          "manifest_bytes": 525,
+          "parse_error_count": 0,
+          "tool_error": false,
+          "classification": "verified",
+          "issue_count": 0,
+          "error_code": null,
+          "reported_output_bytes": null,
+          "reported_output_limit": null,
+          "response_wire_bytes": 787,
+          "response_content_utf8_bytes": 609
+        },
+        {
+          "case": "raw-e9",
+          "manifest_bytes": 524,
+          "parse_error_count": 0,
+          "tool_error": true,
+          "classification": null,
+          "issue_count": null,
+          "error_code": null,
+          "reported_output_bytes": null,
+          "reported_output_limit": null,
+          "response_wire_bytes": 123,
+          "response_content_utf8_bytes": 34,
+          "error_message": "stream did not contain valid UTF-8"
+        },
+        {
+          "case": "oversized-reply",
+          "manifest_bytes": 2055013,
+          "parse_error_count": 0,
+          "tool_error": true,
+          "classification": null,
+          "issue_count": null,
+          "error_code": "limit_exceeded",
+          "reported_output_bytes": 2054841,
+          "reported_output_limit": 1048576,
+          "response_wire_bytes": 362,
+          "response_content_utf8_bytes": 251
+        }
+      ]
+    },
+    {
+      "variant": "candidate",
+      "binary_sha256": "8a75194ab64f81d7057d69ba52973357463704de55e4f75c489551b12a9779b8",
+      "build_id": "0227833aecb157a3f7425cb17fa414c13db524499d5b76a70b5ce111fbe264f1",
+      "raw_result_sha256": "e52b0b26539c4997a8471eedbff608f6b5a0152445cb2bfbdd25dfe722ddf457",
+      "probe_script_sha256": "1d81ffc347ee069bb26d6b50efef30baee634d9eee7223742b866f60bfc4126a",
+      "natural_server_exit_code": 0,
+      "launcher_exit_code": 0,
+      "cases": [
+        {
+          "case": "control",
+          "manifest_bytes": 525,
+          "parse_error_count": 0,
+          "tool_error": false,
+          "classification": "verified",
+          "issue_count": 0,
+          "error_code": null,
+          "reported_output_bytes": null,
+          "reported_output_limit": null,
+          "response_wire_bytes": 787,
+          "response_content_utf8_bytes": 609
+        },
+        {
+          "case": "raw-e9",
+          "manifest_bytes": 524,
+          "parse_error_count": 0,
+          "tool_error": false,
+          "classification": "verified",
+          "issue_count": 0,
+          "error_code": null,
+          "reported_output_bytes": null,
+          "reported_output_limit": null,
+          "response_wire_bytes": 784,
+          "response_content_utf8_bytes": 606
+        },
+        {
+          "case": "oversized-reply",
+          "manifest_bytes": 2055013,
+          "parse_error_count": 0,
+          "tool_error": true,
+          "classification": null,
+          "issue_count": null,
+          "error_code": "limit_exceeded",
+          "reported_output_bytes": 2054841,
+          "reported_output_limit": 1048576,
+          "response_wire_bytes": 362,
+          "response_content_utf8_bytes": 251
+        }
+      ]
+    }
+  ]
+}

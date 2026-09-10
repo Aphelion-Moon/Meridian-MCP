@@ -172,12 +172,20 @@ async fn proc_excerpt_remains_in_its_snapshot_after_disk_edit() {
 }
 
 fn fixture() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
-    let root = std::env::temp_dir().join(format!(
-        "meridian-mcp-analysis-snapshot-{}-{}",
-        std::process::id(),
-        SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&root).unwrap();
+    let root = loop {
+        let candidate = std::env::temp_dir().join(format!(
+            "meridian-mcp-analysis-snapshot-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        // Process IDs repeat. Preserve leftover fixtures without inheriting
+        // their configuration or treating existing paths as ours to remove.
+        match std::fs::create_dir(&candidate) {
+            Ok(()) => break candidate,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("could not create analysis fixture: {error}"),
+        }
+    };
     let one = root.join("one.dme");
     let two = root.join("two.dme");
     std::fs::write(&one, "/datum/snapshot_one\n").unwrap();

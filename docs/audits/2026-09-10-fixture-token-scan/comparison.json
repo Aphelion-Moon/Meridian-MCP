@@ -1,0 +1,169 @@
+{
+  "schema": 1,
+  "status": "matched_debug_stdio_comparison_passed",
+  "measurement": "Sequential write/read/JSON-decode request roundtrip in maintained Invoke-McpSession; not server CPU or disk I/O counters.",
+  "limits": [
+    "One Windows test/debug candidate per side, three cases per negative token count; no release or production speedup conclusion.",
+    "OS cache, scheduling, manifest hashing and validation are included; no model-token measurements or token-saving claim.",
+    "Only unique owned root paths are normalized for complete reply comparison."
+  ],
+  "baseline": {
+    "result_file": "fixture-token-cost-baseline-v2.json",
+    "result_sha256": "903b420b809899e666c518ce7cc6034a5794951e3bb25c9228ce4290e1bdc48d",
+    "binary_sha256": "c266705912f687f6bf04426a84e3846cacf5912bafe5ca37ae0abe31d89972a3",
+    "build_id": "02fcb4b521d1275d84b2c85fc931762654cc783ea675308a998af02b4d57504a",
+    "raw_stdout_sha256": "cea9b29f99e61cb62da3f2686f67006c0708dbeed73e119aa81dbe772d740c86"
+  },
+  "candidate": {
+    "result_file": "fixture-token-cost-candidate.json",
+    "result_sha256": "9c28523114ada8dc1260d4c258d2621e0ff8b53e9139dd7147dd37e2e7bb2481",
+    "binary_sha256": "8a75194ab64f81d7057d69ba52973357463704de55e4f75c489551b12a9779b8",
+    "build_id": "0227833aecb157a3f7425cb17fa414c13db524499d5b76a70b5ce111fbe264f1",
+    "raw_stdout_sha256": "f3ace7913388ca07c0275eb528e798270c293cb7e362f2627e00a9d21cc3d71c"
+  },
+  "probe_script_sha256": "3016fb70674251efa069410068405101074e3181cf21aaf72b079b6f9ae4fd68",
+  "complete_sync_payloads_identical": 10,
+  "normalized_reply_sha256": "0fcc4eab97be1f175f909240e48ac0f262b1c7fc30dd700ab1e429bb7b893e05",
+  "negative_groups": [
+    {
+      "required_token_count": 1,
+      "baseline_ms": [
+        572,
+        587,
+        599
+      ],
+      "candidate_ms": [
+        585,
+        592,
+        594
+      ],
+      "baseline_median_ms": 587,
+      "candidate_median_ms": 592,
+      "median_change_percent": 0.85
+    },
+    {
+      "required_token_count": 16,
+      "baseline_ms": [
+        1645,
+        1651,
+        1672
+      ],
+      "candidate_ms": [
+        1199,
+        1231,
+        1557
+      ],
+      "baseline_median_ms": 1651,
+      "candidate_median_ms": 1231,
+      "median_change_percent": -25.44
+    },
+    {
+      "required_token_count": 64,
+      "baseline_ms": [
+        4793,
+        4967,
+        5025
+      ],
+      "candidate_ms": [
+        3082,
+        4260,
+        5678
+      ],
+      "baseline_median_ms": 4967,
+      "candidate_median_ms": 4260,
+      "median_change_percent": -14.23
+    }
+  ],
+  "matched_cases": [
+    {
+      "case_id": "absent-01-rep-01",
+      "fixture_manifest_sha256": "9438d2aa0bff19d8d2e20a27ce1e81dcffe6230144434fc31199ffbbdd45f4a5",
+      "issue_digest": "5c276536756907d129b1ae2d77f9d3674dae7647747ec2f12f943f616c94bc47",
+      "response_text_utf8_bytes": 731,
+      "response_wire_bytes": 922,
+      "baseline_ms": 599,
+      "candidate_ms": 592
+    },
+    {
+      "case_id": "absent-01-rep-02",
+      "fixture_manifest_sha256": "9c85555685602b71bac272ff30af9669372c605dd9276b694926fc3f72fe675f",
+      "issue_digest": "fdece4f4721a3fdf1717923b79583ec0049b92d8b78540b830e1f1e7210c7d27",
+      "response_text_utf8_bytes": 731,
+      "response_wire_bytes": 922,
+      "baseline_ms": 587,
+      "candidate_ms": 594
+    },
+    {
+      "case_id": "absent-01-rep-03",
+      "fixture_manifest_sha256": "aeca64688212369e60944936fbe9d10c9b4a82e450300df1f7bbe781f2682200",
+      "issue_digest": "33598e7234bf3dc51d6ce9b2e1263ac33807b5463dcb9e2055f20fba90e5dd4d",
+      "response_text_utf8_bytes": 731,
+      "response_wire_bytes": 922,
+      "baseline_ms": 572,
+      "candidate_ms": 585
+    },
+    {
+      "case_id": "absent-16-rep-01",
+      "fixture_manifest_sha256": "608527b905bd5683cf923000d9201687cff6861a309df019b3084ddc566c638e",
+      "issue_digest": "4d4dae04b4e109db3dff347d8be82d872796bcfac000b9f313ce0a89d40fbaa9",
+      "response_text_utf8_bytes": 2231,
+      "response_wire_bytes": 2602,
+      "baseline_ms": 1672,
+      "candidate_ms": 1231
+    },
+    {
+      "case_id": "absent-16-rep-02",
+      "fixture_manifest_sha256": "00190b40cc96dbb7a2ff97468a3b21191865c1e3205dece54895af95687343af",
+      "issue_digest": "65e5ffa356a7ea1b13e4952048df355bf4fccb15962d7c426aed91796271965a",
+      "response_text_utf8_bytes": 2231,
+      "response_wire_bytes": 2602,
+      "baseline_ms": 1645,
+      "candidate_ms": 1557
+    },
+    {
+      "case_id": "absent-16-rep-03",
+      "fixture_manifest_sha256": "44e53bbef00caf4b7536240a92bdbd590b5de16ce2031058a9a1c7d85b485d3a",
+      "issue_digest": "45f488ce97802070af44a5e1006805ed01e15ac8312871304724a844e5dd8f58",
+      "response_text_utf8_bytes": 2231,
+      "response_wire_bytes": 2602,
+      "baseline_ms": 1651,
+      "candidate_ms": 1199
+    },
+    {
+      "case_id": "absent-64-rep-01",
+      "fixture_manifest_sha256": "02322a6dc9431a39605ab0352666fc71678f33f8b51e53dfdba82881af52acf9",
+      "issue_digest": "3edc1c728abf4648915980d8eaa571bbea6bd0a412ef1910b43900fdfcf45dc6",
+      "response_text_utf8_bytes": 7031,
+      "response_wire_bytes": 7978,
+      "baseline_ms": 4793,
+      "candidate_ms": 3082
+    },
+    {
+      "case_id": "absent-64-rep-02",
+      "fixture_manifest_sha256": "00ab6f9dd79e035c18ec5781ec9bb6a465b3d07b29266a078028a7fc7d54389d",
+      "issue_digest": "9835dd559e9d388dffb148f09b4554f9e7bc08930da3e869bc0b47827522ac8f",
+      "response_text_utf8_bytes": 7031,
+      "response_wire_bytes": 7978,
+      "baseline_ms": 4967,
+      "candidate_ms": 4260
+    },
+    {
+      "case_id": "absent-64-rep-03",
+      "fixture_manifest_sha256": "9da0f82b62293f267f197599194f70abe21ec1bf228d9cdcfb25ab6d6809e260",
+      "issue_digest": "dbb21ebd10ddd63fee309d0810dfaffc9275d012f48817b6e94f3156beda6dba",
+      "response_text_utf8_bytes": 7031,
+      "response_wire_bytes": 7978,
+      "baseline_ms": 5025,
+      "candidate_ms": 5678
+    },
+    {
+      "case_id": "positive-overlap-crlf",
+      "fixture_manifest_sha256": "116f7d7f6275cd4f9c2afe0473ba95150901624c71a9b6479bdb93b9f7510844",
+      "issue_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "response_text_utf8_bytes": 645,
+      "response_wire_bytes": 823,
+      "baseline_ms": 548,
+      "candidate_ms": 554
+    }
+  ]
+}
