@@ -161,6 +161,36 @@ async fn late_collision_cleans_only_owned_staging() {
 }
 
 #[tokio::test]
+async fn markdown_and_index_inputs_cannot_be_replaced_by_documentation() {
+    for index_only in [false, true] {
+        let f = Fixture::new("quiet").await;
+        let manual = f.project.join("manual");
+        std::fs::create_dir(&manual).unwrap();
+        std::fs::write(manual.join("index.md"), "# Owned documentation source\n").unwrap();
+        let config = if index_only {
+            "[dmdoc]\nmodule_directories = [\"fixture.dme\"]\nindex_file = \"manual/index.md\"\n"
+        } else {
+            "[dmdoc]\nmodule_directories = [\"manual\"]\n"
+        };
+        // dmdoc discovers configuration at execution time, including config
+        // added after the active analysis snapshot was built.
+        std::fs::write(f.project.join("SpacemanDMM.toml"), config).unwrap();
+        let (error, _, _) = f
+            .call(json!({"output_directory": manual, "overwrite": true}))
+            .await;
+        assert!(error, "documentation source was replaced");
+        assert!(
+            !f.project.join("helper.pid").exists(),
+            "reject before invoking the helper"
+        );
+        assert_eq!(
+            std::fs::read_to_string(manual.join("index.md")).unwrap(),
+            "# Owned documentation source\n"
+        );
+    }
+}
+
+#[tokio::test]
 async fn output_files_and_source_directories_are_rejected_before_execution() {
     let mut observations = Vec::new();
     for kind in ["file", "project", "workspace"] {
@@ -341,6 +371,23 @@ async fn successful_replacement_installs_complete_docs_without_backups() {
         assert!(!output.join("old.html").exists());
         assert!(f.leftovers().is_empty());
     }
+}
+
+#[tokio::test]
+async fn documentation_inputs_created_during_generation_are_preserved() {
+    let f = Fixture::new("new_input").await;
+    let output = f.project.join("manual");
+    std::fs::create_dir(&output).unwrap();
+    let (error, _, body) = f
+        .call(json!({"output_directory":output,"overwrite":true}))
+        .await;
+    assert!(error);
+    assert_eq!(body["installed"], false);
+    assert_eq!(
+        std::fs::read_to_string(output.join("late.md")).unwrap(),
+        "preserve late source"
+    );
+    assert!(f.leftovers().is_empty());
 }
 
 #[tokio::test]

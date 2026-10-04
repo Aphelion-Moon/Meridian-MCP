@@ -1,3 +1,4 @@
+use crate::atomic_output::rename_without_replace;
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -171,61 +172,6 @@ fn private_path(parent: &Path, purpose: &str) -> Result<PathBuf> {
     getrandom::fill(&mut random).map_err(|error| anyhow!(error.to_string()))?;
     let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
     Ok(parent.join(format!(".meridian-mcp-dmdoc-{suffix}.{purpose}")))
-}
-
-// Never overwrite a destination created after preflight, including an empty
-// directory. The same rule protects restoration from replacing a late writer.
-fn rename_without_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
-        let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-        let destination: Vec<u16> = destination
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect();
-        // std::fs::rename can replace an existing empty directory on Windows.
-        // Omitting MOVEFILE_REPLACE_EXISTING preserves a late destination.
-        if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0) } != 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        let source = std::ffi::CString::new(source.as_os_str().as_bytes())?;
-        let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())?;
-        #[cfg(target_os = "linux")]
-        let result = unsafe {
-            libc::renameat2(
-                libc::AT_FDCWD,
-                source.as_ptr(),
-                libc::AT_FDCWD,
-                destination.as_ptr(),
-                libc::RENAME_NOREPLACE,
-            )
-        };
-        #[cfg(target_os = "macos")]
-        let result =
-            unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    }
-    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-    {
-        let _ = (source, destination);
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "atomic directory installation is unavailable on this platform",
-        ))
-    }
 }
 
 #[cfg(test)]

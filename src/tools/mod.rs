@@ -219,11 +219,12 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     tools.push(ToolDefinition {
         name: "dm_check_fixture_sync".to_string(),
-        description: "Validate a contained fixture manifest against parsed DreamMaker proc contracts, required text tokens, and managed build provenance.".to_string(),
+        description: "Validate every declared fixture proc and text requirement against parsed source and managed build provenance. Return bounded issue details with complete counts; issue_limit=0 returns a summary.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
-                "fixture_manifest_path": {"type": "string"}
+                "fixture_manifest_path": {"type": "string"},
+                "issue_limit": {"type": "integer", "minimum": 0, "maximum": 200, "default": 50, "description": "Maximum returned issues; validation and total counts remain complete. Argument and serialized byte budgets also apply."}
             },
             "required": ["fixture_manifest_path"],
             "additionalProperties": false

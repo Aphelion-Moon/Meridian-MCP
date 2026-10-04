@@ -791,7 +791,7 @@ fn event_result(
 ) -> Result<ToolResult> {
     Ok(json_success(
         ToolMetadata::complete(Some(session.state_generation)),
-        json!({"event":event,"timed_out":timed_out,"dropped_events":session.dropped_events}),
+        json!({"event":event,"timed_out":timed_out,"dropped_events":session.dropped_events.saturating_add(session.connection.dropped_events())}),
     ))
 }
 

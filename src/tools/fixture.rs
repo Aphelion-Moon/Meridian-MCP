@@ -9,17 +9,119 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Serialize)]
-struct FixtureIssue {
+const ISSUE_JSON_BYTES: usize = 128 * 1024;
+const ARGUMENT_JSON_BYTES: usize = 8 * 1024;
+
+#[derive(Default, Serialize)]
+struct FixtureIssue<'a> {
     code: &'static str,
-    path: String,
+    path: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    expected_arguments: Option<Vec<String>>,
+    expected_arguments: Option<&'a [String]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    actual_arguments: Option<Vec<String>>,
+    actual_arguments: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_arguments_omitted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actual_arguments_omitted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_truncated: Option<bool>,
+}
+
+struct JsonBudget(usize);
+
+impl Write for JsonBudget {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self.0.checked_sub(bytes.len()).ok_or_else(|| {
+            std::io::Error::other("fixture detail exceeds its serialized byte budget")
+        })?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct Issues {
+    rows: Vec<Value>,
+    total: usize,
+    limit: usize,
+    bytes: usize,
+    details_omitted: bool,
+    full: bool,
+}
+
+impl Issues {
+    fn new(limit: usize) -> Self {
+        Self {
+            rows: Vec::new(),
+            total: 0,
+            limit,
+            bytes: 2,
+            details_omitted: false,
+            full: false,
+        }
+    }
+
+    fn push(&mut self, mut issue: FixtureIssue<'_>) {
+        self.total += 1;
+        if self.full || self.rows.len() >= self.limit {
+            return;
+        }
+        // Check borrowed arguments before constructing retained JSON. Large
+        // signatures must not allocate copies merely to discard them later.
+        for (arguments, omitted) in [
+            (
+                &mut issue.expected_arguments,
+                &mut issue.expected_arguments_omitted,
+            ),
+            (
+                &mut issue.actual_arguments,
+                &mut issue.actual_arguments_omitted,
+            ),
+        ] {
+            if let Some(values) = *arguments {
+                if serde_json::to_writer(JsonBudget(ARGUMENT_JSON_BYTES), values).is_err() {
+                    *omitted = Some(values.len());
+                    *arguments = None;
+                }
+            }
+        }
+        let mut budget = JsonBudget(ISSUE_JSON_BYTES.saturating_sub(self.bytes + 1));
+        if serde_json::to_writer(&mut budget, &issue).is_err() {
+            self.full = true;
+            return;
+        }
+        self.bytes = ISSUE_JSON_BYTES - budget.0;
+        self.details_omitted |= issue.expected_arguments_omitted.is_some()
+            || issue.actual_arguments_omitted.is_some()
+            || issue.message_truncated == Some(true);
+        self.rows
+            .push(serde_json::to_value(issue).expect("fixture issue serialization"));
+    }
+
+    fn respond(self, mut metadata: Value) -> Result<ToolResult> {
+        super::build_response::bound_metadata(&mut metadata);
+        metadata["truncated"] = json!(
+            self.total != self.rows.len()
+                || self.details_omitted
+                || metadata.get("response_omissions").is_some()
+        );
+        metadata["issues_summary"] = json!({
+            "total": self.total,
+            "returned": self.rows.len(),
+            "omitted": self.total - self.rows.len(),
+        });
+        metadata["issues"] = json!(self.rows);
+        Ok(ToolResult::text(serde_json::to_string(&metadata)?))
+    }
 }
 
 pub async fn check_sync(
@@ -27,20 +129,30 @@ pub async fn check_sync(
     state: &ServerState,
     args: Value,
 ) -> Result<ToolResult> {
+    let issue_limit = super::bounded_u64(&args, "issue_limit", 50, 0, 200)? as usize;
     let params: FixtureSyncParams = serde_json::from_value(args)
         .map_err(|error| anyhow!("invalid fixture sync arguments: {error}"))?;
+    let mut issues = Issues::new(issue_limit);
     let fixture = match FixtureManifest::load(context.policy(), &params.fixture_manifest_path) {
         Ok(fixture) => fixture,
         Err(error) => {
-            return Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
+            let message = error.to_string();
+            let excerpt = super::build_response::bounded_text(&message, 4096, 4096, false);
+            issues.push(FixtureIssue {
+                code: "fixture_manifest_invalid",
+                path: &params.fixture_manifest_path.to_string_lossy(),
+                message: Some(excerpt),
+                message_truncated: (excerpt.len() != message.len()).then_some(true),
+                ..Default::default()
+            });
+            return issues.respond(json!({
                 "classification": "invalid",
-                "issues": [{"code": "fixture_manifest_invalid", "path": params.fixture_manifest_path, "message": error.to_string()}]
-            }))?));
+                "validation_complete": false,
+            }));
         }
     };
 
     let snapshot = matching_or_fixture_snapshot(context, state, &fixture.dme_path).await?;
-    let mut issues = Vec::new();
     for required in &fixture.required_procs {
         check_required_proc(&snapshot, required, &mut issues);
     }
@@ -49,9 +161,8 @@ pub async fn check_sync(
         if !present {
             issues.push(FixtureIssue {
                 code: "required_token_missing",
-                path: token.clone(),
-                expected_arguments: None,
-                actual_arguments: None,
+                path: token,
+                ..Default::default()
             });
         }
     }
@@ -60,7 +171,7 @@ pub async fn check_sync(
         .build_provenance()
         .map(|store| store.evaluate_launch(&fixture.dmb_path, false))
         .transpose()?;
-    let classification = if !issues.is_empty() {
+    let classification = if issues.total != 0 {
         "invalid"
     } else if provenance
         .as_ref()
@@ -71,17 +182,17 @@ pub async fn check_sync(
         "verified"
     };
 
-    Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
+    issues.respond(json!({
         "classification": classification,
+        "validation_complete": true,
         "fixture_id": fixture.fixture_id,
         "fixture_manifest_sha256": fixture.identity_sha256,
         "environment_path": fixture.dme_path,
         "dmb_path": fixture.dmb_path,
-        "issues": issues,
         "provenance_status": provenance.as_ref().map(|decision| decision.status).unwrap_or(ProvenanceStatus::Unverified),
         "build_record_id": provenance.as_ref().and_then(|decision| decision.record_id.as_deref()),
         "provenance_reasons": provenance.map(|decision| decision.reasons).unwrap_or_default(),
-    }))?))
+    }))
 }
 
 async fn matching_or_fixture_snapshot(
@@ -118,14 +229,13 @@ async fn matching_or_fixture_snapshot(
 fn check_required_proc(
     snapshot: &AnalysisSnapshot,
     required: &RequiredProcDocument,
-    issues: &mut Vec<FixtureIssue>,
+    issues: &mut Issues,
 ) {
     let Some((owner, proc_name)) = split_proc_path(&required.path) else {
         issues.push(FixtureIssue {
             code: "required_proc_missing",
-            path: required.path.clone(),
-            expected_arguments: None,
-            actual_arguments: None,
+            path: &required.path,
+            ..Default::default()
         });
         return;
     };
@@ -135,23 +245,23 @@ fn check_required_proc(
     let Some(resolution) = resolution else {
         issues.push(FixtureIssue {
             code: "required_proc_missing",
-            path: required.path.clone(),
-            expected_arguments: None,
-            actual_arguments: None,
+            path: &required.path,
+            ..Default::default()
         });
         return;
     };
     let actual = resolution
         .implementations
         .first()
-        .map(|implementation| implementation.parameters.clone())
+        .map(|implementation| implementation.parameters.as_slice())
         .unwrap_or_default();
     if actual != required.arguments {
         issues.push(FixtureIssue {
             code: "required_proc_arguments_mismatch",
-            path: required.path.clone(),
-            expected_arguments: Some(required.arguments.clone()),
+            path: &required.path,
+            expected_arguments: Some(&required.arguments),
             actual_arguments: Some(actual),
+            ..Default::default()
         });
     }
 }

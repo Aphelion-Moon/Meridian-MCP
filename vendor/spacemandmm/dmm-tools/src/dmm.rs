@@ -241,12 +241,17 @@ impl Map {
     }
 
     pub fn from_file(path: &Path) -> Result<Map, DMError> {
+        Self::from_file_with_cell_limit(path, usize::MAX)
+    }
+
+    /// Parse with a bound on the dense grid, including unpopulated coordinates.
+    pub fn from_file_with_cell_limit(path: &Path, max_cells: usize) -> Result<Map, DMError> {
         let mut map = Map {
             key_length: 0,
             dictionary: Default::default(),
             grid: Array3::default((1, 1, 1)),
         };
-        read::parse_map(&mut map, path)?;
+        read::parse_map(&mut map, path, max_cells)?;
         Ok(map)
     }
 

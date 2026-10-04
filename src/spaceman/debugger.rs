@@ -244,7 +244,11 @@ pub struct AuxConnection {
     stream: TcpStream,
     max_message_bytes: usize,
     response_timeout: Duration,
-    events: VecDeque<AuxResponse>,
+    events: VecDeque<(AuxResponse, usize)>,
+    queued_event_bytes: usize,
+    max_events: usize,
+    max_event_bytes: usize,
+    dropped_events: u64,
     failed: bool,
     incoming_header: [u8; 4],
     header_read: usize,
@@ -253,11 +257,16 @@ pub struct AuxConnection {
 }
 impl AuxConnection {
     pub fn new(stream: TcpStream, max_message_bytes: usize, response_timeout: Duration) -> Self {
+        let limits = crate::limits::ServerLimits::default();
         Self {
             stream,
             max_message_bytes,
             response_timeout,
             events: VecDeque::new(),
+            queued_event_bytes: 0,
+            max_events: limits.max_debug_events,
+            max_event_bytes: limits.max_debug_output_bytes,
+            dropped_events: 0,
             failed: false,
             incoming_header: [0; 4],
             header_read: 0,
@@ -277,7 +286,7 @@ impl AuxConnection {
             loop {
                 match self.read_response().await? {
                     response @ (AuxResponse::Notification { .. }
-                    | AuxResponse::BreakpointHit { .. }) => self.events.push_back(response),
+                    | AuxResponse::BreakpointHit { .. }) => self.queue_event(response),
                     AuxResponse::Disconnect => return Err(AuxProtocolError::Disconnected),
                     response => return Ok(response),
                 }
@@ -345,14 +354,36 @@ impl AuxConnection {
         self.incoming.clear();
         Ok(response)
     }
+    fn queue_event(&mut self, event: AuxResponse) {
+        let bytes = bincode::serialized_size(&event).unwrap_or(u64::MAX);
+        if self.max_events == 0 || bytes > self.max_event_bytes as u64 {
+            self.dropped_events = self.dropped_events.saturating_add(1);
+            return;
+        }
+        let bytes = bytes as usize;
+        while self.events.len() >= self.max_events
+            || self.queued_event_bytes + bytes > self.max_event_bytes
+        {
+            self.pop_event();
+            self.dropped_events = self.dropped_events.saturating_add(1);
+        }
+        self.queued_event_bytes += bytes;
+        self.events.push_back((event, bytes));
+    }
     pub fn pop_event(&mut self) -> Option<AuxResponse> {
-        self.events.pop_front()
+        self.events.pop_front().map(|(event, bytes)| {
+            self.queued_event_bytes -= bytes;
+            event
+        })
+    }
+    pub fn dropped_events(&self) -> u64 {
+        self.dropped_events
     }
     pub async fn next_event(&mut self, timeout: Duration) -> Result<AuxResponse, AuxProtocolError> {
         if self.failed {
             return Err(AuxProtocolError::Disconnected);
         }
-        if let Some(event) = self.events.pop_front() {
+        if let Some(event) = self.pop_event() {
             return Ok(event);
         }
         match tokio::time::timeout(timeout, self.read_response()).await {
@@ -573,6 +604,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn interleaved_event_flood_retains_only_the_bounded_newest_events() {
+        let limit = crate::limits::ServerLimits::default().max_debug_events;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            for round in 0..2 {
+                let length = stream.read_u32_le().await.unwrap();
+                let mut request = vec![0; length as usize];
+                stream.read_exact(&mut request).await.unwrap();
+                for index in 0..limit + 3 {
+                    let event = AuxResponse::Notification {
+                        message: format!("event-{}", round * (limit + 3) + index),
+                    };
+                    let payload = bincode::serialize(&event).unwrap();
+                    stream.write_u32_le(payload.len() as u32).await.unwrap();
+                    stream.write_all(&payload).await.unwrap();
+                }
+                let payload = bincode::serialize(&AuxResponse::Stacks { stacks: vec![] }).unwrap();
+                stream.write_u32_le(payload.len() as u32).await.unwrap();
+                stream.write_all(&payload).await.unwrap();
+            }
+        });
+        let stream = TcpStream::connect(address).await.unwrap();
+        let mut connection = AuxConnection::new(stream, 1024, Duration::from_secs(10));
+        for _ in 0..2 {
+            assert!(matches!(
+                connection.request(AuxRequest::Stacks).await.unwrap(),
+                AuxResponse::Stacks { .. }
+            ));
+        }
+        assert_eq!(connection.events.len(), limit);
+        assert_eq!(connection.dropped_events(), (limit + 6) as u64);
+        for index in limit + 6..2 * (limit + 3) {
+            match connection.pop_event().unwrap() {
+                AuxResponse::Notification { message } => {
+                    assert_eq!(message, format!("event-{index}"))
+                }
+                event => panic!("unexpected event: {event:?}"),
+            }
+        }
+        assert!(connection.pop_event().is_none());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn send_only_request_does_not_wait_for_a_response() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -593,5 +670,31 @@ mod tests {
             .await
             .unwrap();
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn event_byte_budget_evicts_oldest_and_rejects_oversized_events() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let stream = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let mut connection = AuxConnection::new(stream, 1024, Duration::from_secs(1));
+        let event = |message: &str| AuxResponse::Notification {
+            message: message.into(),
+        };
+        connection.max_event_bytes = bincode::serialized_size(&event("a")).unwrap() as usize * 2;
+        for message in ["a", "b", "c"] {
+            connection.queue_event(event(message));
+        }
+        assert_eq!(connection.events.len(), 2);
+        connection.queue_event(event(&"x".repeat(connection.max_event_bytes)));
+        assert_eq!(connection.dropped_events(), 2);
+        for expected in ["b", "c"] {
+            match connection.pop_event().unwrap() {
+                AuxResponse::Notification { message } => assert_eq!(message, expected),
+                event => panic!("unexpected event: {event:?}"),
+            }
+        }
+        assert_eq!(connection.queued_event_bytes, 0);
     }
 }

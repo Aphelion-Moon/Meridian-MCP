@@ -50,6 +50,41 @@ fn refuses_an_existing_output_without_explicit_overwrite() {
 }
 
 #[test]
+fn late_output_is_preserved_when_overwrite_is_disabled() {
+    for method in ["write", "promote", "reserve"] {
+        let root = fixture();
+        let output = root.join("result.txt");
+        let policy = PathPolicy::new(vec![root.clone()], Vec::new()).unwrap();
+        let result = match method {
+            "write" => write_atomic(&policy, &output, false, |file| {
+                file.write_all(b"candidate")?;
+                std::fs::write(&output, b"late writer")?;
+                Ok(())
+            }),
+            "promote" => promote_external_atomic(&policy, &output, false, |temporary| {
+                std::fs::write(temporary, b"candidate")?;
+                std::fs::write(&output, b"late writer")?;
+                Ok(())
+            }),
+            "reserve" => {
+                let reservation = reserve_external_atomic(&policy, &output, false).unwrap();
+                std::fs::write(reservation.temporary_path(), b"candidate").unwrap();
+                std::fs::write(&output, b"late writer").unwrap();
+                reservation.commit()
+            }
+            _ => unreachable!(),
+        };
+        assert!(
+            result.is_err(),
+            "{method} replaced an unauthorized late output"
+        );
+        assert_eq!(std::fs::read(&output).unwrap(), b"late writer", "{method}");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1, "{method}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
 fn writes_a_new_output_and_reports_its_identity() {
     let root = fixture();
     let output = root.join("result.txt");

@@ -10,7 +10,7 @@ use dm::{DMError, FileId, Location};
 
 use super::{Key, KeyType, Map, Prefab};
 
-pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
+pub fn parse_map(map: &mut Map, path: &std::path::Path, max_cells: usize) -> Result<(), DMError> {
     let file_id = FileId::INVALID;
     let mut chars = LocationTracker::new(file_id, dm::lexer::buffer_file(file_id, path)?.into());
 
@@ -200,7 +200,7 @@ pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
     let mut reading_coord = Coord::X;
     let (mut curr_x, mut curr_y, mut curr_z) = (0, 0, 0);
     let (mut max_x, mut max_y, mut max_z) = (0, 0, 0);
-    let mut curr_num = 0;
+    let mut curr_num = 0_usize;
     let mut base_x = 0;
 
     let mut in_coord_block = true;
@@ -226,14 +226,27 @@ pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
                     ));
                 }
             } else if ch == b')' {
-                assert_eq!(reading_coord, Coord::Z);
+                if reading_coord != Coord::Z || curr_x == 0 || curr_y == 0 || curr_num == 0 {
+                    return Err(DMError::new(
+                        chars.location(),
+                        "expected three positive map coordinates",
+                    ));
+                }
                 curr_z = take(&mut curr_num);
                 max_z = max(max_z, curr_z);
+                check_dimensions(chars.location(), max_x, max_y, max_z, max_cells)?;
                 in_coord_block = false;
                 reading_coord = Coord::X;
             } else {
                 match (ch as char).to_digit(10) {
-                    Some(x) => curr_num = 10 * curr_num + x as usize,
+                    Some(x) => {
+                        curr_num = curr_num
+                            .checked_mul(10)
+                            .and_then(|n| n.checked_add(x as usize))
+                            .ok_or_else(|| {
+                                DMError::new(chars.location(), "map coordinate overflow")
+                            })?
+                    },
                     None => {
                         return Err(DMError::new(
                             chars.location(),
@@ -246,14 +259,16 @@ pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
             if ch == b'"' {
                 in_map_string = false;
                 adjust_y = true;
-                curr_y -= 1;
+                curr_y = curr_y.saturating_sub(1);
             } else if ch == b'\r' {
                 // nothing
             } else if ch == b'\n' {
                 if adjust_y {
                     adjust_y = false;
                 } else {
-                    curr_y += 1;
+                    curr_y = curr_y
+                        .checked_add(1)
+                        .ok_or_else(|| DMError::new(chars.location(), "map coordinate overflow"))?;
                 }
                 curr_x = base_x;
             } else {
@@ -262,14 +277,18 @@ pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
                 if curr_key_length == map.key_length {
                     let key = take(&mut curr_key);
                     curr_key_length = 0;
+                    max_x = max(max_x, curr_x);
+                    max_y = max(max_y, curr_y);
+                    check_dimensions(chars.location(), max_x, max_y, max_z, max_cells)?;
                     if grid.insert((curr_x, curr_y, curr_z), Key(key)).is_some() {
                         return Err(DMError::new(
                             chars.location(),
                             format!("multiple entries for ({curr_x}, {curr_y}, {curr_z})"),
                         ));
                     }
-                    max_x = max(max_x, curr_x);
-                    curr_x += 1;
+                    curr_x = curr_x
+                        .checked_add(1)
+                        .ok_or_else(|| DMError::new(chars.location(), "map coordinate overflow"))?;
                 }
             }
         } else if ch == b'(' {
@@ -279,6 +298,7 @@ pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
         }
     }
     max_y = max(max_y, curr_y);
+    check_dimensions(chars.location(), max_x, max_y, max_z, max_cells)?;
 
     let mut result = Ok(());
     map.grid = Array3::from_shape_fn((max_z, max_y, max_x), |(z, y, x)| {
@@ -294,6 +314,24 @@ pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
     });
 
     result
+}
+
+fn check_dimensions(
+    loc: Location,
+    x: usize,
+    y: usize,
+    z: usize,
+    max_cells: usize,
+) -> Result<(), DMError> {
+    let cells = x.checked_mul(y).and_then(|xy| xy.checked_mul(z));
+    let allocation_limit = (isize::MAX as usize) / std::mem::size_of::<Key>();
+    if cells.is_none_or(|cells| cells > max_cells || cells > allocation_limit) {
+        return Err(DMError::new(
+            loc,
+            format!("map dimensions exceed cell limit ({max_cells})"),
+        ));
+    }
+    Ok(())
 }
 
 fn advance_key(loc: Location, curr_key: KeyType, ch: u8) -> Result<KeyType, DMError> {

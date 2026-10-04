@@ -170,6 +170,7 @@ pub struct RunParams {
 #[serde(deny_unknown_fields)]
 pub struct FixtureSyncParams {
     pub fixture_manifest_path: PathBuf,
+    pub issue_limit: Option<u64>,
 }
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WaitForOutputParams {

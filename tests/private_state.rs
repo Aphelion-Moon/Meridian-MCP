@@ -76,6 +76,36 @@ fn atomic_records_survive_reopen_and_reject_traversal() {
 }
 
 #[test]
+fn escaped_namespace_is_rejected_before_creating_directories() {
+    let fixture = StateFixture::new("linked-namespace");
+    let store = PrivateStateStore::open(&fixture.state, &fixture.roots()).unwrap();
+    let outside = fixture.base.join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    let link = fixture.state.join("linked");
+    #[cfg(windows)]
+    assert!(std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&outside)
+        .output()
+        .unwrap()
+        .status
+        .success());
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    let result = store.write_json_atomic("linked/new/record.json", &json!({"schema": 1}));
+    #[cfg(windows)]
+    std::fs::remove_dir(&link).unwrap();
+    #[cfg(unix)]
+    std::fs::remove_file(&link).unwrap();
+    assert!(result.is_err());
+    assert!(
+        !outside.join("new").exists(),
+        "rejection must precede outside writes"
+    );
+}
+
+#[test]
 fn multiple_store_instances_share_one_private_state_directory() {
     let fixture = StateFixture::new("concurrent-open");
     let first = PrivateStateStore::open(&fixture.state, &fixture.roots()).unwrap();

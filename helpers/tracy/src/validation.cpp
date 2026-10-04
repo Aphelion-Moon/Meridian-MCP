@@ -18,7 +18,8 @@ std::optional<std::int64_t> trace_time_from_raw(
 		return std::nullopt;
 	}
 	const auto converted = static_cast<double>(raw_time - raw_base) * nanoseconds_per_tick;
-	if(!std::isfinite(converted) || converted > static_cast<double>(std::numeric_limits<std::int64_t>::max()))
+	// INT64_MAX rounds up to the exclusive 2^63 bound when represented as double.
+	if(!std::isfinite(converted) || converted >= static_cast<double>(std::numeric_limits<std::int64_t>::max()))
 	{
 		return std::nullopt;
 	}

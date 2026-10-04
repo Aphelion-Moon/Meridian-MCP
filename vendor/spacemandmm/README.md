@@ -1,7 +1,7 @@
 # SpacemanDMM local read-policy patch
 
 Baseline: SpaceManiac/SpacemanDMM revision `351ddc0ffb2439876d4565ce5130bb6b027ee605`.
-Local delta identity: `meridian-read-policy-v3`.
+Local delta identity: `meridian-read-policy-v4`.
 
 Only the `dreammaker` and `dmm-tools` crate directories are vendored. The upstream LICENSE is retained verbatim beside them. Existing upstream author and source notices remain intact. Adjacent crates remain exact-revision Git dependencies; no registry versions or upstream revision were upgraded. Package manifests expand the inherited edition 2024 and Rust 1.95 metadata and replace sibling paths with exact-revision dependencies. The root Cargo patch unifies dreamchecker's dreammaker types with the local crate.
 
@@ -21,6 +21,8 @@ Version 3 also retains the parser's existing procedure-header start location in 
 
 ## Review and renewal
 
+Version 4 rejects cyclic `parent_type` graphs before constant evaluation and retains a separate cycle flag so disabled diagnostics cannot make Meridian accept the candidate. It also adds a checked, cell-limited DMM loader. Meridian limits the dense grid to 16,777,216 cells before allocation; upstream callers retain the existing loader API.
+
 Compare the vendored files against the exact baseline and review `local-delta.patch`; do not edit Cargo's cache. Keep upstream helper/CI pins unchanged for this patch. Re-run containment, snapshot, map, DMI, stdio, and the repository's full Rust qualification before promoting compatibility. Any upstream revision change requires the normal dependency-update matrix and a fresh delta/hash.
 
 Changed baseline files:
@@ -33,4 +35,6 @@ Changed baseline files:
 - `dreammaker/src/parser.rs`
 - `dreammaker/src/preprocessor.rs`
 - `dmm-tools/Cargo.toml`
+- `dmm-tools/src/dmm.rs`
+- `dmm-tools/src/dmm/read.rs`
 - `dmm-tools/src/icon_cache.rs`

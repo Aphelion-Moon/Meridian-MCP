@@ -263,8 +263,34 @@ impl PrivateStateStore {
         }
         let path = self.root.join(relative);
         let parent = path.parent().expect("validated record path has a parent");
-        if create_parent {
-            std::fs::create_dir_all(parent)?;
+        let mut checked_parent = self.root.clone();
+        for component in relative
+            .parent()
+            .expect("relative record parent")
+            .components()
+        {
+            checked_parent.push(component);
+            match std::fs::symlink_metadata(&checked_parent) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound && create_parent => {
+                    // The preceding component was contained before this write.
+                    // create_dir_all would follow an unchecked namespace link.
+                    match std::fs::create_dir(&checked_parent) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error.into()),
+            }
+            let canonical = checked_parent.canonicalize()?;
+            if !canonical.starts_with(&self.root) {
+                bail!("private state record escapes through a symlink or reparse point");
+            }
+            if !canonical.is_dir() {
+                bail!("private state record parent must be a directory");
+            }
         }
         if parent.exists() {
             let canonical_parent = parent.canonicalize()?;

@@ -137,7 +137,7 @@ impl FixtureManifest {
         let mut inputs = Vec::with_capacity(document.inputs.len());
         for input in &document.inputs {
             let normalized = validate_relative_path(&input.path)?;
-            if !normalized_paths.insert(normalized.to_ascii_lowercase()) {
+            if !normalized_paths.insert(path_identity(&normalized)) {
                 return Err(invalid("input paths are duplicated after normalization"));
             }
             let requested = fixture_root.join(&normalized);
@@ -149,7 +149,7 @@ impl FixtureManifest {
                 )));
             }
             let canonical_path = policy.read_path(&requested)?;
-            let canonical_key = canonical_path.to_string_lossy().to_ascii_lowercase();
+            let canonical_key = path_identity(&canonical_path.to_string_lossy());
             if !canonical_paths.insert(canonical_key) {
                 return Err(invalid(
                     "multiple inputs resolve to the same canonical file",
@@ -318,4 +318,12 @@ fn manifest_identity(
 
 fn invalid(message: impl Into<String>) -> FixtureManifestError {
     FixtureManifestError::Invalid(message.into())
+}
+
+fn path_identity(path: &str) -> String {
+    if cfg!(windows) {
+        path.to_ascii_lowercase()
+    } else {
+        path.to_owned()
+    }
 }

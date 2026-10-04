@@ -1543,8 +1543,8 @@ pub async fn compare(
         "cross_experiment" => crate::tracy_artifact::ComparisonMode::CrossExperiment,
         _ => return Err(anyhow!("comparison_mode is not supported")),
     };
-    let baseline_metadata = crate::tracy_artifact::read_trace_metadata(baseline_path)?;
-    let current_metadata = crate::tracy_artifact::read_trace_metadata(current_path)?;
+    let baseline_metadata = load_trace_metadata(context, state, baseline_path).await?;
+    let current_metadata = load_trace_metadata(context, state, current_path).await?;
     let compatibility = match (&baseline_metadata, &current_metadata) {
         (Some(baseline), Some(current)) => {
             crate::tracy_artifact::compare_metadata(baseline, current, mode)
@@ -1613,7 +1613,7 @@ pub async fn compare(
 
 pub async fn control_stats(
     context: &ToolExecutionContext,
-    _state: &crate::state::ServerState,
+    state: &crate::state::ServerState,
     args: Value,
 ) -> Result<ToolResult> {
     let installation = context
@@ -1667,10 +1667,10 @@ pub async fn control_stats(
     if zone_keys.len() > 32 {
         return Err(anyhow!("zone_keys exceeds the fixed entry limit"));
     }
-    let metadata = trace_paths
-        .iter()
-        .map(|path| crate::tracy_artifact::read_trace_metadata(path))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut metadata = Vec::with_capacity(trace_paths.len());
+    for path in &trace_paths {
+        metadata.push(load_trace_metadata(context, state, path).await?);
+    }
     if metadata.iter().any(Option::is_none) {
         return Err(anyhow!(
             "control statistics require schema-2 Meridian sidecars"
@@ -1817,6 +1817,18 @@ pub async fn control_stats(
     ))
 }
 
+async fn load_trace_metadata(
+    context: &ToolExecutionContext,
+    state: &crate::state::ServerState,
+    path: &Path,
+) -> Result<Option<crate::tracy_artifact::TraceMetadata>> {
+    let policy = context.policy().clone();
+    let path = path.to_owned();
+    state
+        .run_asset_job(move || Ok(crate::tracy_artifact::read_trace_metadata(&policy, &path)?))
+        .await
+}
+
 async fn invoke_analysis(
     context: &ToolExecutionContext,
     command: TracyCommand,
@@ -1833,12 +1845,10 @@ async fn invoke_analysis(
         .workspace_roots()
         .first()
         .ok_or_else(|| anyhow!("workspace root unavailable"))?;
-    let metadata = params
-        .get("trace_path")
-        .and_then(Value::as_str)
-        .map(|path| crate::tracy_artifact::read_trace_metadata(Path::new(path)))
-        .transpose()?
-        .flatten();
+    let metadata = match params.get("trace_path").and_then(Value::as_str) {
+        Some(path) => load_trace_metadata(context, state, Path::new(path)).await?,
+        None => None,
+    };
     if let (Some(metadata), Some(object)) = (&metadata, params.as_object_mut()) {
         object.insert(
             "range_begin_ns".into(),

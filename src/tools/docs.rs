@@ -1,3 +1,4 @@
+mod inputs;
 mod installation;
 
 use super::build_response::{self, ResponseOptions};
@@ -96,6 +97,12 @@ pub async fn generate(
         .parent()
         .ok_or_else(|| anyhow!("parsed environment has no parent directory"))?
         .to_owned();
+    let policy = context.policy().clone();
+    let environment = snapshot.environment_path.clone();
+    let target = output.clone();
+    let initial_inputs = state
+        .run_asset_job(move || inputs::capture(&policy, &environment, &target))
+        .await?;
     let mut staging = StagingDirectory::create(&parent)?;
     let limits = ServerLimits::default();
     let outcome = async {
@@ -140,13 +147,23 @@ pub async fn generate(
                     outcome.exit_code
                 ))
             } else {
-                install_generated(
-                    &mut staging,
-                    &output,
-                    options.overwrite,
-                    &limits,
-                    &mut result,
-                )
+                let policy = context.policy().clone();
+                let environment = snapshot.environment_path.clone();
+                let target = output.clone();
+                match state
+                    .run_asset_job(move || inputs::capture(&policy, &environment, &target))
+                    .await
+                {
+                    Ok(current) if current == initial_inputs => install_generated(
+                        &mut staging,
+                        &output,
+                        options.overwrite,
+                        &limits,
+                        &mut result,
+                    ),
+                    Ok(_) => Err(anyhow!("documentation inputs changed during generation")),
+                    Err(error) => Err(error),
+                }
             }
         }
     };

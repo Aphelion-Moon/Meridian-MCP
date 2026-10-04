@@ -717,9 +717,15 @@ pub struct ObjectTree {
     graph: Vec<Type>,
     types: BTreeMap<String, NodeIndex>,
     redirected_parent_types: Vec<NodeIndex>,
+    parent_cycle_detected: bool,
 }
 
 impl ObjectTree {
+    /// A cycle was rejected during finalization, even if diagnostics are disabled.
+    pub fn parent_cycle_detected(&self) -> bool {
+        self.parent_cycle_detected
+    }
+
     pub fn with_builtins() -> ObjectTree {
         let mut builder = ObjectTreeBuilder::default();
         builder.register_builtins();
@@ -840,6 +846,7 @@ impl Default for ObjectTreeBuilder {
             graph: Vec::with_capacity(0x4000),
             types: Default::default(),
             redirected_parent_types: Vec::new(),
+            parent_cycle_detected: false,
         };
         tree.graph.push(Type {
             path: String::new(),
@@ -891,10 +898,53 @@ impl ObjectTreeBuilder {
 
     pub(crate) fn finish(mut self, context: &Context, parser_fatal_errored: bool) -> ObjectTree {
         self.assign_parent_types(context);
-        if !parser_fatal_errored {
+        let parents_valid = self.validate_parent_types(context);
+        self.inner.parent_cycle_detected = !parents_valid;
+        if !parser_fatal_errored && parents_valid {
             super::constants::evaluate_all(context, &mut self.inner);
         }
         self.inner
+    }
+
+    fn validate_parent_types(&mut self, context: &Context) -> bool {
+        // Parent chains are also followed by constant evaluation and consumers of
+        // partially parsed trees. Break cycles before either can traverse them.
+        let mut colors = vec![0_u8; self.inner.graph.len()];
+        colors[0] = 2;
+        let mut valid = true;
+        let mut path = Vec::new();
+        for start in 1..colors.len() {
+            let mut node = start;
+            while colors[node] == 0 {
+                colors[node] = 1;
+                path.push(node);
+                node = self.inner.graph[node].parent_type.index();
+            }
+            if colors[node] == 1 {
+                valid = false;
+                let ty = &mut self.inner.graph[node];
+                context.register_error(DMError::new(
+                    ty.location,
+                    format!("cyclic parent_type involving {}", ty.path),
+                ));
+                ty.parent_type = NodeIndex::new(0);
+            }
+            for node in path.drain(..) {
+                colors[node] = 2;
+            }
+        }
+        if !valid {
+            self.inner.redirected_parent_types = self
+                .inner
+                .graph
+                .iter()
+                .enumerate()
+                .skip(1)
+                .filter(|(_, ty)| ty.parent_type != ty.parent_path)
+                .map(|(node, _)| NodeIndex::new(node))
+                .collect();
+        }
+        valid
     }
 
     fn assign_parent_types(&mut self, context: &Context) {

@@ -51,7 +51,7 @@ fn json_char_bytes(ch: char) -> usize {
     }
 }
 
-fn bounded_text(text: &str, raw_limit: usize, json_limit: usize, tail: bool) -> &str {
+pub(super) fn bounded_text(text: &str, raw_limit: usize, json_limit: usize, tail: bool) -> &str {
     let mut raw_bytes = 0;
     let mut json_bytes = 2; // quotes
     let mut add = |ch: char| {
@@ -133,7 +133,7 @@ fn remove_pointer(result: &mut Value, pointer: &str) -> Value {
         .unwrap()
 }
 
-fn bound_metadata(result: &mut Value) {
+pub(super) fn bound_metadata(result: &mut Value) {
     let mut omissions = Map::new();
     // Paths are either exact or explicitly omitted; never manufacture a shortened
     // path. Keep artifact hashes/existence even when an artifact path is omitted.
@@ -158,6 +158,9 @@ fn bound_metadata(result: &mut Value) {
         "/human_build_entrypoint",
         "/rift_build_entrypoint",
         "/dme_path",
+        "/environment_path",
+        "/fixture_manifest_path",
+        "/build_record_id",
         "/cache_evidence",
         "/rift_result",
         "/network_audit/warning",
@@ -220,6 +223,9 @@ fn bound_metadata(result: &mut Value) {
             "human_build_entrypoint",
             "rift_build_entrypoint",
             "dme_path",
+            "environment_path",
+            "fixture_manifest_path",
+            "build_record_id",
             "cache_evidence",
             "rift_result",
             "warnings",

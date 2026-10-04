@@ -178,6 +178,102 @@ fn unmanaged_artifacts_are_unverified_and_can_require_verification() {
 }
 
 #[test]
+fn a_location_record_cannot_verify_another_artifact() {
+    let fixture = ProvenanceFixture::new("misdirected-location");
+    let store = fixture.store("repo-a");
+    let first = fixture.success(&store);
+    store.record_success(&first).unwrap();
+    let original_location = std::fs::read_dir(fixture.state.join("locations"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let other = fixture.workspace.join("other.dmb");
+    std::fs::write(&other, b"other compiled bytes").unwrap();
+    let mut second = fixture.success(&store);
+    second.artifact_key = store.artifact_key(&other).unwrap();
+    second.dmb = FileIdentity::capture(&other).unwrap();
+    store.record_success(&second).unwrap();
+    std::fs::write(
+        &original_location,
+        serde_json::to_vec(&serde_json::json!({
+            "schema": 1, "artifact_key": second.artifact_key,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let decision = store.evaluate_launch(&fixture.dmb, false).unwrap();
+    assert_eq!(decision.status, ProvenanceStatus::Stale);
+    assert!(!decision.allowed);
+    assert!(decision
+        .reasons
+        .iter()
+        .any(|reason| reason.code == "artifact_location_changed"));
+}
+
+#[cfg(unix)]
+#[test]
+fn case_distinct_artifacts_keep_separate_provenance() {
+    let fixture = ProvenanceFixture::new("case-distinct");
+    let store = fixture.store("repo-a");
+    store.record_success(&fixture.success(&store)).unwrap();
+    let other = fixture.workspace.join("Fixture.dmb");
+    std::fs::write(&other, b"uppercase artifact").unwrap();
+    let mut second = fixture.success(&store);
+    second.artifact_key = store.artifact_key(&other).unwrap();
+    second.dmb = FileIdentity::capture(&other).unwrap();
+    store.record_success(&second).unwrap();
+    std::fs::write(&fixture.dmb, b"changed lowercase artifact").unwrap();
+    let changed = store.evaluate_launch(&fixture.dmb, false).unwrap();
+    assert_eq!(changed.status, ProvenanceStatus::Stale);
+    assert!(!changed.allowed);
+    assert_eq!(
+        store.evaluate_launch(&other, false).unwrap().status,
+        ProvenanceStatus::Verified
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_location_keys_retain_stale_checks() {
+    use sha2::{Digest, Sha256};
+    let fixture = ProvenanceFixture::new("Legacy-Location");
+    let store = fixture.store("repo-a");
+    store.record_success(&fixture.success(&store)).unwrap();
+    let current_location = std::fs::read_dir(fixture.state.join("locations"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let legacy_name = format!(
+        "{:x}.json",
+        Sha256::digest(
+            fixture
+                .dmb
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .as_bytes()
+        )
+    );
+    let legacy_location = fixture.state.join("locations").join(legacy_name);
+    if current_location != legacy_location {
+        std::fs::rename(current_location, &legacy_location).unwrap();
+    }
+    assert_eq!(
+        store.evaluate_launch(&fixture.dmb, false).unwrap().status,
+        ProvenanceStatus::Verified
+    );
+    std::fs::write(&fixture.dmb, b"changed legacy artifact").unwrap();
+    let decision = store.evaluate_launch(&fixture.dmb, false).unwrap();
+    assert_eq!(decision.status, ProvenanceStatus::Stale);
+    assert!(!decision.allowed);
+}
+
+#[test]
 fn not_yet_compiled_artifact_is_unverified_instead_of_an_io_error() {
     let fixture = ProvenanceFixture::new("missing-artifact");
     std::fs::remove_file(&fixture.dmb).unwrap();

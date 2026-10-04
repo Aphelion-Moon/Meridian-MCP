@@ -20,6 +20,8 @@ pub enum TraceSetError {
     Atomic(#[from] AtomicOutputError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Policy(#[from] crate::PolicyError),
     #[error("paired Tracy outputs do not support overwrite; choose a new capture name")]
     OverwriteUnsupported,
     #[error("sidecar serialization failed: {0}")]
@@ -122,15 +124,53 @@ pub fn reserve_trace_set(
     })
 }
 
-pub fn read_trace_metadata(trace: &Path) -> Result<Option<TraceMetadata>, TraceSetError> {
+pub fn read_trace_metadata(
+    policy: &PathPolicy,
+    trace: &Path,
+) -> Result<Option<TraceMetadata>, TraceSetError> {
+    const MAX_SIDECAR_BYTES: u64 = 16 * 1024 * 1024;
+    let trace = policy.read_path(trace)?;
+    if !std::fs::metadata(&trace)?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "trace must be a regular file",
+        )
+        .into());
+    }
     let sidecar = PathBuf::from(format!(
         "{}.meridian.json",
         trace.as_os_str().to_string_lossy()
     ));
-    if !sidecar.is_file() {
-        return Ok(None);
+    match std::fs::symlink_metadata(&sidecar) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+        Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "trace sidecar must be a regular non-symlink file",
+            )
+            .into());
+        }
+        Ok(_) => {}
     }
-    let document: serde_json::Value = serde_json::from_slice(&std::fs::read(sidecar)?)?;
+    let file = std::fs::File::open(policy.read_path(&sidecar)?)?;
+    if !file.metadata()?.is_file() || file.metadata()?.len() > MAX_SIDECAR_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "trace sidecar exceeds the 16 MiB limit or is not a regular file",
+        )
+        .into());
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_SIDECAR_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_SIDECAR_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "trace sidecar exceeds the 16 MiB limit",
+        )
+        .into());
+    }
+    let document: serde_json::Value = serde_json::from_slice(&bytes)?;
     let expected = document
         .get("trace_sha256")
         .and_then(serde_json::Value::as_str)
@@ -140,7 +180,7 @@ pub fn read_trace_metadata(trace: &Path) -> Result<Option<TraceMetadata>, TraceS
                 "sidecar is missing trace_sha256",
             ))
         })?;
-    let actual = hash_file(trace)?;
+    let actual = hash_file(&trace)?;
     if !expected.eq_ignore_ascii_case(&actual) {
         return Err(TraceSetError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

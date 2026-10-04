@@ -111,7 +111,86 @@
      pub parameters: Box<[Parameter]>,
      pub docs: DocCollection,
      pub code: Option<Block>,
-@@ -1256,6 +1258,7 @@
+@@ -715,9 +717,15 @@
+     graph: Vec<Type>,
+     types: BTreeMap<String, NodeIndex>,
+     redirected_parent_types: Vec<NodeIndex>,
++    parent_cycle_detected: bool,
+ }
+ 
+ impl ObjectTree {
++    /// A cycle was rejected during finalization, even if diagnostics are disabled.
++    pub fn parent_cycle_detected(&self) -> bool {
++        self.parent_cycle_detected
++    }
++
+     pub fn with_builtins() -> ObjectTree {
+         let mut builder = ObjectTreeBuilder::default();
+         builder.register_builtins();
+@@ -838,6 +846,7 @@
+             graph: Vec::with_capacity(0x4000),
+             types: Default::default(),
+             redirected_parent_types: Vec::new(),
++            parent_cycle_detected: false,
+         };
+         tree.graph.push(Type {
+             path: String::new(),
+@@ -889,10 +898,53 @@
+ 
+     pub(crate) fn finish(mut self, context: &Context, parser_fatal_errored: bool) -> ObjectTree {
+         self.assign_parent_types(context);
+-        if !parser_fatal_errored {
++        let parents_valid = self.validate_parent_types(context);
++        self.inner.parent_cycle_detected = !parents_valid;
++        if !parser_fatal_errored && parents_valid {
+             super::constants::evaluate_all(context, &mut self.inner);
+         }
+         self.inner
++    }
++
++    fn validate_parent_types(&mut self, context: &Context) -> bool {
++        // Parent chains are also followed by constant evaluation and consumers of
++        // partially parsed trees. Break cycles before either can traverse them.
++        let mut colors = vec![0_u8; self.inner.graph.len()];
++        colors[0] = 2;
++        let mut valid = true;
++        let mut path = Vec::new();
++        for start in 1..colors.len() {
++            let mut node = start;
++            while colors[node] == 0 {
++                colors[node] = 1;
++                path.push(node);
++                node = self.inner.graph[node].parent_type.index();
++            }
++            if colors[node] == 1 {
++                valid = false;
++                let ty = &mut self.inner.graph[node];
++                context.register_error(DMError::new(
++                    ty.location,
++                    format!("cyclic parent_type involving {}", ty.path),
++                ));
++                ty.parent_type = NodeIndex::new(0);
++            }
++            for node in path.drain(..) {
++                colors[node] = 2;
++            }
++        }
++        if !valid {
++            self.inner.redirected_parent_types = self
++                .inner
++                .graph
++                .iter()
++                .enumerate()
++                .skip(1)
++                .filter(|(_, ty)| ty.parent_type != ty.parent_path)
++                .map(|(node, _)| NodeIndex::new(node))
++                .collect();
++        }
++        valid
+     }
+ 
+     fn assign_parent_types(&mut self, context: &Context) {
+@@ -1256,6 +1308,7 @@
  
          let value = ProcValue {
              location,
@@ -179,6 +258,150 @@
  lodepng = "3.10.7"
  indexmap = "2.6.0"
  foldhash = "0.2.0"
+--- a/dmm-tools/src/dmm/read.rs
++++ b/dmm-tools/src/dmm/read.rs
+@@ -10,7 +10,7 @@
+ 
+ use super::{Key, KeyType, Map, Prefab};
+ 
+-pub fn parse_map(map: &mut Map, path: &std::path::Path) -> Result<(), DMError> {
++pub fn parse_map(map: &mut Map, path: &std::path::Path, max_cells: usize) -> Result<(), DMError> {
+     let file_id = FileId::INVALID;
+     let mut chars = LocationTracker::new(file_id, dm::lexer::buffer_file(file_id, path)?.into());
+ 
+@@ -200,7 +200,7 @@
+     let mut reading_coord = Coord::X;
+     let (mut curr_x, mut curr_y, mut curr_z) = (0, 0, 0);
+     let (mut max_x, mut max_y, mut max_z) = (0, 0, 0);
+-    let mut curr_num = 0;
++    let mut curr_num = 0_usize;
+     let mut base_x = 0;
+ 
+     let mut in_coord_block = true;
+@@ -226,14 +226,27 @@
+                     ));
+                 }
+             } else if ch == b')' {
+-                assert_eq!(reading_coord, Coord::Z);
++                if reading_coord != Coord::Z || curr_x == 0 || curr_y == 0 || curr_num == 0 {
++                    return Err(DMError::new(
++                        chars.location(),
++                        "expected three positive map coordinates",
++                    ));
++                }
+                 curr_z = take(&mut curr_num);
+                 max_z = max(max_z, curr_z);
++                check_dimensions(chars.location(), max_x, max_y, max_z, max_cells)?;
+                 in_coord_block = false;
+                 reading_coord = Coord::X;
+             } else {
+                 match (ch as char).to_digit(10) {
+-                    Some(x) => curr_num = 10 * curr_num + x as usize,
++                    Some(x) => {
++                        curr_num = curr_num
++                            .checked_mul(10)
++                            .and_then(|n| n.checked_add(x as usize))
++                            .ok_or_else(|| {
++                                DMError::new(chars.location(), "map coordinate overflow")
++                            })?
++                    },
+                     None => {
+                         return Err(DMError::new(
+                             chars.location(),
+@@ -246,14 +259,16 @@
+             if ch == b'"' {
+                 in_map_string = false;
+                 adjust_y = true;
+-                curr_y -= 1;
++                curr_y = curr_y.saturating_sub(1);
+             } else if ch == b'\r' {
+                 // nothing
+             } else if ch == b'\n' {
+                 if adjust_y {
+                     adjust_y = false;
+                 } else {
+-                    curr_y += 1;
++                    curr_y = curr_y
++                        .checked_add(1)
++                        .ok_or_else(|| DMError::new(chars.location(), "map coordinate overflow"))?;
+                 }
+                 curr_x = base_x;
+             } else {
+@@ -262,14 +277,18 @@
+                 if curr_key_length == map.key_length {
+                     let key = take(&mut curr_key);
+                     curr_key_length = 0;
++                    max_x = max(max_x, curr_x);
++                    max_y = max(max_y, curr_y);
++                    check_dimensions(chars.location(), max_x, max_y, max_z, max_cells)?;
+                     if grid.insert((curr_x, curr_y, curr_z), Key(key)).is_some() {
+                         return Err(DMError::new(
+                             chars.location(),
+                             format!("multiple entries for ({curr_x}, {curr_y}, {curr_z})"),
+                         ));
+                     }
+-                    max_x = max(max_x, curr_x);
+-                    curr_x += 1;
++                    curr_x = curr_x
++                        .checked_add(1)
++                        .ok_or_else(|| DMError::new(chars.location(), "map coordinate overflow"))?;
+                 }
+             }
+         } else if ch == b'(' {
+@@ -279,6 +298,7 @@
+         }
+     }
+     max_y = max(max_y, curr_y);
++    check_dimensions(chars.location(), max_x, max_y, max_z, max_cells)?;
+ 
+     let mut result = Ok(());
+     map.grid = Array3::from_shape_fn((max_z, max_y, max_x), |(z, y, x)| {
+@@ -296,6 +316,24 @@
+     result
+ }
+ 
++fn check_dimensions(
++    loc: Location,
++    x: usize,
++    y: usize,
++    z: usize,
++    max_cells: usize,
++) -> Result<(), DMError> {
++    let cells = x.checked_mul(y).and_then(|xy| xy.checked_mul(z));
++    let allocation_limit = (isize::MAX as usize) / std::mem::size_of::<Key>();
++    if cells.is_none_or(|cells| cells > max_cells || cells > allocation_limit) {
++        return Err(DMError::new(
++            loc,
++            format!("map dimensions exceed cell limit ({max_cells})"),
++        ));
++    }
++    Ok(())
++}
++
+ fn advance_key(loc: Location, curr_key: KeyType, ch: u8) -> Result<KeyType, DMError> {
+     match super::base_52_reverse(ch) {
+         Err(err) => Err(DMError::new(loc, err)),
+--- a/dmm-tools/src/dmm.rs
++++ b/dmm-tools/src/dmm.rs
+@@ -241,12 +241,17 @@
+     }
+ 
+     pub fn from_file(path: &Path) -> Result<Map, DMError> {
++        Self::from_file_with_cell_limit(path, usize::MAX)
++    }
++
++    /// Parse with a bound on the dense grid, including unpopulated coordinates.
++    pub fn from_file_with_cell_limit(path: &Path, max_cells: usize) -> Result<Map, DMError> {
+         let mut map = Map {
+             key_length: 0,
+             dictionary: Default::default(),
+             grid: Array3::default((1, 1, 1)),
+         };
+-        read::parse_map(&mut map, path)?;
++        read::parse_map(&mut map, path, max_cells)?;
+         Ok(map)
+     }
+ 
 --- a/dmm-tools/src/icon_cache.rs
 +++ b/dmm-tools/src/icon_cache.rs
 @@ -9,9 +9,22 @@

@@ -54,8 +54,12 @@ pub struct RenderPassRecord {
     pub default_enabled: bool,
 }
 
+pub fn load_map(path: &Path) -> Result<dmm::Map, dreammaker::DMError> {
+    dmm::Map::from_file_with_cell_limit(path, crate::limits::ServerLimits::default().max_map_cells)
+}
+
 pub fn profile_map(path: &Path, limit: usize) -> Result<MapProfile, DmmError> {
-    let map = dmm::Map::from_file(path)?;
+    let map = load_map(path)?;
     let (x, y, z) = map.dim_xyz();
     let mut counts = BTreeMap::<String, usize>::new();
     for key in map.grid.iter() {
@@ -91,8 +95,8 @@ pub fn profile_map(path: &Path, limit: usize) -> Result<MapProfile, DmmError> {
 }
 
 pub fn diff_maps(left: &Path, right: &Path, limit: usize) -> Result<MapDifference, DmmError> {
-    let left = dmm::Map::from_file(left)?;
-    let right = dmm::Map::from_file(right)?;
+    let left = load_map(left)?;
+    let right = load_map(right)?;
     let ld = left.dim_xyz();
     let rd = right.dim_xyz();
     let left_cells = cells(&left);

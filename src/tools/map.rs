@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use dmm_tools::{dmm, minimap, render_passes, IconCache};
+use dmm_tools::{minimap, render_passes, IconCache};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
@@ -11,7 +11,9 @@ use crate::atomic_output::{write_atomic, AtomicOutputError};
 use crate::limits::ServerLimits;
 use crate::mcp::{ToolContent, ToolResult};
 use crate::result::{json_success, ToolMetadata};
-use crate::spaceman::dmm::{diff_maps as calculate_diff, profile_map, render_pass_inventory};
+use crate::spaceman::dmm::{
+    diff_maps as calculate_diff, load_map, profile_map, render_pass_inventory,
+};
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 
@@ -119,7 +121,7 @@ pub async fn render_map(
         .parent()
         .ok_or_else(|| anyhow!("Parsed environment has no parent directory"))?;
 
-    let map = dmm::Map::from_file(&execution.policy().read_path(&path)?)?;
+    let map = load_map(&execution.policy().read_path(&path)?)?;
     let (z_level, min, max) = validated_render_bounds(&args, map.dim_xyz())?;
     info!("Rendering map: {dmm_path} z-level {z_level} to {output_path:?}");
 
@@ -199,7 +201,7 @@ pub async fn map_info(args: Value) -> Result<ToolResult> {
     }
 
     info!("Getting map info: {dmm_path}");
-    let map = dmm::Map::from_file(&path)?;
+    let map = load_map(&path)?;
     let (dim_x, dim_y, dim_z) = map.dim_xyz();
     let mut type_counts: HashMap<String, usize> = HashMap::new();
     let mut area_counts: HashMap<String, usize> = HashMap::new();
@@ -308,7 +310,7 @@ pub async fn render_maps(
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("batch file missing dmm_path"))?;
         let dmm = execution.policy().read_path(dmm)?;
-        let map = dmm::Map::from_file(&dmm)?;
+        let map = load_map(&dmm)?;
         let chunks = file
             .get("chunks")
             .and_then(Value::as_array)
@@ -398,7 +400,7 @@ pub async fn find_on_map(args: Value) -> Result<ToolResult> {
     }
 
     info!("Finding {type_path} on map {dmm_path}");
-    let map = dmm::Map::from_file(&path)?;
+    let map = load_map(&path)?;
     let descendant_prefix = format!("{}/", type_path.trim_end_matches('/'));
     let mut matching_tiles: BTreeMap<_, Vec<&str>> = BTreeMap::new();
     for (key, prefabs) in &map.dictionary {

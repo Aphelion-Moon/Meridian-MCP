@@ -221,11 +221,21 @@ impl BuildProvenanceStore {
                     .ok_or_else(|| anyhow!("artifact path has no file name"))?,
             )
         };
-        let location_path = format!("locations/{}.json", location_key(&dmb_path)?);
+        let requested_location = location_key(&dmb_path)?;
+        let location_path = format!("locations/{requested_location}.json");
         let transaction = self.state.read_transaction()?;
-        let Some(location): Option<ArtifactLocation> =
-            transaction.read_json_optional(&location_path)?
-        else {
+        let mut location: Option<ArtifactLocation> =
+            transaction.read_json_optional(&location_path)?;
+        // Older Unix records folded case too. Retain their stale checks during
+        // upgrade, but bind every recovered record to the requested artifact.
+        if location.is_none() && !cfg!(windows) {
+            let legacy_key = location_key_with_case(&dmb_path, true)?;
+            if legacy_key != requested_location {
+                location =
+                    transaction.read_json_optional(&format!("locations/{legacy_key}.json"))?;
+            }
+        }
+        let Some(location) = location else {
             return Ok(unverified(require_verified));
         };
         if location.schema != 1 || location.artifact_key.len() != 64 {
@@ -238,6 +248,19 @@ impl BuildProvenanceStore {
         drop(transaction);
 
         let mut reasons = Vec::new();
+        if location_key(&record.dmb.path)? != requested_location {
+            return Ok(LaunchDecision {
+                status: ProvenanceStatus::Stale,
+                allowed: false,
+                record_id: Some(record.record_id),
+                reasons: vec![reason(
+                    "artifact_location_changed",
+                    "the managed location points to a different artifact",
+                    None,
+                    Some(dmb_path),
+                )],
+            });
+        }
         let current_project = self.project_identity(&dmb_path)?;
         if current_project != record.project {
             reasons.push(reason(
@@ -430,6 +453,10 @@ fn reason(
 }
 
 fn location_key(path: &Path) -> Result<String> {
+    location_key_with_case(path, cfg!(windows))
+}
+
+fn location_key_with_case(path: &Path, fold_case: bool) -> Result<String> {
     let path = if path.exists() {
         path.canonicalize()?
     } else {
@@ -442,10 +469,13 @@ fn location_key(path: &Path) -> Result<String> {
                 .ok_or_else(|| anyhow!("artifact path has no file name"))?,
         )
     };
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(path.to_string_lossy().to_ascii_lowercase().as_bytes())
-    ))
+    let path = path.to_string_lossy();
+    let identity = if fold_case {
+        path.to_ascii_lowercase()
+    } else {
+        path.into_owned()
+    };
+    Ok(format!("{:x}", Sha256::digest(identity.as_bytes())))
 }
 
 fn normalize_relative(path: &Path) -> String {

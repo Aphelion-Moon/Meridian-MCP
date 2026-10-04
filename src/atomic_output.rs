@@ -28,8 +28,12 @@ pub enum AtomicOutputError {
     Entropy(String),
     #[error("{0}")]
     Writer(String),
-    #[error("could not install replacement: {install}; restoration failure: {restore}")]
-    Replacement { install: String, restore: String },
+    #[error("could not install replacement: {install}; restoration failure: {restore}; original retained at {backup}")]
+    Replacement {
+        install: String,
+        restore: String,
+        backup: PathBuf,
+    },
 }
 
 impl AtomicOutputError {
@@ -53,6 +57,7 @@ struct TemporaryOutput {
 pub struct ReservedExternalOutput {
     output: PathBuf,
     temporary: TemporaryOutput,
+    overwrite: bool,
 }
 
 impl ReservedExternalOutput {
@@ -75,7 +80,7 @@ impl ReservedExternalOutput {
             .write(true)
             .open(&self.temporary.path)?
             .sync_all()?;
-        install_temporary(self.output, self.temporary)
+        install_temporary(self.output, self.temporary, self.overwrite)
     }
 }
 
@@ -123,7 +128,7 @@ where
     temporary_file.sync_all()?;
     drop(temporary_file);
 
-    install_temporary(output, temporary)
+    install_temporary(output, temporary, overwrite)
 }
 
 pub fn promote_external_atomic<F>(
@@ -162,7 +167,7 @@ where
         .open(&temporary.path)?
         .sync_all()?;
 
-    install_temporary(output, temporary)
+    install_temporary(output, temporary, overwrite)
 }
 
 pub fn reserve_external_atomic(
@@ -184,6 +189,7 @@ pub fn reserve_external_atomic(
     drop(temporary_file);
     Ok(ReservedExternalOutput {
         output,
+        overwrite,
         temporary: TemporaryOutput {
             path: temporary_path,
             armed: true,
@@ -193,7 +199,17 @@ pub fn reserve_external_atomic(
 
 fn install_temporary(
     output: PathBuf,
+    temporary: TemporaryOutput,
+    overwrite: bool,
+) -> Result<OutputArtifact, AtomicOutputError> {
+    install_with(output, temporary, overwrite, rename_without_replace)
+}
+
+fn install_with(
+    output: PathBuf,
     mut temporary: TemporaryOutput,
+    overwrite: bool,
+    mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<OutputArtifact, AtomicOutputError> {
     let parent = output.parent().ok_or_else(|| {
         AtomicOutputError::Io(std::io::Error::new(
@@ -204,22 +220,36 @@ fn install_temporary(
 
     let bytes = std::fs::metadata(&temporary.path)?.len();
     let sha256 = hash_file(&temporary.path)?;
-    let backup = if output.exists() {
+    let exists = match std::fs::symlink_metadata(&output) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => true,
+        Ok(_) => return Err(AtomicOutputError::InvalidOutputType(output)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    if exists && !overwrite {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "output appeared during generation; overwrite was not authorized",
+        )
+        .into());
+    }
+    let backup = if exists {
         let backup = private_available_path(parent, "backup")?;
-        std::fs::rename(&output, &backup)?;
+        rename(&output, &backup)?;
         Some(backup)
     } else {
         None
     };
 
-    if let Err(install_error) = std::fs::rename(&temporary.path, &output) {
+    if let Err(install_error) = rename(&temporary.path, &output) {
         let restore_error = backup
             .as_ref()
-            .and_then(|backup| std::fs::rename(backup, &output).err());
+            .and_then(|backup| rename(backup, &output).err());
         return match restore_error {
             Some(restore_error) => Err(AtomicOutputError::Replacement {
                 install: install_error.to_string(),
                 restore: restore_error.to_string(),
+                backup: backup.expect("restoration requires a backup"),
             }),
             None => Err(AtomicOutputError::Io(install_error)),
         };
@@ -235,6 +265,59 @@ fn install_temporary(
         bytes,
         sha256,
     })
+}
+
+// Promotion and restoration must preserve a destination created after preflight.
+// Plain rename may silently replace such a file (or an empty directory).
+pub(crate) fn rename_without_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+        let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+        let destination: Vec<u16> = destination
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0) } != 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let source = std::ffi::CString::new(source.as_os_str().as_bytes())?;
+        let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())?;
+        #[cfg(target_os = "linux")]
+        let result = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                source.as_ptr(),
+                libc::AT_FDCWD,
+                destination.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        #[cfg(target_os = "macos")]
+        let result =
+            unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (source, destination);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "atomic output installation is unavailable on this platform",
+        ))
+    }
 }
 
 fn create_private_file(parent: &Path, purpose: &str) -> Result<(PathBuf, File), AtomicOutputError> {
@@ -281,4 +364,37 @@ fn hash_file(path: &Path) -> Result<String, AtomicOutputError> {
         hasher.update(&buffer[..count]);
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_collision_preserves_both_late_output_and_original_backup() {
+        let root = private_path(&std::env::temp_dir(), "restore-test").unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let output = root.join("result");
+        std::fs::write(&output, "original").unwrap();
+        let (path, mut file) = create_private_file(&root, "tmp").unwrap();
+        file.write_all(b"replacement").unwrap();
+        drop(file);
+        let temporary = TemporaryOutput { path, armed: true };
+        let mut calls = 0;
+        let result = install_with(output.clone(), temporary, true, |source, target| {
+            calls += 1;
+            if calls == 2 {
+                std::fs::write(target, "late output")?;
+            }
+            rename_without_replace(source, target)
+        });
+        let backup = match result.unwrap_err() {
+            AtomicOutputError::Replacement { backup, .. } => backup,
+            error => panic!("unexpected error: {error}"),
+        };
+        assert_eq!(std::fs::read_to_string(&output).unwrap(), "late output");
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "original");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

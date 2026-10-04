@@ -412,3 +412,162 @@ fn symlink_inputs_are_rejected() {
     assert!(FixtureManifest::load(&policy, &manifest).is_err());
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[tokio::test]
+async fn fixture_sync_bounds_large_arguments_without_losing_classification() {
+    let directory = temporary_fixture("large-arguments");
+    let mut document = document();
+    document["required_procs"][0]["arguments"] = json!(vec!["a".repeat(4096); 500]);
+    let manifest = write_document(&directory, &document);
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap(),
+    );
+    let result = call_tool(
+        &context,
+        &ServerState::new(),
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": manifest}),
+    )
+    .await
+    .unwrap();
+    let ToolContent::Text { text } = &result.content[0];
+    assert!(
+        text.len() < 1_048_576,
+        "classification must survive the transport cap"
+    );
+    let value = payload(&result);
+    assert_eq!(value["classification"], "invalid");
+    assert_eq!(value["validation_complete"], true);
+    assert_eq!(value["issues_summary"]["total"], 1);
+    assert_eq!(
+        value["issues"][0]["code"],
+        "required_proc_arguments_mismatch"
+    );
+    assert!(value["issues"][0].get("expected_arguments").is_none());
+    assert_eq!(value["issues"][0]["expected_arguments_omitted"], 500);
+    assert_eq!(value["issues"][0]["actual_arguments"], json!(["payload"]));
+    assert_eq!(value["truncated"], true);
+    assert_eq!(value["provenance_status"], "unverified");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn fixture_sync_bounds_escaped_issues_and_counts_every_requirement() {
+    let directory = temporary_fixture("escaped-issues");
+    let mut document = document();
+    // The input fits the manifest cap, but JSON escaping amplifies each row.
+    let tokens = (0..200)
+        .map(|index| format!("{index}:{}", "\u{0001}".repeat(3000)))
+        .collect::<Vec<_>>();
+    document["required_tokens"] = json!(tokens);
+    let manifest = write_document(&directory, &document);
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap(),
+    );
+    let state = ServerState::new();
+    let result = call_tool(
+        &context,
+        &state,
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": manifest, "issue_limit": 200}),
+    )
+    .await
+    .unwrap();
+    let ToolContent::Text { text } = &result.content[0];
+    assert!(text.len() < 1_048_576);
+    let value = payload(&result);
+    assert_eq!(value["classification"], "invalid");
+    assert_eq!(value["validation_complete"], true);
+    assert_eq!(value["issues_summary"]["total"], 200);
+    let returned = value["issues"].as_array().unwrap();
+    assert!(!returned.is_empty() && returned.len() < 200);
+    for (index, issue) in returned.iter().enumerate() {
+        assert_eq!(issue["path"], tokens[index]);
+    }
+    assert_eq!(value["issues_summary"]["returned"], returned.len());
+    assert_eq!(value["issues_summary"]["omitted"], 200 - returned.len());
+    assert_eq!(value["truncated"], true);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn fixture_sync_summary_only_still_evaluates_requirements() {
+    let directory = temporary_fixture("summary-only");
+    let mut document = document();
+    document["required_procs"][0]["arguments"] = json!(["wrong"]);
+    document["required_tokens"] = json!(["MISSING_A", "MISSING_B"]);
+    let manifest = write_document(&directory, &document);
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap(),
+    );
+    let result = call_tool(
+        &context,
+        &ServerState::new(),
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": manifest, "issue_limit": 0}),
+    )
+    .await
+    .unwrap();
+    let value = payload(&result);
+    assert_eq!(value["classification"], "invalid");
+    assert_eq!(value["validation_complete"], true);
+    assert_eq!(value["issues"], json!([]));
+    assert_eq!(value["issues_summary"]["total"], 3);
+    assert_eq!(value["issues_summary"]["omitted"], 3);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn fixture_sync_rejects_invalid_issue_limits() {
+    let root = checked_fixture();
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+    );
+    for limit in [json!(-1), json!(201), json!(1.5), json!("2"), json!(null)] {
+        let result = call_tool(
+            &context,
+            &ServerState::new(),
+            "dm_check_fixture_sync",
+            json!({"fixture_manifest_path": root.join("fixture-manifest.json"), "issue_limit": limit}),
+        )
+        .await;
+        assert!(result.is_err(), "invalid limit accepted: {limit}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn manifest_preserves_case_distinct_input_paths() {
+    let directory = temporary_fixture("case-distinct-inputs");
+    std::fs::write(directory.join("case.dm"), "// lower case\n").unwrap();
+    std::fs::write(directory.join("CASE.dm"), "// upper case\n").unwrap();
+    let mut document = document();
+    document["inputs"].as_array_mut().unwrap().extend([
+        json!({"path": "case.dm", "role": "source"}),
+        json!({"path": "CASE.dm", "role": "source"}),
+    ]);
+    let manifest = write_document(&directory, &document);
+    let policy = PathPolicy::new(vec![directory.clone()], Vec::new()).unwrap();
+    let result = FixtureManifest::load(&policy, &manifest);
+    std::fs::remove_dir_all(directory).unwrap();
+    let fixture = result.expect("case-distinct files are separate inputs on Unix");
+    assert_eq!(fixture.inputs.len(), 6);
+    assert_ne!(
+        fixture
+            .inputs
+            .iter()
+            .find(|input| input.relative_path == "case.dm")
+            .unwrap()
+            .sha256,
+        fixture
+            .inputs
+            .iter()
+            .find(|input| input.relative_path == "CASE.dm")
+            .unwrap()
+            .sha256
+    );
+}

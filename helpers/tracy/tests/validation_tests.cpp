@@ -51,6 +51,8 @@ int main()
 	assert(trace_time_from_raw(1'100, 100, 0.5) == 500);
 	assert(!trace_time_from_raw(99, 100, 0.5).has_value());
 	assert(!trace_time_from_raw(1'100, 100, 0.0).has_value());
+	assert(!trace_time_from_raw(std::uint64_t{1} << 63, 0, 1.0).has_value());
+	assert(trace_time_from_raw((std::uint64_t{1} << 63) - 1024, 0, 1.0) == 9'223'372'036'854'774'784LL);
 
 	assert(classify_frame({100, 200}, 100, 300) == FrameClass::Complete);
 	assert(classify_frame({50, 200}, 100, 300) == FrameClass::LeftBoundary);

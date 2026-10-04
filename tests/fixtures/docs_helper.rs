@@ -18,6 +18,10 @@ fn main() {
     std::fs::create_dir(output.join("types")).unwrap();
     std::fs::write(output.join("types/example.html"), "<html>example</html>").unwrap();
     match mode.as_str() {
+        "new_input" => {
+            std::fs::write(project.join("SpacemanDMM.toml"), "[dmdoc]\nmodule_directories = [\"manual\"]\n").unwrap();
+            std::fs::write(project.join("manual/late.md"), "preserve late source").unwrap();
+        }
         "collision" => {
             let destination = output.parent().unwrap().join("html");
             std::fs::create_dir(&destination).unwrap();

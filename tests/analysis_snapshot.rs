@@ -8,6 +8,94 @@ use std::sync::Arc;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn cyclic_parent_types_do_not_wedge_parse_admission() {
+    const WORKER_ROOT: &str = "MERIDIAN_CYCLE_TEST_ROOT";
+    let root = match std::env::var_os(WORKER_ROOT) {
+        Some(root) => std::path::PathBuf::from(root),
+        None => {
+            let (root, _, _) = fixture();
+            let mut worker = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "cyclic_parent_types_do_not_wedge_parse_admission",
+                    "--nocapture",
+                ])
+                .env(WORKER_ROOT, &root)
+                .spawn()
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            let status = loop {
+                if let Some(status) = worker.try_wait().unwrap() {
+                    break Some(status);
+                }
+                if std::time::Instant::now() >= deadline {
+                    worker.kill().unwrap();
+                    worker.wait().unwrap();
+                    break None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            };
+            std::fs::remove_dir_all(root).unwrap();
+            assert!(
+                status.is_some_and(|status| status.success()),
+                "cyclic parent test failed or left a parser worker running"
+            );
+            return;
+        }
+    };
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let context = ToolExecutionContext::new(
+            CapabilityMode::Analysis,
+            PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+        );
+        let state = ServerState::new();
+        let good = root.join("one.dme");
+        let bad = root.join("two.dme");
+        let parsed = call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path":good}),
+        )
+        .await
+        .unwrap();
+        assert_ne!(parsed.is_error, Some(true));
+        for source in [
+            "/datum/a\n\tparent_type = /datum/a\n",
+            "/datum/a\n\tparent_type = /datum/b\n/datum/b\n\tparent_type = /datum/a\n",
+        ] {
+            let before = state.snapshot().await.unwrap();
+            std::fs::write(&bad, source).unwrap();
+            let rejected = call_tool(
+                &context,
+                &state,
+                "dm_parse_environment",
+                json!({"dme_path":bad,"timeout_ms":2000}),
+            )
+            .await
+            .unwrap();
+            assert_eq!(payload(rejected)["code"], "invalid_input");
+            assert!(Arc::ptr_eq(&before, &state.snapshot().await.unwrap()));
+            let recovered = call_tool(
+                &context,
+                &state,
+                "dm_parse_environment",
+                json!({"dme_path":good,"force":true,"timeout_ms":2000}),
+            )
+            .await
+            .unwrap();
+            assert_ne!(recovered.is_error, Some(true));
+            // The next cycle must remain a hard failure with diagnostics hidden.
+            std::fs::write(
+                root.join("SpacemanDMM.toml"),
+                "[display]\nerror_level = \"disabled\"\n",
+            )
+            .unwrap();
+        }
+    });
+}
+
 fn settle_file(path: &std::path::Path) {
     std::fs::File::options()
         .write(true)

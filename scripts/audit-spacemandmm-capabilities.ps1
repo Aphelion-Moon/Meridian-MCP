@@ -28,7 +28,7 @@ $localDeltaPath = Join-Path $repoRoot 'vendor/spacemandmm/local-delta.patch'
 $localDelta = (Get-Content -LiteralPath $localDeltaPath -Raw).Replace("`r`n", "`n")
 $localDeltaHash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($localDelta))).ToLowerInvariant()
 $expectedDeltaHash = (Get-Content -LiteralPath (Join-Path $repoRoot 'vendor/spacemandmm/local-delta.sha256') -Raw).Trim()
-if ($registry.local_patch -ne 'meridian-read-policy-v3' -or $localDeltaHash -ne $expectedDeltaHash) {
+if ($registry.local_patch -ne 'meridian-read-policy-v4' -or $localDeltaHash -ne $expectedDeltaHash) {
     Add-AuditError 'Local SpacemanDMM read-policy delta identity or hash does not match.'
 }
 

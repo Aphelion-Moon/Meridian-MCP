@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 pub const SPACEMANDMM_REVISION: &str = "351ddc0ffb2439876d4565ce5130bb6b027ee605";
-pub const SPACEMANDMM_LOCAL_PATCH: &str = "meridian-read-policy-v3";
+pub const SPACEMANDMM_LOCAL_PATCH: &str = "meridian-read-policy-v4";
 pub const SPACEMANDMM_LOCAL_PATCH_SHA256: &str =
     include_str!("../vendor/spacemandmm/local-delta.sha256");
 pub const TRACY_REVISION: &str = "099df3de3dc37eca4712c06b8320fb9c53596edd";

@@ -19,16 +19,19 @@ use crate::source_fingerprint::SourceFingerprint;
 use crate::state::ServerState;
 use crate::{PathPolicy, ProjectProfile};
 
-/// Diagnostics that mean the environment was never fully read, so the resulting
-/// object tree is silently incomplete rather than merely flawed.
+/// Diagnostics that mean the environment was not fully read or its inheritance
+/// graph cannot safely be analyzed.
 ///
 /// SpacemanDMM has no structured discriminant for these, so they are matched on
-/// description text. The strings below are verified against the pinned revision
-/// (`preprocessor.rs` and `lexer.rs`); if an upstream bump reworded any of them
+/// description text. The strings below follow the pinned revision and local
+/// delta (`preprocessor.rs`, `lexer.rs`, `objtree.rs`); if an update reworded them
 /// the failure is silent and severe — a truncated tree installed as a success —
 /// so `blocking_error_descriptions_match_upstream_wording` guards the list.
-const BLOCKING_ERROR_PREFIXES: &[&str] =
-    &["failed to find #include", "failed to open file: #include"];
+const BLOCKING_ERROR_PREFIXES: &[&str] = &[
+    "failed to find #include",
+    "failed to open file: #include",
+    "cyclic parent_type",
+];
 const BLOCKING_ERROR_MESSAGES: &[&str] = &["i/o error opening file", "i/o error reading file"];
 
 /// Default ceiling on a single parse. Generous enough for a station-sized
@@ -313,6 +316,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
     if context.read_denied() {
         return Err(anyhow!(
             "path_outside_workspace: derived read denied by startup policy"
+        ));
+    }
+    if objtree.parent_cycle_detected() {
+        return Err(anyhow!(
+            "DreamMaker parser reported cyclic parent_type inheritance"
         ));
     }
     if fatal || !blocking_errors.is_empty() {
@@ -1173,6 +1181,9 @@ mod tests {
         ));
         assert!(is_blocking_error("i/o error opening file"));
         assert!(is_blocking_error("i/o error reading file"));
+        assert!(is_blocking_error(
+            "cyclic parent_type involving /datum/cycle"
+        ));
 
         assert!(!is_blocking_error("expected expression, found ')'"));
         assert!(!is_blocking_error("undefined proc: do_work"));

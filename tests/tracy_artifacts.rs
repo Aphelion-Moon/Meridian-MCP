@@ -7,6 +7,7 @@ use meridian_mcp::tracy_experiment::{
 };
 use meridian_mcp::PathPolicy;
 use serde_json::json;
+use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -19,6 +20,103 @@ fn fixture() -> std::path::PathBuf {
     ));
     std::fs::create_dir_all(&root).unwrap();
     root
+}
+
+fn metadata_fixture() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    use sha2::{Digest, Sha256};
+    let root = fixture();
+    let trace = root.join("sample.tracy");
+    std::fs::write(&trace, b"owned trace").unwrap();
+    let sidecar = root.join("sample.tracy.meridian.json");
+    let metadata = metadata("experiment", "executable", "workload", "steady");
+    std::fs::write(
+        &sidecar,
+        serde_json::to_vec(&json!({
+            "schema": 2,
+            "trace_sha256": format!("{:x}", Sha256::digest(b"owned trace")),
+            "meridian_mcp_build": {"build_id": "owned-test-build"},
+            "experiment_identity": metadata.experiment_identity,
+            "phase": "steady", "phase_iteration": 1,
+            "capture": {"validation": {
+                "raw_begin": 1, "raw_end": 10,
+                "trace_begin_ns": 1, "trace_end_ns": 10,
+                "complete_frames": 3, "partial_frames": 0, "zones": 1,
+                "valid": true, "queue": {"saturation_count": 0, "dropped_events": 0}
+            }},
+            "memory_series": [
+                {"identity": {"role": "dream_daemon"}},
+                {"identity": {"role": "collector"}}
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    (root, trace, sidecar)
+}
+
+#[test]
+fn trace_metadata_rejects_an_oversized_sidecar() {
+    let (root, trace, sidecar) = metadata_fixture();
+    assert!(meridian_mcp::tracy_artifact::read_trace_metadata(
+        &PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+        &trace
+    )
+    .unwrap()
+    .is_some());
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&sidecar)
+        .unwrap();
+    for _ in 0..1024 {
+        file.write_all(&[b' '; 16 * 1024]).unwrap();
+    }
+    drop(file);
+    let result = meridian_mcp::tracy_artifact::read_trace_metadata(
+        &PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+        &trace,
+    );
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(
+        result.is_err(),
+        "oversized valid JSON must be rejected before loading it"
+    );
+}
+
+#[test]
+fn a_sidecar_directory_is_not_treated_as_missing_metadata() {
+    let (root, trace, sidecar) = metadata_fixture();
+    std::fs::remove_file(&sidecar).unwrap();
+    assert!(meridian_mcp::tracy_artifact::read_trace_metadata(
+        &PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+        &trace
+    )
+    .unwrap()
+    .is_none());
+    std::fs::create_dir(&sidecar).unwrap();
+    let result = meridian_mcp::tracy_artifact::read_trace_metadata(
+        &PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+        &trace,
+    );
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(result.is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn trace_metadata_rejects_a_sidecar_symlink() {
+    let (root, trace, sidecar) = metadata_fixture();
+    let outside = fixture();
+    let external = outside.join("external.json");
+    std::fs::rename(&sidecar, &external).unwrap();
+    std::os::unix::fs::symlink(&external, &sidecar).unwrap();
+    let result = meridian_mcp::tracy_artifact::read_trace_metadata(
+        &PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+        &trace,
+    );
+    std::fs::remove_file(&sidecar).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(outside).unwrap();
+    assert!(result.is_err());
 }
 
 #[test]
