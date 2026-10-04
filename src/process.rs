@@ -290,7 +290,22 @@ pub async fn run_contained_process(spec: ProcessSpec) -> Result<ProcessOutcome> 
 /// Observers must do bounded synchronous work; the runner retains no extra log.
 pub async fn run_contained_process_observed(
     spec: ProcessSpec,
+    observe: impl FnMut(OutputStream, &[u8]) + Send,
+) -> Result<ProcessOutcome> {
+    run_process_observed(spec, observe, false).await
+}
+
+pub(crate) async fn run_owned_process_observed(
+    spec: ProcessSpec,
+    observe: impl FnMut(OutputStream, &[u8]) + Send,
+) -> Result<ProcessOutcome> {
+    run_process_observed(spec, observe, true).await
+}
+
+async fn run_process_observed(
+    spec: ProcessSpec,
     mut observe: impl FnMut(OutputStream, &[u8]) + Send,
+    owned: bool,
 ) -> Result<ProcessOutcome> {
     if spec
         .stdin
@@ -301,7 +316,6 @@ pub async fn run_contained_process_observed(
     }
     let started_at = tokio::time::Instant::now();
     let mut audit = NetworkAuditCollector::new(spec.capture_network);
-    let containment = ProcessContainment::new().context("cannot create process containment")?;
     let mut command = Command::new(&spec.program);
     command
         .args(&spec.arguments)
@@ -317,9 +331,47 @@ pub async fn run_contained_process_observed(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = match command.spawn() {
-        Ok(child) => child,
+    if spec
+        .cancellation
+        .as_ref()
+        .is_some_and(|receiver| *receiver.borrow())
+    {
+        return Ok(ProcessOutcome {
+            exit_code: None,
+            termination: TerminationReason::Cancelled,
+            duration_ms: started_at.elapsed().as_millis(),
+            stdout: TailBuffer::new().finish(),
+            stderr: TailBuffer::new().finish(),
+            network_audit: audit.finish(),
+            output_complete: true,
+        });
+    }
+    let spawned = if owned {
+        spawn_runtime_process(&mut command)
+    } else {
+        let containment = std::sync::Arc::new(
+            ProcessContainment::new().context("cannot create process containment")?,
+        );
+        match command.spawn() {
+            Ok(mut child) => {
+                if let Err(error) = containment.assign(child.id().unwrap_or_default()) {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    return Err(error).context("refusing to run a process outside containment");
+                }
+                Ok((child, containment))
+            }
+            Err(error) => Err(error.into()),
+        }
+    };
+    let (mut child, containment) = match spawned {
+        Ok(spawned) => spawned,
         Err(error) => {
+            if owned {
+                // Owned spawn can fail after creating a child. Without its
+                // completion proof the execution marker must stay active.
+                return Err(error).context("owned spawn or setup did not establish cleanup");
+            }
             let message = format!("failed to spawn {}: {error}", spec.program.display());
             return Ok(ProcessOutcome {
                 exit_code: None,
@@ -337,11 +389,6 @@ pub async fn run_contained_process_observed(
         }
     };
     let process_id = child.id().unwrap_or_default();
-    if let Err(error) = containment.assign(process_id) {
-        let _ = child.kill().await;
-        let _ = child.wait().await;
-        return Err(error).context("refusing to run a process outside containment");
-    }
 
     let stdin_task = match (spec.stdin, child.stdin.take()) {
         (Some(input), Some(mut stdin)) => Some(tokio::spawn(async move {
@@ -375,6 +422,16 @@ pub async fn run_contained_process_observed(
     let mut cancellation = spec.cancellation;
     let (termination, exit_code) = loop {
         let now = tokio::time::Instant::now();
+        if cancellation
+            .as_ref()
+            .is_some_and(|receiver| *receiver.borrow())
+        {
+            terminate_child(&containment, &mut child).await?;
+            break (
+                TerminationReason::Cancelled,
+                child.wait().await.ok().and_then(|status| status.code()),
+            );
+        }
         if now.duration_since(started_at) >= spec.timeout {
             terminate_child(&containment, &mut child).await?;
             break (
@@ -408,7 +465,7 @@ pub async fn run_contained_process_observed(
                     None => std::future::pending().await,
                 }
             } => {
-                if changed.is_ok() && cancellation.as_ref().is_some_and(|receiver| *receiver.borrow()) {
+                if changed.is_err() || cancellation.as_ref().is_some_and(|receiver| *receiver.borrow()) {
                     terminate_child(&containment, &mut child).await?;
                     break (
                         TerminationReason::Cancelled,
@@ -431,7 +488,11 @@ pub async fn run_contained_process_observed(
 
     let process_ids = containment.process_ids(process_id);
     audit.sample(&process_ids, started_at.elapsed().as_millis());
-    let _ = containment.terminate(1);
+    if owned {
+        wait_for_cleanup(&containment).await?;
+    } else {
+        let _ = containment.terminate(1);
+    }
     drop(sender);
     let output_complete = drain_output(
         &mut receiver,
@@ -463,6 +524,19 @@ pub async fn run_contained_process_observed(
         output_complete,
         network_audit: audit.finish(),
     })
+}
+
+pub(crate) async fn wait_for_cleanup(containment: &ProcessContainment) -> Result<()> {
+    containment.request_termination()?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while !containment.is_terminated()? {
+        anyhow::ensure!(
+            tokio::time::Instant::now() < deadline,
+            "owned process cleanup remains unconfirmed"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    Ok(())
 }
 
 fn append_output(

@@ -41,7 +41,7 @@ fn wake_client_executable(dreamdaemon: &Path) -> Result<PathBuf> {
     Ok(client.canonicalize()?)
 }
 
-async fn spawn_wake_client(
+fn spawn_wake_client(
     executable: &Path,
     working_directory: &Path,
     game_port: u16,
@@ -56,29 +56,17 @@ async fn spawn_wake_client(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    let containment = crate::process::ProcessContainment::new()?;
-    let mut process = command.spawn()?;
-    if let Err(error) = containment.assign(process.id().unwrap_or_default()) {
-        let _ = process.kill().await;
-        return Err(
-            error.context("refusing to run the Tracy wake client outside process containment")
-        );
-    }
+    let (process, containment) = crate::process::spawn_runtime_process(&mut command)?;
     Ok(crate::state::TracyWakeClient {
         process,
         containment,
     })
 }
 
-async fn stop_wake_client(mut client: crate::state::TracyWakeClient) {
-    let _ = client.containment.terminate(1);
-    if tokio::time::timeout(Duration::from_secs(5), client.process.wait())
-        .await
-        .is_err()
-    {
-        let _ = client.process.kill().await;
-        let _ = client.process.wait().await;
-    }
+async fn stop_wake_client(client: &mut crate::state::TracyWakeClient) -> Result<()> {
+    client.containment.request_termination()?;
+    tokio::time::timeout(Duration::from_secs(2), client.process.wait()).await??;
+    crate::process::wait_for_cleanup(&client.containment).await
 }
 
 pub async fn prepare(context: &ToolExecutionContext, args: Value) -> Result<ToolResult> {
@@ -152,7 +140,20 @@ pub async fn launch(
         .integrity_journal
         .as_ref()
         .map(|journal| journal.summary().journal_id);
-    if failed && current_journal_id.is_some() && current_journal_id != prior_journal_id {
+    let owns_lease = state
+        .runtime()
+        .await
+        .execution_lease
+        .as_ref()
+        .is_some_and(|lease| {
+            context
+                .request_owner
+                .as_ref()
+                .is_some_and(|owner| lease.belongs_to(owner))
+        });
+    if failed
+        && ((current_journal_id.is_some() && current_journal_id != prior_journal_id) || owns_lease)
+    {
         let _ = stop_with_lifecycle(context, state).await;
     }
     result
@@ -174,6 +175,20 @@ async fn launch_inner(
         .get("require_verified_provenance")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let mut lease = match context
+        .execution_lease(
+            &canonical_dmb,
+            canonical_dmb
+                .parent()
+                .ok_or_else(|| anyhow!("DMB has no parent"))?,
+            "tracy",
+            context.deadline(readiness_timeout_ms),
+        )
+        .await?
+    {
+        Ok(lease) => lease,
+        Err(result) => return Ok(result),
+    };
     let launch_provenance = match super::require_launchable_artifact(
         context,
         &canonical_dmb,
@@ -272,6 +287,13 @@ async fn launch_inner(
             "experiment_directory must be an existing contained directory"
         ));
     }
+    // Journal creation begins durable finalization obligations. Retain the
+    // lease in shared state before the next cancellable await.
+    {
+        let mut runtime = state.runtime().await;
+        lease.mark_writer_started();
+        runtime.execution_lease = Some(lease);
+    }
     let mut integrity_journal = match crate::workspace_integrity::IntegrityJournal::create(
         context.policy(),
         &experiment_directory,
@@ -341,6 +363,8 @@ async fn launch_inner(
         capture.memory_task = Some(memory_task);
         capture.experiment_started_at = Some(experiment_started_at);
     }
+    let mut runtime = state.runtime().await;
+    let mut capture = state.tracy_capture().await;
     let collector = match TracyCollector::spawn(TracyCollectorSpec {
         helper: installation.helper.path.clone(),
         working_directory: dmb_path
@@ -357,16 +381,16 @@ async fn launch_inner(
     {
         Ok(collector) => Arc::new(collector),
         Err(error) => {
-            let mut runtime = state.runtime().await;
-            let _ = runtime.stop_game_process().await;
+            if let Some(lease) = runtime.execution_lease.as_mut() {
+                lease.require_recovery();
+            }
             return Err(error.into());
         }
     };
-    {
-        let mut capture = state.tracy_capture().await;
-        capture.collector = Some(Arc::clone(&collector));
-        capture.phase = Some(TracySessionPhase::CollectorConnecting);
-    }
+    capture.collector = Some(Arc::clone(&collector));
+    capture.phase = Some(TracySessionPhase::CollectorConnecting);
+    drop(capture);
+    drop(runtime);
     let memory_series = state.tracy_capture().await.memory_series.clone();
     if let Some(memory_series) = memory_series {
         register_memory_identities(&memory_series, &owned_process_identities(state).await).await;
@@ -529,17 +553,20 @@ async fn launch_inner(
             let executable = wake_client
                 .as_ref()
                 .expect("wake client was qualified before launch");
+            let mut capture = state.tracy_capture().await;
             let client = match spawn_wake_client(
                 executable,
                 canonical_dmb
                     .parent()
                     .expect("canonical DMB has a parent directory"),
                 game_port,
-            )
-            .await
-            {
+            ) {
                 Ok(client) => client,
                 Err(error) => {
+                    drop(capture);
+                    if let Some(lease) = state.runtime().await.execution_lease.as_mut() {
+                        lease.require_recovery();
+                    }
                     let topic_processed = topic_was_processed(&attempts);
                     let runtime_wake = json!({
                         "strategy":strategy,
@@ -566,7 +593,8 @@ async fn launch_inner(
                 }
             };
             let client_pid = client.process.id();
-            state.tracy_capture().await.wake_client = Some(client);
+            capture.wake_client = Some(client);
+            drop(capture);
             let memory_series = state.tracy_capture().await.memory_series.clone();
             if let Some(memory_series) = memory_series {
                 register_memory_identities(&memory_series, &owned_process_identities(state).await)
@@ -698,6 +726,9 @@ pub async fn capture(
     state: &crate::state::ServerState,
     args: Value,
 ) -> Result<ToolResult> {
+    let _publication = state
+        .try_tracy_publication()
+        .map_err(|_| anyhow!("a Tracy capture or its finalization is already active"))?;
     let installation = context
         .tracy()
         .ok_or_else(|| anyhow!("Tracy installation unavailable"))?;
@@ -1290,11 +1321,17 @@ pub async fn stop(
     stop_with_lifecycle(context, state).await
 }
 
-async fn stop_with_lifecycle(
+pub(super) async fn stop_with_lifecycle(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
 ) -> Result<ToolResult> {
-    let cleanup_only = state.tracy_capture().await.integrity_journal.is_some();
+    let cleanup_only = state.tracy_capture().await.integrity_journal.is_some()
+        || state
+            .runtime()
+            .await
+            .execution_lease
+            .as_ref()
+            .is_some_and(|lease| lease.kind() == "tracy");
     let pre_stop_checkpoint = checkpoint_integrity(context, state, "pre_stop").await;
     let stop_identities = owned_process_identities(state).await;
     let stop_profiler_port = state.runtime().await.profiler_port;
@@ -1310,11 +1347,14 @@ async fn stop_with_lifecycle(
     let collector = state.tracy_capture().await.collector.clone();
     if let Some(collector) = collector {
         let _ = collector.cancel().await;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        while state.tracy_capture().await.active && tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
     }
+    // The active window can end before trace/sidecar/journal publication. This
+    // guard proves the entire capture operation ended before releasing scope.
+    let _publication = tokio::time::timeout(Duration::from_secs(10), state.tracy_publication())
+        .await
+        .map_err(|_| {
+            anyhow!("Tracy capture publication remains active; execution ownership is retained")
+        })?;
     let collector = state.tracy_capture().await.collector.clone();
     let mut collector_cleanup_error = None;
     if let Some(collector) = collector {
@@ -1328,8 +1368,12 @@ async fn stop_with_lifecycle(
             ));
         }
     }
-    if let Some(client) = state.tracy_capture().await.wake_client.take() {
-        stop_wake_client(client).await;
+    {
+        let mut capture = state.tracy_capture().await;
+        if let Some(client) = capture.wake_client.as_mut() {
+            stop_wake_client(client).await?;
+            capture.wake_client = None;
+        }
     }
     let mut runtime = state.runtime().await;
     let runtime_was_running = runtime.is_game_running();
@@ -1442,6 +1486,17 @@ async fn stop_with_lifecycle(
             .as_ref()
             .map(crate::workspace_integrity::IntegrityJournal::summary)
     };
+    if integrity_errors.is_empty() {
+        let mut runtime = state.runtime().await;
+        if let Some(lease) = runtime
+            .execution_lease
+            .as_mut()
+            .filter(|lease| lease.kind() == "tracy")
+        {
+            lease.finish()?;
+            runtime.execution_lease = None;
+        }
+    }
     if !integrity_errors.is_empty() {
         return Ok(structured_error(
             ToolErrorCode::WorkspaceIntegrityViolation,
@@ -2299,7 +2354,17 @@ mod tests {
             capture.integrity_journal = Some(journal);
         }
 
-        let result = stop(&context, &state).await.unwrap();
+        let publication = state.tracy_publication().await;
+        let mut stopping = Box::pin(stop(&context, &state));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), &mut stopping)
+                .await
+                .is_err(),
+            "stop bypassed an unfinished capture publication"
+        );
+        assert!(state.tracy_capture().await.integrity_journal.is_some());
+        drop(publication);
+        let result = stopping.await.unwrap();
 
         assert_ne!(result.is_error, Some(true));
         let journal: serde_json::Value =

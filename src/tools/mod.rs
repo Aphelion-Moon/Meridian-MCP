@@ -57,6 +57,11 @@ pub struct ToolExecutionContext {
     private_state: Option<std::sync::Arc<crate::PrivateStateStore>>,
     build_provenance: Option<std::sync::Arc<crate::BuildProvenanceStore>>,
     integrity_recovery: std::sync::Arc<[crate::runtime_integrity::RuntimeIntegritySummary]>,
+    owned_requests:
+        std::sync::Arc<std::sync::Mutex<Vec<std::sync::Weak<tokio::sync::watch::Sender<bool>>>>>,
+    pub(crate) cancellation: Option<tokio::sync::watch::Receiver<bool>>,
+    pub(crate) request_started: Option<tokio::time::Instant>,
+    request_owner: Option<std::sync::Arc<()>>,
 }
 
 impl ToolExecutionContext {
@@ -79,6 +84,10 @@ impl ToolExecutionContext {
             private_state: None,
             build_provenance: None,
             integrity_recovery: std::sync::Arc::from([]),
+            owned_requests: Default::default(),
+            cancellation: None,
+            request_started: None,
+            request_owner: None,
         }
     }
 
@@ -132,11 +141,109 @@ impl ToolExecutionContext {
             private_state,
             build_provenance,
             integrity_recovery: std::sync::Arc::from(integrity_recovery),
+            owned_requests: Default::default(),
+            cancellation: None,
+            request_started: None,
+            request_owner: None,
         }
     }
 
     pub fn mode(&self) -> CapabilityMode {
         self.mode
+    }
+
+    pub(crate) fn cancel_owned_requests(&self) {
+        let mut requests = self
+            .owned_requests
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        requests.retain(|request| {
+            if let Some(request) = request.upgrade() {
+                let _ = request.send(true);
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    pub(crate) fn cancellation(&self) -> Option<tokio::sync::watch::Receiver<bool>> {
+        self.cancellation.clone()
+    }
+    pub(crate) fn cancelled(&self) -> bool {
+        self.cancellation
+            .as_ref()
+            .is_some_and(|receiver| *receiver.borrow())
+    }
+    pub(crate) fn finalization_reason(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> Option<&'static str> {
+        if self.cancelled() {
+            Some("request_cancelled")
+        } else if tokio::time::Instant::now() >= deadline {
+            Some("request_timed_out")
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn deadline(&self, timeout_ms: u64) -> tokio::time::Instant {
+        self.request_started
+            .unwrap_or_else(tokio::time::Instant::now)
+            + std::time::Duration::from_millis(timeout_ms)
+    }
+
+    pub(crate) async fn execution_lease(
+        &self,
+        artifact: &std::path::Path,
+        working_directory: &std::path::Path,
+        kind: &'static str,
+        deadline: tokio::time::Instant,
+    ) -> Result<Result<crate::execution_lease::ExecutionLease, ToolResult>> {
+        let Some(store) = self.private_state_arc() else {
+            return Ok(Err(ToolResult::structured_error(
+                "state_not_configured",
+                "writer execution requires a shared private state directory",
+                "Configure MERIDIAN_MCP_STATE_DIR before running writer tools.",
+            )));
+        };
+        if self.cancelled() || tokio::time::Instant::now() >= deadline {
+            return Ok(Err(ToolResult::structured_error(
+                "timed_out",
+                "execution admission expired or was cancelled",
+                "Retry with a new request after cleanup.",
+            )));
+        }
+        let policy = self.policy.clone();
+        let artifact = artifact.to_owned();
+        let working = working_directory.to_owned();
+        let request_owner = self.request_owner.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            if tokio::time::Instant::now() >= deadline {
+                return Err(crate::execution_lease::AdmissionError::Other(anyhow!(
+                    "execution admission expired"
+                )));
+            }
+            let mut lease = crate::execution_lease::ExecutionLease::acquire(
+                store, &policy, &artifact, &working, kind,
+            )?;
+            lease.request_owner = request_owner;
+            if tokio::time::Instant::now() >= deadline {
+                return Err(crate::execution_lease::AdmissionError::Other(anyhow!(
+                    "execution admission expired"
+                )));
+            }
+            Ok(lease)
+        });
+        match tokio::time::timeout_at(deadline, task).await {
+            Ok(result) => Ok(result?.map_err(|error| error.result())),
+            Err(_) => Ok(Err(ToolResult::structured_error(
+                "timed_out",
+                "execution admission exceeded the total deadline",
+                "Retry with a new request after cleanup.",
+            ))),
+        }
     }
 
     pub fn rift_build_access(&self) -> RiftBuildAccess {
@@ -1091,6 +1198,126 @@ pub async fn call_tool(
             }),
         ));
     }
+    if matches!(
+        name,
+        "dm_compile" | "rift_compile" | "dm_run" | "dm_debug_launch" | "dm_tracy_launch"
+    ) {
+        let (sender, receiver) = tokio::sync::watch::channel(false);
+        let sender = std::sync::Arc::new(sender);
+        {
+            let mut requests = context
+                .owned_requests
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            requests.retain(|request| request.strong_count() != 0);
+            requests.push(std::sync::Arc::downgrade(&sender));
+        }
+        let (acknowledge, acknowledged) = tokio::sync::oneshot::channel();
+        let mut owner = RequestOwnership {
+            cancellation: Some(sender),
+            acknowledge: Some(acknowledge),
+        };
+        let mut execution = context.clone();
+        execution.cancellation = Some(receiver.clone());
+        execution
+            .request_started
+            .get_or_insert_with(tokio::time::Instant::now);
+        execution.request_owner = Some(std::sync::Arc::new(()));
+        let state = state.clone();
+        let name = name.to_owned();
+        let (response, result) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let launch = !matches!(name.as_str(), "dm_compile" | "rift_compile");
+            let mut cancellation = receiver;
+            let outcome = if launch {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.wait_for(|cancelled| *cancelled) => Ok(ToolResult::structured_error("cancelled", "launch was cancelled", "Retry as a new operation after cleanup.")),
+                    result = dispatch_tool(&execution, &state, &name, args) => result,
+                }
+            } else {
+                dispatch_tool(&execution, &state, &name, args).await
+            };
+            let cancelled = *cancellation.borrow();
+            if cancelled && launch {
+                if let Err(error) = cleanup_owned_launch(&execution, &state, &name).await {
+                    let _ = response.send(Err(error));
+                    return;
+                }
+            }
+            let delivered = response.send(outcome).is_ok();
+            // Retain the owner until the caller acknowledges delivery. A caller
+            // dropped after launch completed still requires owned cleanup.
+            if launch && !cancelled && (!delivered || acknowledged.await.is_err()) {
+                let _ = cleanup_owned_launch(&execution, &state, &name).await;
+            }
+        });
+        let result = result.await?;
+        owner.cancellation = None;
+        if let Some(acknowledge) = owner.acknowledge.take() {
+            let _ = acknowledge.send(());
+        }
+        return result;
+    }
+    dispatch_tool(context, state, name, args).await
+}
+
+struct RequestOwnership {
+    cancellation: Option<std::sync::Arc<tokio::sync::watch::Sender<bool>>>,
+    acknowledge: Option<tokio::sync::oneshot::Sender<()>>,
+}
+impl Drop for RequestOwnership {
+    fn drop(&mut self) {
+        if let Some(sender) = self.cancellation.take() {
+            let _ = sender.send(true);
+        }
+    }
+}
+
+async fn cleanup_owned_launch(
+    context: &ToolExecutionContext,
+    state: &ServerState,
+    name: &str,
+) -> Result<()> {
+    let _lifecycle = state.lifecycle().await;
+    let owner = context
+        .request_owner
+        .as_ref()
+        .expect("owned request identity");
+    if name == "dm_debug_launch" {
+        let owns = state
+            .debugger()
+            .await
+            .as_ref()
+            .and_then(|session| session.execution_lease.as_ref())
+            .is_some_and(|lease| lease.belongs_to(owner));
+        if owns {
+            debugger::stop_with_lifecycle(state).await?;
+        }
+    } else {
+        let owns = state
+            .runtime()
+            .await
+            .execution_lease
+            .as_ref()
+            .is_some_and(|lease| lease.belongs_to(owner));
+        if owns {
+            if name == "dm_tracy_launch" {
+                tracy::stop_with_lifecycle(context, state).await?;
+            } else {
+                runtime::stop_with_lifecycle(state).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn dispatch_tool(
+    context: &ToolExecutionContext,
+    state: &ServerState,
+    name: &str,
+    args: Value,
+) -> Result<ToolResult> {
     match name {
         // Parsing tools
         "dm_server_status" => server_status::status(context, state).await,

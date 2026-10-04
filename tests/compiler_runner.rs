@@ -7,7 +7,44 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+fn initialize_owner() {
+    #[cfg(windows)]
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
+    #[cfg(unix)]
+    meridian_mcp::process::initialize_runtime_owner_with_executable(std::path::Path::new(env!(
+        "CARGO_BIN_EXE_meridian-mcp"
+    )))
+    .unwrap();
+}
+
+fn writer_context(root: &std::path::Path, policy: PathPolicy) -> ToolExecutionContext {
+    initialize_owner();
+    let private_path = root.with_extension("private");
+    std::fs::create_dir_all(&private_path).unwrap();
+    let store = std::sync::Arc::new(
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    ToolExecutionContext::with_features_and_state(
+        CapabilityMode::Development,
+        policy,
+        meridian_mcp::RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(store),
+    )
+}
+
+fn remove_fixture(root: std::path::PathBuf) {
+    let private = root.with_extension("private");
+    std::fs::remove_dir_all(root).unwrap();
+    if private.exists() {
+        std::fs::remove_dir_all(private).unwrap();
+    }
+}
+
 fn controlled_compiler() -> &'static std::path::PathBuf {
+    initialize_owner();
     static COMPILER: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     COMPILER.get_or_init(|| {
         let path = std::env::temp_dir().join(format!(
@@ -179,6 +216,287 @@ async fn changing_source_after_compiler_start_cannot_promote_posthoc_bytes() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn expired_final_publication_preserves_compiler_effects_without_verified_success() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let (root, dme) = compiler_fixture("publication-expired");
+    let compiler = controlled_compiler().clone();
+    let policy = PathPolicy::new(vec![root.clone()], vec![compiler.clone()]).unwrap();
+    let context = writer_context(&root, policy.clone());
+    let private_path = root.with_extension("private");
+    let private =
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap();
+    std::fs::write(root.join("source.dm"), "/world\n\tfps = 10\n").unwrap();
+    std::fs::write(&dme, "#include \"source.dm\"\n").unwrap();
+    let state = ServerState::new();
+    let parsed = call_tool(
+        &context,
+        &state,
+        "dm_parse_environment",
+        json!({"dme_path":dme}),
+    )
+    .await
+    .unwrap();
+    assert_ne!(parsed.is_error, Some(true));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    std::fs::write(
+        root.join("compiler.address"),
+        listener.local_addr().unwrap().to_string(),
+    )
+    .unwrap();
+    let request = json!({"dme_path":dme,"compiler_path":compiler,"timeout_ms":3000});
+    let build =
+        tokio::spawn(async move { call_tool(&context, &state, "dm_compile", request).await });
+    let (mut stream, _) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+    stream.read_exact(&mut [0; 7]).await.unwrap();
+    // begin_attempt has committed before the compiler barrier. Terminal
+    // publication waits on the existing operation lock, which an independent
+    // thread releases so synchronous state waits cannot starve its timer.
+    let publication = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(private_path.join(".meridian-mcp.lock"))
+        .unwrap();
+    publication.lock().unwrap();
+    let barrier = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(3500));
+        drop(publication);
+    });
+    stream.write_all(b"x").await.unwrap();
+    let mut remainder = Vec::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_to_end(&mut remainder),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(dme.with_extension("dmb").is_file());
+    barrier.join().unwrap();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), build)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let value = payload(&result);
+    assert_eq!(result.is_error, Some(true), "{value}");
+    assert_eq!(value["success"], false, "{value}");
+    assert_eq!(value["compiler_succeeded"], true, "{value}");
+    assert_eq!(value["timed_out"], true, "{value}");
+    assert_eq!(value["termination"], "wall_timeout", "{value}");
+    assert_eq!(value["process_termination"], "exited", "{value}");
+    assert_eq!(value["exit_code"], 0, "{value}");
+    assert_eq!(value["dmb_updated"], true, "{value}");
+    assert_eq!(
+        value["finalization_interruption"], "request_timed_out",
+        "{value}"
+    );
+    assert_ne!(value["provenance_status"], "verified", "{value}");
+    let records = private.list_records("artifacts-v2", 16).unwrap();
+    let state: Value = serde_json::from_slice(&std::fs::read(&records[0]).unwrap()).unwrap();
+    assert_eq!(
+        state["attempt"]["outcome"]["status"], "unverified",
+        "{state}"
+    );
+    assert_eq!(
+        state["attempt"]["outcome"]["code"], "request_timed_out",
+        "{state}"
+    );
+    assert!(state["record"].is_null(), "{state}");
+    assert!(
+        state["attempt"]["retained_dmb_sha256"].is_string(),
+        "{state}"
+    );
+    assert!(
+        !state["attempt"]["observed_inputs"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{state}"
+    );
+    let scopes = private.list_records("execution-v1", 16).unwrap();
+    let scope: Value = serde_json::from_slice(&std::fs::read(&scopes[0]).unwrap()).unwrap();
+    assert_eq!(scope["active"], false, "{scope}");
+    remove_fixture(root);
+}
+
+#[tokio::test]
+async fn shared_store_excludes_a_second_compiler_before_it_can_write() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let (root, dme) = compiler_fixture("execution-exclusion");
+    std::fs::write(root.join("source.dm"), "/world\n\tfps = 10\n").unwrap();
+    let private_path = root.with_extension("private");
+    std::fs::create_dir_all(&private_path).unwrap();
+    let compiler = controlled_compiler().clone();
+    let policy = PathPolicy::new(vec![root.clone()], vec![compiler.clone()]).unwrap();
+    let second = ToolExecutionContext::with_features_and_state(
+        CapabilityMode::Development,
+        policy.clone(),
+        meridian_mcp::RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(std::sync::Arc::new(
+            meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+        )),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    std::fs::write(
+        root.join("compiler.address"),
+        listener.local_addr().unwrap().to_string(),
+    )
+    .unwrap();
+    let first = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "compiler_execution_host_fixture", "--nocapture"])
+        .env("MERIDIAN_EXECUTION_FIXTURE_ROOT", &root)
+        .env("MERIDIAN_EXECUTION_FIXTURE_COMPILER", &compiler)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (mut stream, _) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+    let mut started = [0; 7];
+    stream.read_exact(&mut started).await.unwrap();
+    let rejected = call_tool(
+        &second,
+        &ServerState::new(),
+        "dm_compile",
+        json!({"dme_path":dme,"compiler_path":compiler,"timeout_ms":75}),
+    )
+    .await;
+    stream.write_all(b"x").await.unwrap();
+    let first_result = first.wait_with_output().unwrap();
+    let result = payload(&rejected.unwrap());
+    assert_eq!(result["code"], "execution_busy", "{result}");
+    assert!(
+        first_result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&first_result.stdout),
+        String::from_utf8_lossy(&first_result.stderr)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(private_path).unwrap();
+}
+
+#[tokio::test]
+async fn compiler_execution_host_fixture() {
+    let Some(root) = std::env::var_os("MERIDIAN_EXECUTION_FIXTURE_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let compiler =
+        std::path::PathBuf::from(std::env::var_os("MERIDIAN_EXECUTION_FIXTURE_COMPILER").unwrap());
+    let context = writer_context(
+        &root,
+        PathPolicy::new(vec![root.clone()], vec![compiler.clone()]).unwrap(),
+    );
+    let result = call_tool(
+        &context,
+        &ServerState::new(),
+        "dm_compile",
+        json!({"dme_path":root.join("fixture.dme"),"compiler_path":compiler,"timeout_ms":10000}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(payload(&result)["success"], true, "{result:?}");
+}
+
+#[tokio::test]
+async fn dropping_a_compiler_request_completes_cleanup_before_scope_reuse() {
+    use tokio::io::AsyncReadExt;
+    let (root, dme) = compiler_fixture("dropped-execution");
+    std::fs::write(root.join("source.dm"), "/world\n\tfps = 10\n").unwrap();
+    let compiler = controlled_compiler().clone();
+    let policy = PathPolicy::new(vec![root.clone()], vec![compiler.clone()]).unwrap();
+    let context = writer_context(&root, policy.clone());
+    let private = meridian_mcp::PrivateStateStore::open(
+        &root.with_extension("private"),
+        policy.effective_roots(),
+    )
+    .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    std::fs::write(
+        root.join("compiler.address"),
+        listener.local_addr().unwrap().to_string(),
+    )
+    .unwrap();
+    let first_dme = dme.clone();
+    let task_context = context.clone();
+    let first = tokio::spawn(async move {
+        call_tool(
+            &task_context,
+            &ServerState::new(),
+            "dm_compile",
+            json!({"dme_path":first_dme,"timeout_ms":10000}),
+        )
+        .await
+    });
+    let (mut stream, _) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+    stream.read_exact(&mut [0; 7]).await.unwrap();
+    let records = private.list_records("execution-v1", 20).unwrap();
+    let record = records
+        .iter()
+        .find(|path| path.file_name().is_some_and(|name| name == "state.json"))
+        .unwrap()
+        .strip_prefix(private.root())
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(private.read_json::<Value>(record).unwrap()["active"], true);
+    first.abort();
+    let _ = first.await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while private.read_json::<Value>(record).unwrap()["active"] == true {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("dropped compiler did not finish owned cleanup");
+    assert!(
+        !dme.with_extension("dmb").exists(),
+        "cancelled compiler wrote after cleanup"
+    );
+    let second = tokio::spawn(async move {
+        call_tool(
+            &context,
+            &ServerState::new(),
+            "dm_compile",
+            json!({"dme_path":dme,"timeout_ms":10000}),
+        )
+        .await
+    });
+    let (mut stream, _) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+    stream.read_exact(&mut [0; 7]).await.unwrap();
+    assert_eq!(private.read_json::<Value>(record).unwrap()["active"], true);
+    second.abort();
+    assert!(second.await.unwrap_err().is_cancelled());
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while private.read_json::<Value>(record).unwrap()["active"] == true {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the reused scope did not finish owned cleanup");
+    drop(private);
+    remove_fixture(root);
+}
+
 #[tokio::test]
 async fn an_include_added_after_parse_must_be_in_the_build_identity() {
     let (result, root) = provenance_case("new-include").await;
@@ -235,8 +553,8 @@ async fn omitted_compiler_uses_the_sole_startup_allowlisted_executable() {
     let (root, dme) = compiler_fixture("sole-allowlisted");
     let compiler = std::env::current_exe().unwrap();
     let canonical_compiler = compiler.canonicalize().unwrap();
-    let context = ToolExecutionContext::new(
-        CapabilityMode::Development,
+    let context = writer_context(
+        &root,
         PathPolicy::new(vec![root.clone()], vec![compiler]).unwrap(),
     );
 
@@ -255,7 +573,7 @@ async fn omitted_compiler_uses_the_sole_startup_allowlisted_executable() {
         canonical_compiler.display().to_string()
     );
     assert_eq!(payload["termination"], "exited");
-    std::fs::remove_dir_all(root).unwrap();
+    remove_fixture(root);
 }
 
 #[tokio::test]
@@ -264,8 +582,8 @@ async fn omitted_compiler_does_not_probe_a_different_conventional_installation()
     let configured = root.join("configured-compiler.exe");
     std::fs::copy(std::env::current_exe().unwrap(), &configured).unwrap();
     let canonical_configured = configured.canonicalize().unwrap();
-    let context = ToolExecutionContext::new(
-        CapabilityMode::Development,
+    let context = writer_context(
+        &root,
         PathPolicy::new(vec![root.clone()], vec![configured]).unwrap(),
     );
 
@@ -284,7 +602,7 @@ async fn omitted_compiler_does_not_probe_a_different_conventional_installation()
         canonical_configured.display().to_string()
     );
     assert_eq!(payload["termination"], "exited");
-    std::fs::remove_dir_all(root).unwrap();
+    remove_fixture(root);
 }
 
 #[tokio::test]
@@ -363,7 +681,7 @@ async fn direct_compile_reports_bounded_output_artifacts_and_optional_audit() {
     std::fs::write(&dmb, "pre-existing artifact").unwrap();
     let compiler = std::env::current_exe().unwrap();
     let policy = PathPolicy::new(vec![root.clone()], vec![compiler.clone()]).unwrap();
-    let context = ToolExecutionContext::new(CapabilityMode::Development, policy);
+    let context = writer_context(&root, policy);
 
     let result = call_tool(
         &context,
@@ -391,5 +709,5 @@ async fn direct_compile_reports_bounded_output_artifacts_and_optional_audit() {
     assert!(payload["artifact_after"]["sha256"].is_string());
     assert_eq!(payload["dmb_exists"], true);
     assert_eq!(payload["dme_argument"], "fixture.dme");
-    std::fs::remove_dir_all(root).unwrap();
+    remove_fixture(root);
 }

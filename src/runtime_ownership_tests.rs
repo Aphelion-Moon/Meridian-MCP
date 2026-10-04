@@ -19,6 +19,25 @@ fn initialize_owner() {
     .unwrap();
 }
 
+fn writer_context(directory: &std::path::Path) -> crate::tools::ToolExecutionContext {
+    let policy =
+        crate::PathPolicy::new(vec![directory.to_owned()], vec![directory.join("dm.exe")]).unwrap();
+    let private_path = directory.with_extension(format!("state-{}", std::process::id()));
+    std::fs::create_dir_all(&private_path).unwrap();
+    let private = std::sync::Arc::new(
+        crate::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    crate::tools::ToolExecutionContext::with_features_and_state(
+        crate::CapabilityMode::Development,
+        policy,
+        crate::RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(private),
+    )
+}
+
 struct FixtureChild(std::process::Child);
 
 impl std::ops::Deref for FixtureChild {
@@ -190,16 +209,15 @@ async fn launch_readiness_is_stoppable_and_cancellation_releases_ownership() {
         .success());
     std::fs::copy(directory.join("dreamdaemon.exe"), directory.join("dm.exe")).unwrap();
     std::fs::write(directory.join("fixture.dmb"), "fixture").unwrap();
-    let context = crate::tools::ToolExecutionContext::new(
-        crate::CapabilityMode::Development,
-        crate::PathPolicy::new(vec![directory.clone()], vec![directory.join("dm.exe")]).unwrap(),
-    );
+    std::fs::write(directory.join("fixture.dme"), "// fixture").unwrap();
+    let context = writer_context(&directory);
     for cancel in [false, true] {
         let state = crate::state::ServerState::new();
         let marker = directory.join(format!("{cancel}.pids"));
-        let mut launch = Box::pin(runtime::run(
+        let mut launch = Box::pin(crate::tools::call_tool(
             &context,
             &state,
+            "dm_run",
             json!({
                 "dmb_path":directory.join("fixture.dmb"), "daemon_args":["--marker", marker],
                 "wait_for":"NEVER_READY", "startup_timeout_ms":300000
@@ -224,6 +242,21 @@ async fn launch_readiness_is_stoppable_and_cancellation_releases_ownership() {
             .split_whitespace()
             .map(|pid| process_identity(pid.parse().unwrap(), ProcessRole::DreamDaemon).unwrap())
             .collect();
+        let competing_context = writer_context(&directory);
+        let excluded = crate::tools::call_tool(
+            &competing_context,
+            &state,
+            "dm_compile",
+            json!({"dme_path":directory.join("fixture.dme"),"timeout_ms":75}),
+        )
+        .await
+        .unwrap();
+        let crate::mcp::ToolContent::Text { text } = &excluded.content[0];
+        let excluded: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            excluded["code"], "execution_busy",
+            "a launch allowed a competing build: {excluded}"
+        );
         tokio::time::timeout(Duration::from_secs(1), runtime::status(&state, json!({})))
             .await
             .expect("launch readiness blocked status")
@@ -271,6 +304,13 @@ async fn launch_readiness_is_stoppable_and_cancellation_releases_ownership() {
         })
         .await
         .expect("readiness cancellation left an owned process alive");
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while state.runtime().await.execution_lease.is_some() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("cancelled launch retained ownership after completed cleanup");
         drop(state);
     }
     std::fs::remove_dir_all(directory).unwrap();
@@ -323,10 +363,7 @@ async fn invalid_readiness_regex_never_starts_the_runtime() {
         .success());
     std::fs::copy(directory.join("dreamdaemon.exe"), directory.join("dm.exe")).unwrap();
     std::fs::write(directory.join("fixture.dmb"), "fixture").unwrap();
-    let context = crate::tools::ToolExecutionContext::new(
-        crate::CapabilityMode::Development,
-        crate::PathPolicy::new(vec![directory.clone()], vec![directory.join("dm.exe")]).unwrap(),
-    );
+    let context = writer_context(&directory);
     let state = crate::state::ServerState::new();
     let output_before = state.runtime().await.output_log.clone();
     let marker = directory.join("started.pids");
@@ -549,11 +586,7 @@ fn fixture() {
         executor.block_on(async {
             let directory =
                 std::path::PathBuf::from(std::env::var_os("MERIDIAN_FAKE_RUNTIME").unwrap());
-            let context = crate::tools::ToolExecutionContext::new(
-                crate::CapabilityMode::Development,
-                crate::PathPolicy::new(vec![directory.clone()], vec![directory.join("dm.exe")])
-                    .unwrap(),
-            );
+            let context = writer_context(&directory);
             let state = crate::state::ServerState::new();
             let pids = marker.with_extension("pids");
             let mut launch = Box::pin(async {

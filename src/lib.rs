@@ -7,6 +7,7 @@ pub mod build_provenance;
 pub mod capabilities;
 pub mod config;
 pub mod contracts;
+mod execution_lease;
 pub mod fixture_manifest;
 pub mod helper_manifest;
 pub mod index;

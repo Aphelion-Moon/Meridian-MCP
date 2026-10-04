@@ -20,6 +20,13 @@ fn root() -> PathBuf {
     root
 }
 fn compiler() -> &'static PathBuf {
+    #[cfg(windows)]
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
+    #[cfg(unix)]
+    meridian_mcp::process::initialize_runtime_owner_with_executable(std::path::Path::new(env!(
+        "CARGO_BIN_EXE_meridian-mcp"
+    )))
+    .unwrap();
     static COMPILER: OnceLock<PathBuf> = OnceLock::new();
     COMPILER.get_or_init(|| {
         let binary = root().join(format!("compiler{}", std::env::consts::EXE_SUFFIX));
@@ -49,9 +56,20 @@ async fn compile(mode: &str, extra: Value) -> ToolResult {
     let root = root();
     let dme = root.join("fixture.dme");
     std::fs::write(&dme, "// output fixture").unwrap();
-    let context = ToolExecutionContext::new(
+    let policy = PathPolicy::new(vec![root.clone()], vec![compiler().clone()]).unwrap();
+    let private_path = root.with_extension("private");
+    std::fs::create_dir_all(&private_path).unwrap();
+    let private = std::sync::Arc::new(
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    let context = ToolExecutionContext::with_features_and_state(
         CapabilityMode::Development,
-        PathPolicy::new(vec![root.clone()], vec![compiler().clone()]).unwrap(),
+        policy,
+        meridian_mcp::RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(private),
     );
     let mut args =
         json!({"dme_path":dme,"defines":[format!("OUTPUT_MODE={mode}")],"timeout_ms":10000});
@@ -62,6 +80,7 @@ async fn compile(mode: &str, extra: Value) -> ToolResult {
         .await
         .unwrap();
     std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(private_path).unwrap();
     result
 }
 
@@ -78,7 +97,14 @@ async fn compiler_large_responses_keep_status_and_explicit_truncation() {
         assert_eq!(data["dmb_exists"], true, "{mode}");
         assert_eq!(data["success"], mode != "giant", "{mode}");
         assert!(data["artifact_after"]["sha256"].is_string());
-        assert_eq!(data["provenance_status"], "unverified");
+        assert_eq!(
+            data["provenance_status"],
+            if mode == "giant" {
+                "stale"
+            } else {
+                "unverified"
+            }
+        );
         assert!(
             data["output_summary"]["stdout"]["omitted_utf8_bytes"]
                 .as_u64()
@@ -300,10 +326,10 @@ async fn an_evicted_error_cannot_create_verified_provenance() {
     assert_eq!(data["build_record_id"], previous["build_record_id"]);
     let key = store.artifact_key(&dme.with_extension("dmb")).unwrap();
     let attempt = private
-        .read_json::<Value>(&format!("attempts/{key}.json"))
+        .read_json::<Value>(&format!("artifacts-v2/{key}/state.json"))
         .unwrap();
     assert_eq!(
-        attempt["outcome"],
+        attempt["attempt"]["outcome"],
         json!({"status":"failed","code":"compiler_failed"})
     );
     drop(context);

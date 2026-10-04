@@ -418,7 +418,7 @@ async fn supervise_child(
                     continue;
                 }
                 let contained = containment.request_termination();
-                // Generic Unix containment does not kill; use the owned Child.
+                // Also revoke the root child while its tree is being stopped.
                 let killed = child.start_kill();
                 let error = contained.and_then(|_| killed.map_err(Into::into)).err().map(|error| format!("collector termination failed: {error}"));
                 status.send_modify(|state| state.cleanup_error = error);
@@ -473,10 +473,8 @@ async fn supervise_child(
 
 impl TracyCollector {
     pub async fn spawn(spec: TracyCollectorSpec) -> Result<Self, TracyProtocolError> {
-        let containment = crate::process::ProcessContainment::new().map_err(|error| {
-            TracyProtocolError::Transport(format!("cannot create collector containment: {error}"))
-        })?;
-        let mut child = Command::new(&spec.helper)
+        let mut command = Command::new(&spec.helper);
+        command
             .arg("--session")
             .current_dir(&spec.working_directory)
             .env_clear()
@@ -484,21 +482,14 @@ impl TracyCollector {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
+            .kill_on_drop(true);
+        let (mut child, containment) = crate::process::spawn_runtime_process(&mut command)
             .map_err(|error| {
                 TracyProtocolError::Transport(format!("failed to spawn collector: {error}"))
             })?;
         let process_id = child.id().ok_or_else(|| {
             TracyProtocolError::Transport("collector process id unavailable".to_owned())
         })?;
-        if let Err(error) = containment.assign(process_id) {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            return Err(TracyProtocolError::Transport(format!(
-                "cannot contain collector process: {error}"
-            )));
-        }
         let stdout = child.stdout.take().ok_or_else(|| {
             TracyProtocolError::Transport("collector stdout unavailable".to_owned())
         })?;
@@ -545,7 +536,6 @@ impl TracyCollector {
             exit_code: None,
             cleanup_error: None,
         });
-        let containment = Arc::new(containment);
         #[cfg(test)]
         let kill_blocked = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let supervisor = tokio::spawn(supervise_child(
@@ -727,6 +717,19 @@ pub(crate) mod tests {
     }
 
     async fn owned_fixture_with_mode(mode: &str) -> (PathBuf, Arc<TracyCollector>) {
+        #[cfg(windows)]
+        crate::process::initialize_runtime_owner().unwrap();
+        #[cfg(unix)]
+        crate::process::initialize_runtime_owner_with_executable(
+            &std::env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("meridian-mcp"),
+        )
+        .unwrap();
         let root = std::env::temp_dir().join(format!(
             "meridian-collector-unit-{}-{}",
             std::process::id(),

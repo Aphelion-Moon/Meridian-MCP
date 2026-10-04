@@ -13,15 +13,26 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn root(label: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "meridian-compiler-input-{label}-{}-{}",
+        "meridian-compiler-input-{label}-{}-{}-{}",
         std::process::id(),
-        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::create_dir(&root).unwrap();
     root
 }
 
 fn compiler() -> &'static PathBuf {
+    #[cfg(windows)]
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
+    #[cfg(unix)]
+    meridian_mcp::process::initialize_runtime_owner_with_executable(Path::new(env!(
+        "CARGO_BIN_EXE_meridian-mcp"
+    )))
+    .unwrap();
     static COMPILER: OnceLock<PathBuf> = OnceLock::new();
     COMPILER.get_or_init(|| {
         let root = root("binary");
@@ -60,9 +71,27 @@ fn compiler() -> &'static PathBuf {
 }
 
 fn context(root: &Path) -> ToolExecutionContext {
-    ToolExecutionContext::new(
+    #[cfg(windows)]
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
+    #[cfg(unix)]
+    meridian_mcp::process::initialize_runtime_owner_with_executable(Path::new(env!(
+        "CARGO_BIN_EXE_meridian-mcp"
+    )))
+    .unwrap();
+    let policy = PathPolicy::new(vec![root.to_owned()], vec![compiler().clone()]).unwrap();
+    let private_path = root.with_extension("private");
+    std::fs::create_dir_all(&private_path).unwrap();
+    let private = std::sync::Arc::new(
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    ToolExecutionContext::with_features_and_state(
         CapabilityMode::Development,
-        PathPolicy::new(vec![root.to_owned()], vec![compiler().clone()]).unwrap(),
+        policy,
+        meridian_mcp::RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(private),
     )
 }
 
@@ -74,6 +103,7 @@ fn payload(result: &ToolResult) -> Value {
 #[tokio::test]
 async fn compiler_relative_dme_is_resolved_at_dispatch_and_artifact_is_created() {
     let root = root("relative");
+    std::fs::create_dir(root.join(".git")).unwrap();
     let working = root.join("working directory");
     let project = working.join("project");
     std::fs::create_dir_all(&project).unwrap();
@@ -130,15 +160,17 @@ async fn compiler_missing_artifact_is_retained_as_a_failed_attempt() {
     )
     .await
     .unwrap();
-    let attempt = private.read_json::<Value>(&format!("attempts/{key}.json"));
+    let attempt = private.read_json::<Value>(&format!("artifacts-v2/{key}/state.json"));
     drop(context);
     drop(store);
     drop(private);
     std::fs::remove_dir_all(root).unwrap();
     assert_eq!(payload(&result)["success"], false);
-    let attempt = attempt.expect("missing DMB failure was not recorded");
+    let attempt = attempt.unwrap_or_else(|error| {
+        panic!("missing DMB failure was not recorded: {error}; result: {result:?}")
+    });
     assert_eq!(
-        attempt["outcome"],
+        attempt["attempt"]["outcome"],
         json!({"status":"failed","code":"artifact_missing"})
     );
 }

@@ -205,9 +205,20 @@ async fn standard_runtime_rejects_unverified_artifacts_before_process_discovery(
     std::fs::create_dir_all(&root).unwrap();
     let dmb = root.join("fixture.dmb");
     std::fs::write(&dmb, "unmanaged fixture").unwrap();
-    let context = ToolExecutionContext::new(
+    let policy = PathPolicy::new(vec![root.clone()], Vec::new()).unwrap();
+    let private_path = root.with_extension("private");
+    std::fs::create_dir_all(&private_path).unwrap();
+    let store = std::sync::Arc::new(
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    let context = ToolExecutionContext::with_features_and_state(
         CapabilityMode::Development,
-        PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+        policy,
+        RiftBuildAccess::Disabled,
+        None,
+        None,
+        None,
+        Some(store),
     );
 
     let result = call_tool(
@@ -224,4 +235,5 @@ async fn standard_runtime_rejects_unverified_artifacts_before_process_discovery(
     assert_eq!(value["message"], "build_provenance_unavailable");
     assert_eq!(value["details"]["provenance"]["status"], "unverified");
     std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(private_path).unwrap();
 }

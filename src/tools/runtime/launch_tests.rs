@@ -140,6 +140,7 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
     for path in [&artifacts, &requested, &private] {
         std::fs::create_dir_all(path).unwrap();
     }
+    std::fs::create_dir(workspace.join(".git")).unwrap();
     let source = root.join("daemon.rs");
     std::fs::write(
         &source,

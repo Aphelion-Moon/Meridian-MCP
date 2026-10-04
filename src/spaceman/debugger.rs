@@ -427,7 +427,8 @@ pub struct DebuggerSession {
     pub dropped_events: u64,
     pub launch_provenance: crate::LaunchProvenance,
     pub memory_helper_sha256: Option<String>,
-    pub(crate) containment: crate::process::ProcessContainment,
+    pub(crate) containment: std::sync::Arc<crate::process::ProcessContainment>,
+    pub(crate) execution_lease: Option<crate::execution_lease::ExecutionLease>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -439,11 +440,15 @@ pub struct DebuggerEventRecord {
 }
 
 impl DebuggerSession {
-    pub async fn stop(mut self) -> Result<(), AuxProtocolError> {
+    pub async fn stop(&mut self) -> anyhow::Result<()> {
         let _ = self.connection.disconnect().await;
-        let _ = self.containment.terminate(1);
-        let _ = self.process.kill().await;
-        let _ = self.process.wait().await;
+        self.containment.request_termination()?;
+        tokio::time::timeout(Duration::from_secs(2), self.process.wait()).await??;
+        crate::process::wait_for_cleanup(&self.containment).await?;
+        if let Some(lease) = self.execution_lease.as_mut() {
+            lease.finish()?;
+        }
+        self.execution_lease = None;
         Ok(())
     }
 }

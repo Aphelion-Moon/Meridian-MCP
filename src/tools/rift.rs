@@ -7,9 +7,7 @@ use crate::build_provenance::{
 };
 use crate::mcp::ToolResult;
 use crate::parameters::{RiftCompileParams, RiftNetworkMode};
-use crate::process::{
-    run_contained_process_observed, ProcessOutcome, ProcessSpec, TerminationReason,
-};
+use crate::process::{run_owned_process_observed, ProcessOutcome, ProcessSpec, TerminationReason};
 use crate::state::ServerState;
 use crate::{ProjectProfile, RiftBuildAccess};
 #[cfg(windows)]
@@ -204,6 +202,14 @@ pub async fn compile(
         ));
     }
 
+    let deadline = context.deadline(timeout_ms);
+    let mut lease = match context
+        .execution_lease(&project.dmb, &project.root, "rift_compile", deadline)
+        .await?
+    {
+        Ok(lease) => lease,
+        Err(result) => return Ok(result),
+    };
     let before = match capture_artifacts(&project) {
         Ok(artifacts) => artifacts,
         Err(error) => {
@@ -273,7 +279,8 @@ pub async fn compile(
         .build_provenance()
         .map(|store| store.begin_attempt(&project.dmb, prepared.inputs.clone()))
         .transpose()?;
-    let outcome = match run_contained_process_observed(
+    lease.mark_writer_started();
+    let outcome = match run_owned_process_observed(
         ProcessSpec {
             program: command_processor,
             arguments: vec![
@@ -286,10 +293,10 @@ pub async fn compile(
             working_directory: command_path(&project.root),
             environment,
             stdin: None,
-            timeout: Duration::from_millis(timeout_ms),
+            timeout: deadline.saturating_duration_since(tokio::time::Instant::now()),
             idle_timeout: timeout_policy.outer_idle_timeout,
             capture_network: params.capture_network,
-            cancellation: None,
+            cancellation: context.cancellation(),
         },
         |stream, bytes| output.observe(stream, bytes),
     )
@@ -329,8 +336,9 @@ pub async fn compile(
         outcome.output_complete,
         outcome.stdout.truncated_bytes == 0 && outcome.stderr.truncated_bytes == 0,
     );
-    classify_result(
+    let result = classify_result(
         context,
+        deadline,
         &prepared,
         attempt,
         &profile,
@@ -346,7 +354,9 @@ pub async fn compile(
         analysis,
         response,
         warnings,
-    )
+    )?;
+    lease.finish()?;
+    Ok(result)
 }
 
 fn validate_project(
@@ -541,6 +551,7 @@ fn command_path(path: &Path) -> PathBuf {
 #[allow(clippy::too_many_arguments)]
 fn classify_result(
     context: &ToolExecutionContext,
+    deadline: tokio::time::Instant,
     prepared: &PreparedBuild,
     attempt: Option<BuildAttempt>,
     profile: &ProjectProfile,
@@ -569,6 +580,8 @@ fn classify_result(
         (BuildEvidence::BuildFailed, Some("build_idle_timed_out"))
     } else if outcome.termination == TerminationReason::SpawnFailed {
         (BuildEvidence::BuildFailed, Some("build_spawn_failed"))
+    } else if outcome.termination == TerminationReason::Cancelled {
+        (BuildEvidence::BuildFailed, Some("build_cancelled"))
     } else if outcome.exit_code != Some(0) || analysis.error_count > 0 {
         (
             BuildEvidence::BuildFailed,
@@ -605,16 +618,23 @@ fn classify_result(
         )
     };
 
-    let recovery = failure_code.map(recovery_for).unwrap_or("");
     let provenance = record_rift_provenance(
         context,
+        deadline,
         prepared,
         attempt,
-        project,
         &after,
         &evidence,
         failure_code,
     )?;
+    let interruption = provenance["interruption"].as_str();
+    let failure_code = interruption.or(failure_code);
+    let recovery = failure_code.map(recovery_for).unwrap_or("");
+    let termination = match interruption {
+        Some("request_cancelled") => TerminationReason::Cancelled,
+        Some("request_timed_out") => TerminationReason::WallTimeout,
+        _ => outcome.termination,
+    };
     let result = json!({
         "success": failure_code.is_none(),
         "code": failure_code,
@@ -637,7 +657,9 @@ fn classify_result(
             "outer_idle_timeout_ms": timeout_policy.outer_idle_timeout.as_millis(),
         },
         "duration_ms": outcome.duration_ms,
-        "termination": outcome.termination,
+        "termination": termination,
+        "process_termination": outcome.termination,
+        "finalization_interruption": interruption,
         "exit_code": outcome.exit_code,
         "stdout": outcome.stdout.text,
         "stderr": outcome.stderr.text,
@@ -674,9 +696,9 @@ fn classify_result(
 
 fn record_rift_provenance(
     context: &ToolExecutionContext,
+    deadline: tokio::time::Instant,
     prepared: &PreparedBuild,
     attempt: Option<BuildAttempt>,
-    project: &ValidatedProject,
     after: &ArtifactPair,
     evidence: &BuildEvidence,
     failure_code: Option<&str>,
@@ -693,38 +715,43 @@ fn record_rift_provenance(
     attempt.observed_inputs = prepared.inputs.clone();
     attempt.retained_dmb_sha256 = after.dmb.sha256.clone();
 
-    if matches!(
+    let checkpoint = || context.finalization_reason(deadline);
+    let code = if matches!(
         evidence,
         BuildEvidence::FreshArtifacts | BuildEvidence::ValidCacheHit
     ) {
         let code = prepared
-            .finish_reason()
+            .finish_reason_checked(checkpoint)
             .unwrap_or("rift_compiler_closure_not_proved");
         attempt.outcome = BuildAttemptOutcome::Unverified {
             code: code.to_owned(),
         };
-        store.finish_attempt(&attempt, None)?;
-        let decision = store.evaluate_launch(&project.dmb, false)?;
-        return Ok(json!({
-            "status": decision.status,
-            "record_id": decision.record_id,
-            "attempt_id": attempt.attempt_id,
-            "reasons": [{"code": code}],
-            "retained_dmb_sha256": after.dmb.sha256,
-        }));
-    }
-
-    attempt.outcome = BuildAttemptOutcome::Failed {
-        code: failure_code.unwrap_or("insufficient_evidence").to_owned(),
+        code
+    } else {
+        let code = failure_code.unwrap_or("insufficient_evidence");
+        attempt.outcome = BuildAttemptOutcome::Failed {
+            code: code.to_owned(),
+        };
+        code
     };
-    store.finish_attempt(&attempt, None)?;
-    let decision = store.evaluate_launch(&project.dmb, false)?;
+    let interruption = store.finish_attempt_checked(&attempt, None, checkpoint)?;
+    let decision = store.evaluate_launch(&after.dmb.path, false)?;
+    let reasons = if interruption.is_some()
+        || matches!(
+            evidence,
+            BuildEvidence::FreshArtifacts | BuildEvidence::ValidCacheHit,
+        ) {
+        json!([{"code": interruption.unwrap_or(code)}])
+    } else {
+        serde_json::to_value(decision.reasons)?
+    };
     Ok(json!({
         "status": decision.status,
         "record_id": decision.record_id,
         "attempt_id": attempt.attempt_id,
-        "reasons": decision.reasons,
+        "reasons": reasons,
         "retained_dmb_sha256": after.dmb.sha256,
+        "interruption": interruption,
     }))
 }
 

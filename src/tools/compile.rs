@@ -19,7 +19,7 @@ use crate::build_provenance::{
 };
 use crate::fixture_manifest::VerifiedFixtureManifest;
 use crate::mcp::ToolResult;
-use crate::process::{run_contained_process_observed, ProcessSpec, TerminationReason};
+use crate::process::{run_owned_process_observed, ProcessSpec, TerminationReason};
 use crate::state::ServerState;
 
 const DEFAULT_IDLE_TIMEOUT_MS: u64 = 45_000;
@@ -359,6 +359,14 @@ pub async fn compile(
     let project_root = path
         .parent()
         .ok_or_else(|| anyhow!("DreamMaker environment has no project root"))?;
+    let deadline = context.deadline(timeout_ms);
+    let mut lease = match context
+        .execution_lease(&dmb_path, compiler_working_directory, "compile", deadline)
+        .await?
+    {
+        Ok(lease) => lease,
+        Err(result) => return Ok(result),
+    };
     let artifact_before = ArtifactSnapshot::capture(project_root, &dmb_path)?;
     let prepared = PreparedBuild::capture(
         context.policy(),
@@ -377,17 +385,18 @@ pub async fn compile(
         .build_provenance()
         .map(|store| store.begin_attempt(&dmb_path, prepared.inputs.clone()))
         .transpose()?;
-    let execution = run_contained_process_observed(
+    lease.mark_writer_started();
+    let execution = run_owned_process_observed(
         ProcessSpec {
             program: compiler.clone(),
             arguments,
             working_directory: compiler_working_directory.to_owned(),
             environment: compiler_environment(),
             stdin: None,
-            timeout: Duration::from_millis(timeout_ms),
+            timeout: deadline.saturating_duration_since(tokio::time::Instant::now()),
             idle_timeout: Duration::from_millis(idle_timeout_ms),
             capture_network,
-            cancellation: None,
+            cancellation: context.cancellation(),
         },
         |stream, bytes| diagnostics.observe(stream, bytes),
     )
@@ -401,15 +410,15 @@ pub async fn compile(
         execution.stdout.truncated_bytes == 0 && execution.stderr.truncated_bytes == 0,
     );
 
+    let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path)?;
     let process_succeeded =
         execution.termination == TerminationReason::Exited && execution.exit_code == Some(0);
     let compiler_succeeded = compile_succeeded(
         process_succeeded && diagnostics.complete,
         diagnostics.error_count,
     );
-    let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path)?;
     let dmb_exists = artifact_after.exists;
-    let success = compiler_succeeded && dmb_exists;
+    let compiler_produced_artifact = compiler_succeeded && dmb_exists;
     let dmb_updated = artifact_after.exists
         && (!artifact_before.exists
             || artifact_before.sha256 != artifact_after.sha256
@@ -424,8 +433,9 @@ pub async fn compile(
         &path,
         &dmb_path,
         &artifact_after,
-        success,
+        compiler_produced_artifact,
         dmb_updated,
+        deadline,
         if process_succeeded && !diagnostics.complete {
             "diagnostic_analysis_incomplete"
         } else if compiler_succeeded && !dmb_exists {
@@ -434,19 +444,31 @@ pub async fn compile(
             "compile_timed_out"
         } else if idle {
             "compile_idle_timed_out"
+        } else if execution.termination == TerminationReason::Cancelled {
+            "compile_cancelled"
         } else {
             "compiler_failed"
         },
     )?;
 
+    let interruption = provenance["interruption"].as_str();
+    let success = compiler_produced_artifact && interruption.is_none();
+    let termination = match interruption {
+        Some("request_cancelled") => TerminationReason::Cancelled,
+        Some("request_timed_out") => TerminationReason::WallTimeout,
+        _ => execution.termination,
+    };
+    lease.finish()?;
     let result = json!({
         "success": success,
         "compiler_succeeded": compiler_succeeded,
         "diagnostic_analysis_error": (!diagnostics.complete).then_some("Compiler output could not be fully analyzed; inspect oversized_lines and output_complete in diagnostic_summary."),
         "artifact_error": (compiler_succeeded && !dmb_exists).then_some("Compiler exited successfully without producing a DMB."),
-        "timed_out": timed_out,
+        "timed_out": timed_out || interruption == Some("request_timed_out"),
         "idle": idle,
-        "termination": execution.termination,
+        "termination": termination,
+        "process_termination": execution.termination,
+        "finalization_interruption": interruption,
         "duration_ms": execution.duration_ms,
         "timeout_ms": timeout_ms,
         "idle_timeout_ms": idle_timeout_ms,
@@ -495,6 +517,7 @@ fn record_compile_provenance(
     artifact_after: &ArtifactSnapshot,
     success: bool,
     dmb_updated: bool,
+    deadline: tokio::time::Instant,
     failure_code: &str,
 ) -> Result<Value> {
     let Some(store) = context.build_provenance() else {
@@ -510,7 +533,8 @@ fn record_compile_provenance(
     let rsc_path = fixture
         .and_then(|fixture| fixture.rsc_path.clone())
         .unwrap_or_else(|| dme_path.with_extension("rsc"));
-    let verification_reason = prepared.finish_reason().or_else(|| {
+    let checkpoint = || context.finalization_reason(deadline);
+    let verification_reason = prepared.finish_reason_checked(checkpoint).or_else(|| {
         (fixture.is_some_and(|fixture| fixture.rsc_path.is_some()) && !rsc_path.is_file())
             .then_some("required_rsc_missing")
     });
@@ -519,8 +543,7 @@ fn record_compile_provenance(
 
     if success && dmb_updated && verification_reason.is_none() && artifact_after.exists {
         let dmb = FileIdentity::capture(dmb_path)?;
-        let rsc = rsc_path
-            .exists()
+        let rsc = (checkpoint().is_none() && rsc_path.exists())
             .then(|| FileIdentity::capture(&rsc_path))
             .transpose()?;
         inputs.sort_by(|left, right| {
@@ -544,7 +567,17 @@ fn record_compile_provenance(
         attempt.outcome = BuildAttemptOutcome::Succeeded;
         attempt.observed_inputs = inputs;
         attempt.retained_dmb_sha256 = artifact_after.sha256.clone();
-        store.finish_attempt(&attempt, Some(&record))?;
+        let interruption = store.finish_attempt_checked(&attempt, Some(&record), checkpoint)?;
+        if let Some(code) = interruption {
+            return compile_provenance_decision(
+                store,
+                dmb_path,
+                &attempt,
+                artifact_after,
+                code,
+                interruption,
+            );
+        }
         return Ok(json!({
             "status": "verified",
             "attempt_id": attempt.attempt_id,
@@ -571,28 +604,15 @@ fn record_compile_provenance(
         };
         attempt.observed_inputs = inputs;
         attempt.retained_dmb_sha256 = artifact_after.sha256.clone();
-        store.finish_attempt(&attempt, None)?;
-        let mut decision = store.evaluate_launch(dmb_path, false)?;
-        decision
-            .reasons
-            .push(crate::build_provenance::ProvenanceReason {
-                code: code.to_owned(),
-                message: "the build did not establish complete stable compiler input evidence"
-                    .to_owned(),
-                role: None,
-                path: None,
-            });
-        return Ok(json!({
-            "status": match decision.status {
-                ProvenanceStatus::Verified => "verified",
-                ProvenanceStatus::Unverified => "unverified",
-                ProvenanceStatus::Stale => "stale",
-            },
-            "record_id": decision.record_id,
-            "attempt_id": attempt.attempt_id,
-            "reasons": decision.reasons,
-            "retained_dmb_sha256": artifact_after.sha256,
-        }));
+        let interruption = store.finish_attempt_checked(&attempt, None, checkpoint)?;
+        return compile_provenance_decision(
+            store,
+            dmb_path,
+            &attempt,
+            artifact_after,
+            interruption.unwrap_or(code),
+            interruption,
+        );
     }
 
     Ok(json!({
@@ -600,6 +620,38 @@ fn record_compile_provenance(
         "record_id": null,
         "reasons": [{"code": verification_reason.unwrap_or("artifact_not_fresh")}],
         "retained_dmb_sha256": artifact_after.sha256,
+    }))
+}
+
+fn compile_provenance_decision(
+    store: &crate::BuildProvenanceStore,
+    dmb_path: &Path,
+    attempt: &BuildAttempt,
+    artifact_after: &ArtifactSnapshot,
+    code: &str,
+    interruption: Option<&str>,
+) -> Result<Value> {
+    let mut decision = store.evaluate_launch(dmb_path, false)?;
+    decision
+        .reasons
+        .push(crate::build_provenance::ProvenanceReason {
+            code: code.to_owned(),
+            message: "the build did not establish complete stable compiler input evidence"
+                .to_owned(),
+            role: None,
+            path: None,
+        });
+    Ok(json!({
+        "status": match decision.status {
+            ProvenanceStatus::Verified => "verified",
+            ProvenanceStatus::Unverified => "unverified",
+            ProvenanceStatus::Stale => "stale",
+        },
+        "record_id": decision.record_id,
+        "attempt_id": attempt.attempt_id,
+        "reasons": decision.reasons,
+        "retained_dmb_sha256": artifact_after.sha256,
+        "interruption": interruption,
     }))
 }
 

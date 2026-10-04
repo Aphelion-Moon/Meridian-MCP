@@ -235,6 +235,26 @@ async fn run_internal(
         .transpose()?
         .unwrap_or_else(|| artifact_directory.to_owned());
 
+    let mut launch_lease = if profiler_port.is_none() {
+        drop(state);
+        let lease = match context
+            .execution_lease(
+                &path,
+                &working_directory,
+                "standard",
+                context.deadline(startup_timeout_ms),
+            )
+            .await?
+        {
+            Ok(lease) => lease,
+            Err(result) => return Ok(result),
+        };
+        state = server_state.runtime().await;
+        Some(lease)
+    } else {
+        None
+    };
+
     if profiler_port.is_some() {
         extra_args.extend(["-params".to_owned(), "tracy".to_owned()]);
     }
@@ -293,6 +313,11 @@ async fn run_internal(
             .env("UTRACY_BIND_ADDRESS", "127.0.0.1")
             .env("UTRACY_BIND_PORT", profiler_port.to_string());
     }
+    let mut lease = launch_lease
+        .take()
+        .or_else(|| state.execution_lease.take())
+        .ok_or_else(|| anyhow!("runtime execution lease is missing"))?;
+    lease.mark_writer_started();
     let (mut child, containment) = match crate::process::spawn_runtime_process(&mut command) {
         Ok(child) => child,
         Err(error) => {
@@ -302,6 +327,7 @@ async fn run_internal(
     };
     let mut startup_ownership = StartupOwnership(Some(Arc::clone(&containment)));
     state.containment = Some(containment);
+    state.execution_lease = Some(lease);
 
     let pid = child.id();
 
@@ -420,23 +446,41 @@ async fn finalize_standard_integrity(
     action: &'static str,
 ) -> Result<Option<crate::runtime_integrity::RuntimeIntegritySummary>> {
     state.finish_runtime_cleanup().await?;
-    if let Some(summary) = &state.integrity_summary {
-        if summary.status != crate::runtime_integrity::RuntimeIntegrityStatus::Active {
-            return Ok(Some(summary.clone()));
-        }
-    }
+    let terminal_summary = state
+        .integrity_summary
+        .as_ref()
+        .filter(|summary| {
+            summary.status != crate::runtime_integrity::RuntimeIntegrityStatus::Active
+        })
+        .cloned();
     if let Some(stop) = state.integrity_stop.take() {
         let _ = stop.send(true);
     }
     if let Some(task) = state.integrity_task.take() {
         let _ = task.await;
     }
-    let Some(session) = &state.integrity else {
-        return Ok(None);
+    let summary = if terminal_summary.is_some() {
+        terminal_summary
+    } else if let Some(session) = &state.integrity {
+        let summary = session.lock().await.finalize(action).await?;
+        state.integrity_summary = Some(summary.clone());
+        Some(summary)
+    } else {
+        None
     };
-    let summary = session.lock().await.finalize(action).await?;
-    state.integrity_summary = Some(summary.clone());
-    Ok(Some(summary))
+    if state
+        .execution_lease
+        .as_ref()
+        .is_some_and(|lease| lease.kind() == "standard")
+    {
+        state
+            .execution_lease
+            .as_mut()
+            .expect("checked standard lease")
+            .finish()?;
+        state.execution_lease = None;
+    }
+    Ok(summary)
 }
 
 async fn capture_output_stream<R>(mut stream: R, output_log: OutputLog)
@@ -1065,10 +1109,14 @@ pub async fn stop(state: &ServerState, _args: Value) -> Result<ToolResult> {
     stop_with_lifecycle(state).await
 }
 
-async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResult> {
+pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResult> {
     let mut state = state.runtime().await;
     let was_running = state.is_game_running();
-    if !was_running && state.integrity.is_none() && state.containment.is_none() {
+    if !was_running
+        && state.integrity.is_none()
+        && state.containment.is_none()
+        && state.execution_lease.is_none()
+    {
         return Ok(ToolResult::error("No game instance is currently running."));
     }
 

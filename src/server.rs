@@ -27,7 +27,34 @@ pub struct MeridianServer {
 impl MeridianServer {
     /// Finalize the owned runtime after transport shutdown, with a bounded wait.
     pub async fn shutdown(&self) -> Result<()> {
+        self.execution.cancel_owned_requests();
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            if self.state.debugger().await.is_some() {
+                tools::call_tool(
+                    &self.execution,
+                    &self.state,
+                    "dm_debug_stop",
+                    serde_json::json!({}),
+                )
+                .await?;
+            }
+            let tracy_active = self
+                .state
+                .runtime()
+                .await
+                .execution_lease
+                .as_ref()
+                .is_some_and(|lease| lease.kind() == "tracy")
+                || self.state.tracy_capture().await.integrity_journal.is_some();
+            if tracy_active {
+                tools::call_tool(
+                    &self.execution,
+                    &self.state,
+                    "dm_tracy_stop",
+                    serde_json::json!({}),
+                )
+                .await?;
+            }
             tools::runtime::stop(&self.state, serde_json::json!({})).await?;
             Ok::<(), anyhow::Error>(())
         })

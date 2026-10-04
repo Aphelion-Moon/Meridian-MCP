@@ -24,6 +24,7 @@ fn payload(result: &ToolResult) -> Value {
 
 #[cfg(windows)]
 fn fixture(name: &str, dme_name: &str) -> (PathBuf, PathBuf) {
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
     let root = std::env::temp_dir().join(format!(
         "meridian-mcp-rift-{name}-{}-{}",
         std::process::id(),
@@ -64,10 +65,22 @@ exit /b 0
 }
 
 fn context(root: &Path, compilers: Vec<PathBuf>, access: RiftBuildAccess) -> ToolExecutionContext {
-    ToolExecutionContext::with_rift_build(
+    #[cfg(windows)]
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
+    let policy = PathPolicy::new(vec![root.to_owned()], compilers).unwrap();
+    let private_path = root.with_extension("private");
+    std::fs::create_dir_all(&private_path).unwrap();
+    let private = std::sync::Arc::new(
+        meridian_mcp::PrivateStateStore::open(&private_path, policy.effective_roots()).unwrap(),
+    );
+    ToolExecutionContext::with_features_and_state(
         CapabilityMode::Development,
-        PathPolicy::new(vec![root.to_owned()], compilers).unwrap(),
+        policy,
         access,
+        None,
+        None,
+        None,
+        Some(private),
     )
 }
 

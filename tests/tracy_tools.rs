@@ -8,12 +8,23 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+fn initialize_owner() {
+    #[cfg(windows)]
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
+    #[cfg(unix)]
+    meridian_mcp::process::initialize_runtime_owner_with_executable(std::path::Path::new(env!(
+        "CARGO_BIN_EXE_meridian-mcp"
+    )))
+    .unwrap();
+}
+
 async fn owned_collector(
     mode: &str,
 ) -> (
     std::path::PathBuf,
     std::sync::Arc<meridian_mcp::tracy_collector::TracyCollector>,
 ) {
+    initialize_owner();
     use meridian_mcp::tracy_collector::{TracyCollector, TracyCollectorSpec};
     let root = std::env::temp_dir().join(format!(
         "meridian-collector-{}-{}",
@@ -108,6 +119,7 @@ async fn collector_stderr_is_utf8_safe_and_keeps_a_bounded_tail() {
 
 #[tokio::test]
 async fn collector_stop_terminates_owned_child_with_blocked_protocol_writer() {
+    initialize_owner();
     use meridian_mcp::tracy_collector::{TracyCollector, TracyCollectorSpec};
     use std::time::Duration;
     let root = std::env::temp_dir().join(format!("meridian-collector-stop-{}", std::process::id()));

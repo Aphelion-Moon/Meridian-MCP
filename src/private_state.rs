@@ -206,6 +206,10 @@ impl PrivateStateStore {
 
     fn open_liveness_file(&self, relative: &str) -> Result<File> {
         let _operation = self.lock_operation()?;
+        self.open_liveness_file_unlocked(relative)
+    }
+
+    fn open_liveness_file_unlocked(&self, relative: &str) -> Result<File> {
         let path = self.resolve_record(relative, true)?;
         if let Ok(metadata) = std::fs::symlink_metadata(&path) {
             if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -320,6 +324,60 @@ impl PrivateStateTransaction<'_> {
             Ok(_) => bail!("private state namespace must be a regular directory"),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Bound directory entries as well as records while retaining the operation
+    /// lock. Execution admission cannot race another scope's active publication.
+    pub(crate) fn list_entries_bounded(
+        &self,
+        namespace: &str,
+        max_entries: usize,
+    ) -> Result<Vec<PathBuf>> {
+        if !self.namespace_exists(namespace)? {
+            return Ok(Vec::new());
+        }
+        let maximum = max_entries.min(MAX_RECORDS);
+        let mut pending = vec![self.store.resolve_record(namespace, false)?];
+        let mut records = Vec::new();
+        let mut entries = 0;
+        while let Some(directory) = pending.pop() {
+            for entry in std::fs::read_dir(directory)? {
+                let entry = entry?;
+                entries += 1;
+                if entries > maximum {
+                    bail!("private state entry enumeration exceeds its limit");
+                }
+                let metadata = entry.file_type()?;
+                if metadata.is_symlink() {
+                    bail!("private state namespaces cannot contain symlinks");
+                }
+                if metadata.is_dir() {
+                    pending.push(entry.path());
+                    records.push(entry.path());
+                } else if metadata.is_file() {
+                    records.push(entry.path());
+                } else {
+                    bail!("private state namespace entry must be a regular file or directory");
+                }
+            }
+        }
+        records.sort();
+        Ok(records)
+    }
+
+    /// Only a nonblocking lock is permitted inside an operation transaction.
+    pub(crate) fn try_acquire_liveness_lock(
+        &self,
+        relative: &str,
+    ) -> Result<Option<PrivateStateLivenessLock>> {
+        let file = self.store.open_liveness_file_unlocked(relative)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(PrivateStateLivenessLock { _file: file })),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+            Err(std::fs::TryLockError::Error(error)) => Err(error).with_context(|| {
+                format!("could not acquire private state liveness lock: {relative}")
+            }),
         }
     }
 

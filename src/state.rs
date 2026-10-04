@@ -137,6 +137,7 @@ pub enum StateError {
 pub struct RuntimeState {
     pub(crate) game_process: Option<Child>,
     pub(crate) containment: Option<Arc<crate::process::ProcessContainment>>,
+    pub(crate) execution_lease: Option<crate::execution_lease::ExecutionLease>,
     pub(crate) game_port: Option<u16>,
     pub(crate) output_log: OutputLog,
     pub(crate) runtime_output_tasks: Vec<JoinHandle<()>>,
@@ -168,6 +169,7 @@ impl RuntimeState {
         Self {
             game_process: None,
             containment: None,
+            execution_lease: None,
             game_port: None,
             output_log: OutputLog::default(),
             runtime_output_tasks: Vec::new(),
@@ -427,7 +429,7 @@ pub struct TracyCaptureState {
 
 pub(crate) struct TracyWakeClient {
     pub(crate) process: Child,
-    pub(crate) containment: crate::process::ProcessContainment,
+    pub(crate) containment: Arc<crate::process::ProcessContainment>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -483,24 +485,26 @@ impl Default for RuntimeState {
     }
 }
 
+#[derive(Clone)]
 pub struct ServerState {
-    analysis: RwLock<AnalysisState>,
+    analysis: Arc<RwLock<AnalysisState>>,
     /// Published metadata has its own short, synchronous lock so deadline
     /// reporting never queues behind analysis readers or writers.
-    analysis_metadata: StdMutex<AnalysisMetadata>,
+    analysis_metadata: Arc<StdMutex<AnalysisMetadata>>,
     runtime: Arc<Mutex<RuntimeState>>,
     assets: Arc<Mutex<DmiCache>>,
     asset_limits: crate::limits::ServerLimits,
     asset_jobs: Arc<tokio::sync::Semaphore>,
-    debugger: Mutex<Option<DebuggerSession>>,
-    lifecycle: Mutex<()>,
+    debugger: Arc<Mutex<Option<DebuggerSession>>>,
+    lifecycle: Arc<Mutex<()>>,
     /// Serializes environment parses. Held for the whole build so two callers
     /// never hold two complete object trees at once, and kept separate from
     /// `lifecycle` so a long parse does not block runtime launches.
     parse: Arc<Mutex<()>>,
     #[cfg(test)]
     pub(crate) parse_worker_test: Arc<ParseWorkerTestControl>,
-    tracy_capture: Mutex<TracyCaptureState>,
+    tracy_capture: Arc<Mutex<TracyCaptureState>>,
+    tracy_publication: Arc<Mutex<()>>,
 }
 
 impl ServerState {
@@ -510,18 +514,19 @@ impl ServerState {
 
     pub fn with_limits(limits: crate::limits::ServerLimits) -> Self {
         Self {
-            analysis: RwLock::new(AnalysisState::default()),
-            analysis_metadata: StdMutex::new(AnalysisMetadata::default()),
+            analysis: Arc::new(RwLock::new(AnalysisState::default())),
+            analysis_metadata: Arc::new(StdMutex::new(AnalysisMetadata::default())),
             runtime: Arc::new(Mutex::new(RuntimeState::new())),
             assets: Arc::new(Mutex::new(DmiCache::default())),
             asset_jobs: Arc::new(tokio::sync::Semaphore::new(limits.max_blocking_jobs.max(1))),
             asset_limits: limits,
-            debugger: Mutex::new(None),
-            lifecycle: Mutex::new(()),
+            debugger: Arc::new(Mutex::new(None)),
+            lifecycle: Arc::new(Mutex::new(())),
             parse: Arc::new(Mutex::new(())),
             #[cfg(test)]
             parse_worker_test: Arc::default(),
-            tracy_capture: Mutex::new(TracyCaptureState::default()),
+            tracy_capture: Arc::new(Mutex::new(TracyCaptureState::default())),
+            tracy_publication: Arc::new(Mutex::new(())),
         }
     }
 
@@ -704,6 +709,16 @@ impl ServerState {
 
     pub(crate) async fn tracy_capture(&self) -> MutexGuard<'_, TracyCaptureState> {
         self.tracy_capture.lock().await
+    }
+
+    pub(crate) async fn tracy_publication(&self) -> MutexGuard<'_, ()> {
+        self.tracy_publication.lock().await
+    }
+
+    pub(crate) fn try_tracy_publication(
+        &self,
+    ) -> Result<MutexGuard<'_, ()>, tokio::sync::TryLockError> {
+        self.tracy_publication.try_lock()
     }
 }
 

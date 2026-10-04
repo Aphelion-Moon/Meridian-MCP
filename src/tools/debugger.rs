@@ -49,6 +49,24 @@ pub async fn launch(
         .get("require_verified_provenance")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let mut lease = match context
+        .execution_lease(
+            &dmb_path,
+            dmb_path
+                .parent()
+                .ok_or_else(|| anyhow!("DMB has no parent"))?,
+            "debugger",
+            context.deadline(
+                args.get("startup_timeout_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(60_000),
+            ),
+        )
+        .await?
+    {
+        Ok(lease) => lease,
+        Err(result) => return Ok(result),
+    };
     let launch_provenance =
         match super::require_launchable_artifact(context, &dmb_path, require_verified) {
             Ok(provenance) => provenance,
@@ -105,12 +123,12 @@ pub async fn launch(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    let containment = ProcessContainment::new()?;
-    let mut process = command.spawn()?;
-    if let Err(error) = containment.assign(process.id().unwrap_or_default()) {
-        let _ = process.kill().await;
-        return Err(error.context("refusing to run the debugger host outside process containment"));
-    }
+    lease.mark_writer_started();
+    let (mut process, containment) = crate::process::spawn_runtime_process(&mut command)?;
+    let mut startup = DebuggerStartup {
+        containment: std::sync::Arc::clone(&containment),
+        lease: Some(lease),
+    };
     let limits = ServerLimits::default();
     let accepted = tokio::time::timeout(
         duration(
@@ -189,6 +207,7 @@ pub async fn launch(
         launch_provenance: launch_provenance.clone(),
         memory_helper_sha256: memory_helper.as_ref().map(|helper| helper.sha256.clone()),
         containment,
+        execution_lease: startup.lease.take(),
     });
     Ok(json_success(
         ToolMetadata::complete(Some(generation)),
@@ -242,18 +261,38 @@ fn dreamseeker_environment() -> Vec<(String, OsString)> {
 }
 
 pub async fn stop(state: &ServerState) -> Result<ToolResult> {
-    let session = state
-        .debugger()
-        .await
-        .take()
+    let _lifecycle = state.lifecycle().await;
+    stop_with_lifecycle(state).await
+}
+
+pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResult> {
+    let mut slot = state.debugger().await;
+    let session = slot
+        .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     let generation = session.state_generation;
     let launch_provenance = session.launch_provenance.clone();
     session.stop().await?;
+    *slot = None;
     Ok(json_success(
         ToolMetadata::complete(Some(generation)),
         json!({"lifecycle":"stopped","launch_provenance":launch_provenance}),
     ))
+}
+
+struct DebuggerStartup {
+    containment: std::sync::Arc<ProcessContainment>,
+    lease: Option<crate::execution_lease::ExecutionLease>,
+}
+impl Drop for DebuggerStartup {
+    fn drop(&mut self) {
+        if let Some(lease) = self.lease.take() {
+            crate::execution_lease::cleanup_dropped_writer(
+                std::sync::Arc::clone(&self.containment),
+                lease,
+            );
+        }
+    }
 }
 
 async fn request(state: &ServerState, request: AuxRequest) -> Result<(u64, AuxResponse)> {

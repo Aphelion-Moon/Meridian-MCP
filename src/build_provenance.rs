@@ -234,6 +234,19 @@ impl BuildProvenanceStore {
         attempt: &BuildAttempt,
         record: Option<&BuildRecord>,
     ) -> Result<()> {
+        self.finish_attempt_checked(attempt, record, || None)
+            .map(|_| ())
+    }
+
+    /// Check cancellation/deadline after acquiring the publication transaction.
+    /// Interrupted finalization retains evidence and the previous successful
+    /// record, but cannot install a newly verified completion.
+    pub(crate) fn finish_attempt_checked(
+        &self,
+        attempt: &BuildAttempt,
+        record: Option<&BuildRecord>,
+        checkpoint: impl FnOnce() -> Option<&'static str>,
+    ) -> Result<Option<&'static str>> {
         if attempt.schema != 1 || attempt.attempt_id.is_empty() || attempt.artifact_key.len() != 64
         {
             bail!("build attempt is invalid");
@@ -261,12 +274,19 @@ impl BuildProvenanceStore {
         {
             bail!("build attempt is no longer the current in-progress attempt");
         }
-        if let Some(record) = record {
+        let interruption = checkpoint();
+        current.attempt = attempt.clone();
+        if let Some(code) = interruption {
+            if !matches!(attempt.outcome, BuildAttemptOutcome::Failed { .. }) {
+                current.attempt.outcome = BuildAttemptOutcome::Unverified {
+                    code: code.to_owned(),
+                };
+            }
+        } else if let Some(record) = record {
             current.record = Some(record.clone());
         }
-        current.attempt = attempt.clone();
         transaction.write_json_atomic(&path, &current)?;
-        Ok(())
+        Ok(interruption)
     }
 
     fn authorized_location(&self, path: &Path) -> Result<PathBuf> {
@@ -846,11 +866,137 @@ impl PreparedBuild {
         Ok(prepared)
     }
 
-    pub fn finish_reason(&self) -> Option<&'static str> {
-        if self.inputs.iter().any(|input| !matches!(FileIdentity::capture(&input.path), Ok(current) if current.size == input.size && current.sha256 == input.sha256 && input.resolved_path.as_ref().is_none_or(|path| *path == current.path)))
-            || self.verification.absent_inputs.iter().any(|path| std::fs::symlink_metadata(path).is_ok())
-            || !matches!(FileIdentity::capture(&self.compiler.path), Ok(current) if current.sha256 == self.compiler.sha256 && current.size == self.compiler.size)
-        { return Some("build_inputs_changed"); }
+    pub fn finish_reason_checked(
+        &self,
+        checkpoint: impl Fn() -> Option<&'static str>,
+    ) -> Option<&'static str> {
+        for input in &self.inputs {
+            if let Some(reason) = checkpoint() {
+                return Some(reason);
+            }
+            let current = FileIdentity::capture(&input.path);
+            if let Some(reason) = checkpoint() {
+                return Some(reason);
+            }
+            if !matches!(current, Ok(current) if current.size == input.size
+                && current.sha256 == input.sha256
+                && input.resolved_path.as_ref().is_none_or(|path| *path == current.path))
+            {
+                return Some("build_inputs_changed");
+            }
+        }
+        for path in &self.verification.absent_inputs {
+            if let Some(reason) = checkpoint() {
+                return Some(reason);
+            }
+            if std::fs::symlink_metadata(path).is_ok() {
+                return Some("build_inputs_changed");
+            }
+        }
+        if let Some(reason) = checkpoint() {
+            return Some(reason);
+        }
+        let compiler = FileIdentity::capture(&self.compiler.path);
+        if let Some(reason) = checkpoint() {
+            return Some(reason);
+        }
+        if !matches!(compiler, Ok(current) if current.sha256 == self.compiler.sha256
+            && current.size == self.compiler.size)
+        {
+            return Some("build_inputs_changed");
+        }
         self.reason
+    }
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+    use crate::tools::ToolExecutionContext;
+
+    #[test]
+    fn cancelled_publication_retains_outputs_and_previous_record_without_verified_completion() {
+        let base = std::env::temp_dir().join(format!(
+            "meridian-publication-{}-{}",
+            std::process::id(),
+            random_id().unwrap(),
+        ));
+        let root = base.join("workspace");
+        let state_dir = base.join("state");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let input = root.join("source.dm");
+        let dmb = root.join("world.dmb");
+        std::fs::write(&input, "/world\n").unwrap();
+        std::fs::write(&dmb, "previous-output").unwrap();
+        let policy = PathPolicy::new(vec![root.clone()], Vec::new()).unwrap();
+        let state =
+            Arc::new(PrivateStateStore::open(&state_dir, policy.effective_roots()).unwrap());
+        let store = Arc::new(BuildProvenanceStore::new(state.clone(), policy.clone()));
+        let mut context = ToolExecutionContext::with_features_and_state(
+            crate::CapabilityMode::Development,
+            policy,
+            crate::RiftBuildAccess::Disabled,
+            None,
+            None,
+            None,
+            Some(state.clone()),
+        );
+        let (cancel, cancellation) = tokio::sync::watch::channel(false);
+        context.cancellation = Some(cancellation);
+        let inputs = vec![BuildInputIdentity::capture(&root, &input, "source").unwrap()];
+        let mut record = BuildRecord {
+            schema: 2,
+            record_id: "previous-success".to_owned(),
+            artifact_key: store.artifact_key(&dmb).unwrap(),
+            mcp_build: crate::build_identity::current().clone(),
+            compiler: FileIdentity::capture(&input).unwrap(),
+            project: store.project_identity(&dmb).unwrap(),
+            inputs: inputs.clone(),
+            verification: None,
+            dmb: FileIdentity::capture(&dmb).unwrap(),
+            rsc: None,
+            fixture_manifest_sha256: None,
+            created_at_unix_ms: unix_ms(),
+        };
+        let mut previous = store.begin_attempt(&dmb, inputs.clone()).unwrap();
+        previous.outcome = BuildAttemptOutcome::Succeeded;
+        store.finish_attempt(&previous, Some(&record)).unwrap();
+        std::fs::write(&dmb, "produced-output").unwrap();
+        record.record_id = "candidate-success".to_owned();
+        record.dmb = FileIdentity::capture(&dmb).unwrap();
+        let mut attempt = store.begin_attempt(&dmb, inputs).unwrap();
+        attempt.outcome = BuildAttemptOutcome::Succeeded;
+        attempt.retained_dmb_sha256 = Some(record.dmb.sha256.clone());
+        let key = attempt.artifact_key.clone();
+        let publication = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(state_dir.join(".meridian-mcp.lock"))
+            .unwrap();
+        publication.lock().unwrap();
+        let candidate_store = store.clone();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let publisher = std::thread::spawn(move || {
+            candidate_store
+                .finish_attempt_checked(&attempt, Some(&record), || {
+                    context.finalization_reason(deadline)
+                })
+                .unwrap()
+        });
+        cancel.send(true).unwrap();
+        drop(publication);
+        assert_eq!(publisher.join().unwrap(), Some("request_cancelled"));
+        let current: ArtifactState = state.read_json(&state_path(&key)).unwrap();
+        assert_eq!(
+            current.attempt.outcome,
+            BuildAttemptOutcome::Unverified {
+                code: "request_cancelled".to_owned(),
+            }
+        );
+        assert!(current.attempt.retained_dmb_sha256.is_some());
+        assert!(!current.attempt.observed_inputs.is_empty());
+        assert_eq!(current.record.unwrap().record_id, "previous-success");
+        std::fs::remove_dir_all(base).unwrap();
     }
 }
