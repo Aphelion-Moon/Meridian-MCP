@@ -38,11 +38,8 @@ const BLOCKING_ERROR_MESSAGES: &[&str] = &["i/o error opening file", "i/o error 
 /// environment on a cold cache; present so a pathological input cannot wedge a
 /// client forever with no reply.
 const DEFAULT_PARSE_TIMEOUT_MS: u64 = 600_000;
-const MAX_PARSE_TIMEOUT_MS: u64 = 1_800_000;
 const DEFAULT_TYPE_LIMIT: u64 = 100;
-const MAX_TYPE_LIMIT: u64 = 500;
 const DEFAULT_SYMBOL_LIMIT: u64 = 50;
-const MAX_SYMBOL_LIMIT: u64 = 200;
 
 /// Render a canonicalized path the way a caller wrote it.
 ///
@@ -71,31 +68,11 @@ fn is_blocking_error(description: &str) -> bool {
         || BLOCKING_ERROR_MESSAGES.contains(&description)
 }
 
-fn validated_parse_timeout(args: &Value) -> Result<Duration> {
-    let timeout_ms = args
-        .get("timeout_ms")
-        .map(|value| {
-            value
-                .as_u64()
-                .ok_or_else(|| anyhow!("timeout_ms must be an integer"))
-        })
-        .transpose()?
-        .unwrap_or(DEFAULT_PARSE_TIMEOUT_MS);
-    if !(1..=MAX_PARSE_TIMEOUT_MS).contains(&timeout_ms) {
-        return Err(anyhow!(
-            "timeout_ms must be between 1 and {MAX_PARSE_TIMEOUT_MS}"
-        ));
-    }
-    Ok(Duration::from_millis(timeout_ms))
-}
-
 /// Parse a DreamMaker environment
 #[cfg(test)]
 pub async fn parse_environment(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let path = args
-        .get("dme_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing dme_path argument"))?;
+    let args: crate::parameters::ParseEnvironmentParams = crate::parameters::decode(args)?;
+    let path = args.dme_path.as_str();
     let root = std::path::Path::new(path)
         .parent()
         .ok_or_else(|| anyhow!("Environment has no parent"))?;
@@ -118,29 +95,15 @@ enum ParseOutcome {
 
 pub(crate) async fn parse_environment_with_policy(
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::ParseEnvironmentParams,
     policy: &PathPolicy,
 ) -> Result<ToolResult> {
     let request_started = Instant::now();
-    let dme_path = args
-        .get("dme_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing dme_path argument"))?;
-    let timeout = match validated_parse_timeout(&args) {
-        Ok(timeout) => timeout,
-        Err(error) => {
-            return parse_failure(
-                state,
-                ToolErrorCode::InvalidInput,
-                error.to_string(),
-                Some("Use timeout_ms between 1 and 1800000 milliseconds.".to_owned()),
-            )
-            .await
-        }
-    };
+    let dme_path = args.dme_path.as_str();
+    let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(DEFAULT_PARSE_TIMEOUT_MS));
     let deadline = tokio::time::Instant::from_std(request_started + timeout);
     let path = PathBuf::from(dme_path);
-    let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
+    let force = args.force.unwrap_or(false);
 
     let queue_started = Instant::now();
     let permit = match tokio::time::timeout_at(deadline, state.parse_permit()).await {
@@ -413,15 +376,15 @@ fn get_file_path(context: &AnalysisContext, file_id: dreammaker::FileId) -> Stri
 }
 
 /// Get type information
-pub async fn get_type(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn get_type(
+    state: &ServerState,
+    args: crate::parameters::GetTypeParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
 
-    let type_path = args
-        .get("type_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
+    let type_path = args.type_path.as_str();
 
     match objtree.find(type_path) {
         Some(ty) => {
@@ -481,22 +444,22 @@ pub async fn get_type(state: &ServerState, args: Value) -> Result<ToolResult> {
 }
 
 /// Get proc information
-pub async fn get_proc(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn get_proc(
+    state: &ServerState,
+    args: crate::parameters::GetProcParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let (include_source, max_source_lines) =
-        super::search::source_options(&args, snapshot.search_index.source_line_limit())?;
+    let (include_source, max_source_lines) = (
+        args.include_source.unwrap_or(true),
+        args.max_source_lines
+            .unwrap_or(snapshot.search_index.source_line_limit() as u64) as usize,
+    );
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
 
-    let type_path = args
-        .get("type_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
+    let type_path = args.type_path.as_str();
 
-    let proc_name = args
-        .get("proc_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing proc_name argument"))?;
+    let proc_name = args.proc_name.as_str();
 
     let resolution = match snapshot.proc_resolver().resolve(type_path, proc_name) {
         Ok(resolution) => resolution,
@@ -576,20 +539,17 @@ pub async fn get_proc(state: &ServerState, args: Value) -> Result<ToolResult> {
 }
 
 /// Get variable information
-pub async fn get_var(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn get_var(
+    state: &ServerState,
+    args: crate::parameters::GetVarParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
 
-    let type_path = args
-        .get("type_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
+    let type_path = args.type_path.as_str();
 
-    let var_name = args
-        .get("var_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing var_name argument"))?;
+    let var_name = args.var_name.as_str();
 
     match objtree.find(type_path) {
         Some(ty) => match ty.get_value(var_name) {
@@ -648,24 +608,23 @@ pub async fn get_var(state: &ServerState, args: Value) -> Result<ToolResult> {
 }
 
 /// List types in the object tree
-pub async fn list_types(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn list_types(
+    state: &ServerState,
+    args: crate::parameters::ListTypesParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
     let objtree = &snapshot.objtree;
 
-    let prefix = args.get("prefix").and_then(|v| v.as_str()).unwrap_or("");
+    let prefix = args.prefix.as_deref().unwrap_or("");
 
-    let max_depth = args
-        .get("max_depth")
-        .and_then(|v| v.as_u64())
-        .map(|d| d as usize);
-    let limit = super::bounded_u64(&args, "limit", DEFAULT_TYPE_LIMIT, 1, MAX_TYPE_LIMIT)? as usize;
-    let cursor = match args.get("cursor") {
-        Some(Value::String(cursor)) => cursor
-            .parse::<usize>()
-            .map_err(|_| anyhow!("cursor must be a non-negative integer string"))?,
-        Some(_) => return Err(anyhow!("cursor must be a non-negative integer string")),
-        None => 0,
-    };
+    let max_depth = args.max_depth.map(|d| d as usize);
+    let limit = args.limit.unwrap_or(DEFAULT_TYPE_LIMIT) as usize;
+    let cursor = args
+        .cursor
+        .as_deref()
+        .map(str::parse::<usize>)
+        .transpose()?
+        .unwrap_or(0);
 
     let matching_types: Vec<_> = objtree
         .iter_types()
@@ -718,24 +677,26 @@ pub async fn list_types(state: &ServerState, args: Value) -> Result<ToolResult> 
 }
 
 /// Search for symbols
-pub async fn search_symbols(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn search_symbols(
+    state: &ServerState,
+    args: crate::parameters::SearchSymbolsParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
 
-    let query = args
-        .get("query")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing query argument"))?
-        .to_lowercase();
+    let query = args.query.as_str().to_lowercase();
 
-    let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("all");
+    let kind = args
+        .kind
+        .as_ref()
+        .map(|value| value.as_str())
+        .unwrap_or("all");
     if !matches!(kind, "type" | "proc" | "var" | "macro" | "all") {
         return Err(anyhow!("kind must be one of: type, proc, var, macro, all"));
     }
 
-    let limit =
-        super::bounded_u64(&args, "limit", DEFAULT_SYMBOL_LIMIT, 1, MAX_SYMBOL_LIMIT)? as usize;
+    let limit = args.limit.unwrap_or(DEFAULT_SYMBOL_LIMIT) as usize;
 
     let mut results: Vec<Value> = Vec::new();
 
@@ -1258,9 +1219,13 @@ mod tests {
             .await
             .unwrap();
         std::fs::remove_file(&source).unwrap();
-        let result = get_proc(&state, json!({"type_path":"", "proc_name":"long_excerpt"}))
-            .await
-            .unwrap();
+        let result = get_proc(
+            &state,
+            crate::parameters::decode(json!({"type_path":"", "proc_name":"long_excerpt"}))
+                .expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         let body = result_json(&result);
         assert_eq!(body["state_generation"], 1);
         let implementation = &body["overrides"][0];
@@ -1289,12 +1254,19 @@ mod tests {
 
     #[test]
     fn parse_timeout_rejects_values_outside_the_contract() {
-        assert!(validated_parse_timeout(&json!({"timeout_ms": 0})).is_err());
-        assert!(validated_parse_timeout(&json!({"timeout_ms": 1_800_001})).is_err());
-        assert_eq!(
-            validated_parse_timeout(&json!({"timeout_ms": 1_800_000})).unwrap(),
-            Duration::from_millis(1_800_000),
-        );
+        for timeout in [0, 1_800_001] {
+            assert!(
+                crate::parameters::decode::<crate::parameters::ParseEnvironmentParams>(
+                    json!({"dme_path":"fixture.dme","timeout_ms":timeout})
+                )
+                .is_err()
+            );
+        }
+        let request = crate::parameters::decode::<crate::parameters::ParseEnvironmentParams>(
+            json!({"dme_path":"fixture.dme","timeout_ms":1_800_000}),
+        )
+        .unwrap();
+        assert_eq!(request.timeout_ms, Some(1_800_000));
     }
 
     #[tokio::test]
@@ -1454,9 +1426,13 @@ mod tests {
     #[tokio::test]
     async fn type_inspection_returns_docs_and_direct_children() {
         let (directory, state) = parsed_fixture().await;
-        let result = get_type(&state, json!({"type_path": "/datum/meridian_fixture"}))
-            .await
-            .unwrap();
+        let result = get_type(
+            &state,
+            crate::parameters::decode(json!({"type_path": "/datum/meridian_fixture"}))
+                .expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         let payload = result_json(&result);
 
         assert!(payload["documentation"]
@@ -1476,10 +1452,11 @@ mod tests {
         let (directory, state) = parsed_fixture().await;
         let result = get_proc(
             &state,
-            json!({
+            crate::parameters::decode(json!({
                 "type_path": "/datum/meridian_fixture",
                 "proc_name": "do_work"
-            }),
+            }))
+            .expect("valid fixture request"),
         )
         .await
         .unwrap();
@@ -1499,10 +1476,11 @@ mod tests {
         let (directory, state) = parsed_fixture().await;
         let result = get_proc(
             &state,
-            json!({
+            crate::parameters::decode(json!({
                 "type_path": "/datum/meridian_fixture/child",
                 "proc_name": "do_work"
-            }),
+            }))
+            .expect("valid fixture request"),
         )
         .await
         .unwrap();
@@ -1521,10 +1499,11 @@ mod tests {
         let (directory, state) = parsed_fixture().await;
         let result = get_var(
             &state,
-            json!({
+            crate::parameters::decode(json!({
                 "type_path": "/datum/meridian_fixture",
                 "var_name": "items"
-            }),
+            }))
+            .expect("valid fixture request"),
         )
         .await
         .unwrap();
@@ -1544,7 +1523,8 @@ mod tests {
         let (directory, state) = parsed_fixture().await;
         let first = list_types(
             &state,
-            json!({"prefix": "/datum/meridian_fixture", "limit": 1}),
+            crate::parameters::decode(json!({"prefix": "/datum/meridian_fixture", "limit": 1}))
+                .expect("valid fixture request"),
         )
         .await
         .unwrap();
@@ -1557,11 +1537,12 @@ mod tests {
 
         let second = list_types(
             &state,
-            json!({
+            crate::parameters::decode(json!({
                 "prefix": "/datum/meridian_fixture",
                 "limit": 1,
                 "cursor": "1"
-            }),
+            }))
+            .expect("valid fixture request"),
         )
         .await
         .unwrap();
@@ -1577,14 +1558,12 @@ mod tests {
 
     #[tokio::test]
     async fn symbol_search_rejects_unbounded_limits() {
-        let (directory, state) = parsed_fixture().await;
-        let error = search_symbols(&state, json!({"query": "meridian_fixture", "limit": 201}))
-            .await
-            .unwrap_err();
-
-        assert!(error
-            .to_string()
-            .contains("limit must be between 1 and 200"));
+        let (directory, _state) = parsed_fixture().await;
+        let error = crate::parameters::decode::<crate::parameters::SearchSymbolsParams>(
+            json!({"query":"meridian_fixture","limit":201}),
+        )
+        .unwrap_err();
+        assert_eq!(error.field, "limit");
 
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -1647,9 +1626,13 @@ mod tests {
 
         assert_eq!(failed.is_error, Some(true), "parse result: {failed:?}");
         assert_eq!(state.state_generation().await, generation);
-        let preserved = get_type(&state, json!({"type_path": "/datum/meridian_fixture"}))
-            .await
-            .unwrap();
+        let preserved = get_type(
+            &state,
+            crate::parameters::decode(json!({"type_path": "/datum/meridian_fixture"}))
+                .expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         assert_eq!(preserved.is_error, None, "lookup result: {preserved:?}");
         std::fs::remove_dir_all(directory).unwrap();
     }

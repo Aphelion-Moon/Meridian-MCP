@@ -1,16 +1,15 @@
 use anyhow::Result;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::BTreeMap;
 use tracing::info;
 
 use crate::analysis_snapshot::DiagnosticRecord;
 use crate::mcp::ToolResult;
-use crate::result::{json_success, structured_error, ToolErrorCode, ToolMetadata};
+use crate::result::{json_success, ToolMetadata};
 use crate::state::ServerState;
 
 const DEFAULT_DIAGNOSTIC_LIMIT: usize = 50;
-const MAXIMUM_DIAGNOSTIC_LIMIT: usize = 100;
 
 #[derive(Debug)]
 struct DiagnosticQuery {
@@ -40,11 +39,24 @@ struct DiagnosticQueryResult<'a> {
     next_cursor: Option<String>,
 }
 
-pub async fn check_errors(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn check_errors(
+    state: &ServerState,
+    args: crate::parameters::CheckErrorsParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let query = match parse_diagnostic_query(&args) {
-        Ok(query) => query,
-        Err(result) => return Ok(result),
+    let query = DiagnosticQuery {
+        file_path: args.file_path,
+        severity: args.severity.map(|value| value.as_str().into()),
+        component: args.component.map(|value| value.as_str().into()),
+        rule: args.rule,
+        configured: args.configured,
+        cursor: args
+            .cursor
+            .as_deref()
+            .map(str::parse::<usize>)
+            .transpose()?
+            .unwrap_or(0),
+        limit: args.limit.unwrap_or(DEFAULT_DIAGNOSTIC_LIMIT as u64) as usize,
     };
 
     info!("Reading cached DreamChecker diagnostics...");
@@ -88,84 +100,6 @@ pub async fn check_errors(state: &ServerState, args: Value) -> Result<ToolResult
     });
 
     Ok(json_success(metadata, result))
-}
-
-fn parse_diagnostic_query(args: &Value) -> std::result::Result<DiagnosticQuery, ToolResult> {
-    let file_path = optional_string(args, "file_path")?;
-    let severity = optional_string(args, "severity")?;
-    let component = optional_string(args, "component")?;
-    let rule = optional_string(args, "rule")?;
-    let configured = match args.get("configured") {
-        Some(Value::Bool(value)) => Some(*value),
-        Some(_) => return Err(invalid_diagnostic_input("configured must be a boolean")),
-        None => None,
-    };
-    let cursor = match args.get("cursor") {
-        Some(Value::String(value)) => value.parse::<usize>().map_err(|_| {
-            invalid_diagnostic_input("cursor must be a non-negative integer string")
-        })?,
-        Some(_) => return Err(invalid_diagnostic_input("cursor must be a string")),
-        None => 0,
-    };
-    let limit = match args.get("limit") {
-        Some(value) => value.as_u64().and_then(|limit| usize::try_from(limit).ok()),
-        None => Some(DEFAULT_DIAGNOSTIC_LIMIT),
-    }
-    .filter(|limit| (1..=MAXIMUM_DIAGNOSTIC_LIMIT).contains(limit))
-    .ok_or_else(|| {
-        invalid_diagnostic_input(&format!(
-            "limit must be an integer from 1 through {MAXIMUM_DIAGNOSTIC_LIMIT}"
-        ))
-    })?;
-
-    if severity
-        .as_deref()
-        .is_some_and(|value| !matches!(value, "error" | "warning" | "info" | "hint"))
-    {
-        return Err(invalid_diagnostic_input(
-            "severity must be error, warning, info, or hint",
-        ));
-    }
-    if component
-        .as_deref()
-        .is_some_and(|value| !matches!(value, "parser" | "dreamchecker"))
-    {
-        return Err(invalid_diagnostic_input(
-            "component must be parser or dreamchecker",
-        ));
-    }
-
-    Ok(DiagnosticQuery {
-        file_path,
-        severity,
-        component,
-        rule,
-        configured,
-        cursor,
-        limit,
-    })
-}
-
-fn optional_string(args: &Value, field: &str) -> std::result::Result<Option<String>, ToolResult> {
-    match args.get(field) {
-        Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
-        Some(Value::String(_)) => Err(invalid_diagnostic_input(&format!(
-            "{field} must not be empty"
-        ))),
-        Some(_) => Err(invalid_diagnostic_input(&format!(
-            "{field} must be a string"
-        ))),
-        None => Ok(None),
-    }
-}
-
-fn invalid_diagnostic_input(message: &str) -> ToolResult {
-    structured_error(
-        ToolErrorCode::InvalidInput,
-        message,
-        Some("Correct the dm_check_errors arguments and retry.".to_owned()),
-        json!({}),
-    )
 }
 
 fn query_diagnostics<'a>(

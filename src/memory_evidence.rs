@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 const MAX_DOCUMENT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_SAMPLES: usize = 100_000;
+pub(crate) const MAX_SAMPLE_LIMIT: usize = 100;
 
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -23,7 +24,7 @@ pub struct MemoryRequest {
     pub end_ms: Option<u64>,
     /// Maximum returned samples per metric, from 0 to 100. Statistics use all selected samples.
     #[serde(default = "default_sample_limit")]
-    #[schemars(range(min = 0, max = 100))]
+    #[schemars(range(min = 0, max = MAX_SAMPLE_LIMIT))]
     pub sample_limit: usize,
 }
 
@@ -104,7 +105,7 @@ pub struct MemorySummary {
 
 pub fn summarize(policy: &PathPolicy, request: MemoryRequest) -> Result<MemorySummary> {
     ensure!(
-        request.sample_limit <= 100,
+        request.sample_limit <= MAX_SAMPLE_LIMIT,
         "sample_limit must be between 0 and 100"
     );
     ensure!(

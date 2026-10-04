@@ -37,7 +37,10 @@ fn launch_reserved_arguments_cannot_override_managed_settings() {
         json!(["-params", "x\u{0}y"]),
     ] {
         assert!(
-            RunOptions::parse(&json!({"dmb_path":"fixture.dmb", "daemon_args":extra})).is_err(),
+            crate::parameters::decode::<crate::parameters::RunParams>(
+                json!({"dmb_path":"fixture.dmb", "daemon_args":extra})
+            )
+            .is_err(),
             "accepted {extra}"
         );
     }
@@ -54,7 +57,10 @@ fn launch_reserved_arguments_cannot_override_managed_settings() {
         json!(["-params file=fixture.dmb"]),
     ] {
         assert!(
-            RunOptions::parse(&json!({"dmb_path":"fixture.dmb", "daemon_args":extra})).is_ok(),
+            crate::parameters::decode::<crate::parameters::RunParams>(
+                json!({"dmb_path":"fixture.dmb", "daemon_args":extra})
+            )
+            .is_ok(),
             "rejected option values {extra}"
         );
     }
@@ -202,7 +208,9 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
         if case == "absolute" {
             std::fs::write(&tracked, "after").unwrap();
         }
-        let stopped = super::stop(&state, json!({})).await.unwrap();
+        let stopped = super::stop(&state, crate::parameters::StopParams::default())
+            .await
+            .unwrap();
         outcomes.push((case, payload(&result), payload(&stopped)));
     }
     drop(state);

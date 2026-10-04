@@ -17,17 +17,12 @@ use crate::spaceman::dmm::{
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 
-fn pass_selection(args: &Value) -> Result<(Vec<&str>, Vec<&str>)> {
-    let enabled = args
-        .get("enable_passes")
-        .and_then(Value::as_array)
-        .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-        .unwrap_or_default();
-    let disabled = args
-        .get("disable_passes")
-        .and_then(Value::as_array)
-        .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
-        .unwrap_or_default();
+pub(crate) fn pass_selection<'a>(
+    enabled: &'a [String],
+    disabled: &'a [String],
+) -> Result<(Vec<&'a str>, Vec<&'a str>)> {
+    let enabled = enabled.iter().map(String::as_str).collect::<Vec<_>>();
+    let disabled = disabled.iter().map(String::as_str).collect::<Vec<_>>();
     let known = render_pass_inventory()
         .into_iter()
         .map(|pass| pass.name)
@@ -44,38 +39,24 @@ fn pass_selection(args: &Value) -> Result<(Vec<&str>, Vec<&str>)> {
 }
 
 fn validated_render_bounds(
-    args: &Value,
+    args: &crate::parameters::RenderMapParams,
     dimensions: (usize, usize, usize),
 ) -> Result<(usize, [usize; 3], [usize; 3])> {
     let (dim_x, dim_y, dim_z) = dimensions;
-    let z_level = args.get("z_level").and_then(Value::as_u64).unwrap_or(1) as usize;
+    let z_level = args.z_level.unwrap_or(1) as usize;
     if z_level == 0 || z_level > dim_z {
         return Err(anyhow!(
             "Z-level {z_level} is outside the map range 1..={dim_z}"
         ));
     }
-    let parse_bound = |key: &str, fallback: [usize; 3]| -> Result<[usize; 3]> {
-        match args.get(key).and_then(Value::as_array) {
-            None => Ok(fallback),
-            Some(values) if values.len() == 3 => Ok([
-                values[0]
-                    .as_u64()
-                    .ok_or_else(|| anyhow!("bounds must be positive integers"))?
-                    as usize,
-                values[1]
-                    .as_u64()
-                    .ok_or_else(|| anyhow!("bounds must be positive integers"))?
-                    as usize,
-                values[2]
-                    .as_u64()
-                    .ok_or_else(|| anyhow!("bounds must be positive integers"))?
-                    as usize,
-            ]),
-            Some(_) => Err(anyhow!("bounds require exactly [x,y,z]")),
-        }
-    };
-    let min = parse_bound("min", [1, 1, z_level])?;
-    let max = parse_bound("max", [dim_x, dim_y, z_level])?;
+    let min = args
+        .min
+        .map(|values| values.map(|value| value.0 as usize))
+        .unwrap_or([1, 1, z_level]);
+    let max = args
+        .max
+        .map(|values| values.map(|value| value.0 as usize))
+        .unwrap_or([dim_x, dim_y, z_level]);
     if min.contains(&0)
         || min[0] > max[0]
         || min[1] > max[1]
@@ -97,15 +78,12 @@ fn validated_render_bounds(
 pub async fn render_map(
     execution: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::RenderMapParams,
 ) -> Result<ToolResult> {
-    let dmm_path = args
-        .get("dmm_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing dmm_path argument"))?;
+    let dmm_path = args.dmm_path.as_str();
     let output_path = args
-        .get("output_path")
-        .and_then(Value::as_str)
+        .output_path
+        .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(dmm_path).with_extension("png"));
     let path = PathBuf::from(dmm_path);
@@ -128,7 +106,10 @@ pub async fn render_map(
     let mut icon_cache =
         IconCache::with_read_policy(std::sync::Arc::new(execution.policy().clone()));
     icon_cache.set_icons_root(environment_root);
-    let (enabled, disabled) = pass_selection(&args)?;
+    let (enabled, disabled) = pass_selection(
+        args.enable_passes.as_deref().unwrap_or_default(),
+        args.disable_passes.as_deref().unwrap_or_default(),
+    )?;
     let render_passes =
         render_passes::configure_list(&context.config.map_renderer, &enabled, &disabled);
     let errors: RwLock<_> = Default::default();
@@ -165,9 +146,7 @@ pub async fn render_map(
     let artifact = write_atomic(
         execution.policy(),
         &output_path,
-        args.get("overwrite")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        args.overwrite.unwrap_or(false),
         |file| file.write_all(&encoded).map_err(AtomicOutputError::from),
     )?;
 
@@ -190,11 +169,8 @@ pub async fn render_map(
 }
 
 /// Get map dimensions and atom instance statistics.
-pub async fn map_info(args: Value) -> Result<ToolResult> {
-    let dmm_path = args
-        .get("dmm_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing dmm_path argument"))?;
+pub async fn map_info(args: crate::parameters::MapInfoParams) -> Result<ToolResult> {
+    let dmm_path = args.dmm_path.as_str();
     let path = PathBuf::from(dmm_path);
     if !path.exists() {
         return Ok(ToolResult::error(format!("File not found: {dmm_path}")));
@@ -249,22 +225,11 @@ pub async fn map_info(args: Value) -> Result<ToolResult> {
     }))?))
 }
 
-pub async fn diff_maps(args: Value) -> Result<ToolResult> {
-    let left = PathBuf::from(
-        args.get("left_dmm_path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("Missing left_dmm_path"))?,
-    );
-    let right = PathBuf::from(
-        args.get("right_dmm_path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("Missing right_dmm_path"))?,
-    );
+pub async fn diff_maps(args: crate::parameters::DiffMapsParams) -> Result<ToolResult> {
+    let left = PathBuf::from(args.left_dmm_path.as_str());
+    let right = PathBuf::from(args.right_dmm_path.as_str());
     let maximum = ServerLimits::default().max_map_differences;
-    let limit = args
-        .get("limit")
-        .and_then(Value::as_u64)
-        .unwrap_or(maximum as u64) as usize;
+    let limit = args.limit.unwrap_or(maximum as u64) as usize;
     let difference = calculate_diff(&left, &right, limit.min(maximum))?;
     let mut metadata = ToolMetadata::complete(None);
     metadata.truncated = difference.truncated;
@@ -286,41 +251,29 @@ pub async fn list_render_passes() -> Result<ToolResult> {
 pub async fn render_maps(
     execution: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::RenderMapsParams,
 ) -> Result<ToolResult> {
-    let files = args
-        .get("files")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("files must be an array"))?;
+    let files = &args.files;
     let limits = ServerLimits::default();
     if files.len() > limits.max_render_files {
         return Err(anyhow!("batch exceeds max_render_files"));
     }
-    let overwrite = args
-        .get("overwrite")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let _ = pass_selection(&args)?;
+    let overwrite = args.overwrite.unwrap_or(false);
+    let _ = pass_selection(
+        args.enable_passes.as_deref().unwrap_or_default(),
+        args.disable_passes.as_deref().unwrap_or_default(),
+    )?;
     let mut requests = Vec::new();
     for file in files {
-        let dmm = file
-            .get("dmm_path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("batch file missing dmm_path"))?;
+        let dmm = file.dmm_path.as_str();
         let dmm = execution.policy().read_path(dmm)?;
         let map = load_map(&dmm)?;
-        let chunks = file
-            .get("chunks")
-            .and_then(Value::as_array)
-            .ok_or_else(|| anyhow!("batch file chunks must be an array"))?;
+        let chunks = &file.chunks;
         if requests.len() + chunks.len() > limits.max_render_chunks {
             return Err(anyhow!("batch exceeds max_render_chunks"));
         }
         for chunk in chunks {
-            let output = chunk
-                .get("output_path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("render chunk missing output_path"))?;
+            let output = chunk.output_path.as_str();
             let output = execution.policy().output_path(output, overwrite)?;
             if output
                 .extension()
@@ -329,16 +282,16 @@ pub async fn render_maps(
             {
                 return Err(anyhow!("render output extension must be .png"));
             }
-            let mut request = chunk.clone();
-            request["dmm_path"] = Value::String(dmm.display().to_string());
-            request["output_path"] = Value::String(output.display().to_string());
-            request["overwrite"] = Value::Bool(overwrite);
-            if let Some(value) = args.get("enable_passes") {
-                request["enable_passes"] = value.clone()
-            }
-            if let Some(value) = args.get("disable_passes") {
-                request["disable_passes"] = value.clone()
-            }
+            let request = crate::parameters::RenderMapParams {
+                dmm_path: dmm.display().to_string(),
+                output_path: Some(output.display().to_string()),
+                overwrite: Some(overwrite),
+                z_level: chunk.z_level,
+                min: chunk.min,
+                max: chunk.max,
+                enable_passes: args.enable_passes.clone(),
+                disable_passes: args.disable_passes.clone(),
+            };
             let _ = validated_render_bounds(&request, map.dim_xyz())?;
             requests.push(request)
         }
@@ -383,15 +336,9 @@ fn tool_result_payload(result: &ToolResult) -> Value {
 }
 
 /// Find exact type and subtype instances on a map.
-pub async fn find_on_map(args: Value) -> Result<ToolResult> {
-    let dmm_path = args
-        .get("dmm_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing dmm_path argument"))?;
-    let type_path = args
-        .get("type_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
+pub async fn find_on_map(args: crate::parameters::FindOnMapParams) -> Result<ToolResult> {
+    let dmm_path = args.dmm_path.as_str();
+    let type_path = args.type_path.as_str();
     let path = PathBuf::from(dmm_path);
     if !path.exists() {
         return Ok(ToolResult::error(format!("File not found: {dmm_path}")));
@@ -500,7 +447,11 @@ aa
     async fn map_info_uses_parsed_grid_dimensions_and_instance_counts() {
         let directory = fixture_directory();
         let path = write_map(&directory);
-        let result = map_info(json!({"dmm_path": path})).await.unwrap();
+        let result = map_info(
+            crate::parameters::decode(json!({"dmm_path": path})).expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         let payload = result_json(&result);
 
         assert_eq!(payload["dimensions"], json!({"x": 2, "y": 2, "z": 1}));
@@ -519,10 +470,13 @@ aa
     async fn find_on_map_returns_exact_byond_coordinates() {
         let directory = fixture_directory();
         let path = write_map(&directory);
-        let result = find_on_map(json!({
-            "dmm_path": path,
-            "type_path": "/obj/item/test"
-        }))
+        let result = find_on_map(
+            crate::parameters::decode(json!({
+                "dmm_path": path,
+                "type_path": "/obj/item/test"
+            }))
+            .expect("valid fixture request"),
+        )
         .await
         .unwrap();
         let payload = result_json(&result);
@@ -569,11 +523,12 @@ a
         let result = render_map(
             &execution,
             &state,
-            json!({
+            crate::parameters::decode(json!({
                 "dmm_path": map_path,
                 "output_path": output_path,
                 "z_level": 1
-            }),
+            }))
+            .expect("valid fixture request"),
         )
         .await
         .unwrap();

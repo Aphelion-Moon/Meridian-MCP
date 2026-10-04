@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::process_environment::minimal_runtime_environment;
 
-mod arguments;
+pub(crate) mod arguments;
 use arguments::{OutputPattern, RunOptions, WaitOptions};
 
 #[cfg(all(test, any(windows, target_os = "linux")))]
@@ -133,9 +133,9 @@ fn readiness_succeeded(readiness: &Value) -> bool {
 pub async fn run(
     context: &super::ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::RunParams,
 ) -> Result<ToolResult> {
-    let options = match RunOptions::parse(&args) {
+    let options = match RunOptions::new(args) {
         Ok(options) => options,
         Err(error) => return Ok(invalid_arguments(error)),
     };
@@ -151,10 +151,10 @@ pub async fn run(
 pub(crate) async fn run_profiled_with_lifecycle(
     context: &super::ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::RunParams,
     profiler_port: u16,
 ) -> Result<ToolResult> {
-    let options = match RunOptions::parse(&args) {
+    let options = match RunOptions::new(args) {
         Ok(options) => options,
         Err(error) => return Ok(invalid_arguments(error)),
     };
@@ -688,8 +688,11 @@ pub(crate) async fn wait_for_literal_output(
 }
 
 /// Wait until DreamDaemon output contains a literal or regular-expression marker.
-pub async fn wait_for_output(server_state: &ServerState, args: Value) -> Result<ToolResult> {
-    let options = match WaitOptions::parse(&args) {
+pub async fn wait_for_output(
+    server_state: &ServerState,
+    args: crate::parameters::WaitForOutputParams,
+) -> Result<ToolResult> {
+    let options = match WaitOptions::new(args) {
         Ok(options) => options,
         Err(error) => return Ok(invalid_arguments(error)),
     };
@@ -784,11 +787,13 @@ mod tests {
         ] {
             let mut args = json!({"dmb_path":root.join("unused-invalid-launch.dmb")});
             args[key] = value;
-            let outcome =
-                tokio::time::timeout(Duration::from_millis(100), run(&context, &state, args))
-                    .await
-                    .unwrap_or_else(|_| panic!("invalid {key} waited for runtime lifecycle access"))
-                    .unwrap();
+            let outcome = tokio::time::timeout(
+                Duration::from_millis(100),
+                crate::tools::call_tool(&context, &state, "dm_run", args),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("invalid {key} waited for runtime lifecycle access"))
+            .unwrap();
             assert_eq!(outcome.is_error, Some(true), "{key}");
             let ToolContent::Text { text } = &outcome.content[0];
             assert!(
@@ -815,7 +820,9 @@ mod tests {
         ] {
             let mut args = json!({"pattern":"fixture ready", "timeout_ms":0});
             args[key] = value;
-            let outcome = wait_for_output(&state, args).await.unwrap();
+            let outcome = crate::parameters::decode::<crate::parameters::WaitForOutputParams>(args)
+                .unwrap_err()
+                .result();
             assert_eq!(outcome.is_error, Some(true), "invalid {key} was accepted");
             let ToolContent::Text { text } = &outcome.content[0];
             assert!(
@@ -823,10 +830,19 @@ mod tests {
                 "{text}"
             );
         }
-        for timeout in [0, MAX_OUTPUT_WAIT_TIMEOUT_MS, u64::MAX] {
+        assert!(
+            crate::parameters::decode::<crate::parameters::WaitForOutputParams>(
+                json!({"pattern":"fixture ready", "timeout_ms":u64::MAX})
+            )
+            .is_err()
+        );
+        for timeout in [0, MAX_OUTPUT_WAIT_TIMEOUT_MS] {
             let outcome = wait_for_output(
                 &state,
-                json!({"pattern":"fixture ready", "regex":true, "timeout_ms":timeout}),
+                crate::parameters::decode(
+                    json!({"pattern":"fixture ready", "regex":true, "timeout_ms":timeout}),
+                )
+                .expect("valid fixture request"),
             )
             .await
             .unwrap();
@@ -886,13 +902,21 @@ mod tests {
 
         let blocked = tokio::time::timeout(
             std::time::Duration::from_millis(20),
-            stop(&state, json!({})),
+            stop(
+                &state,
+                crate::parameters::decode(json!({})).expect("valid fixture request"),
+            ),
         )
         .await;
 
         assert!(blocked.is_err(), "stop bypassed the runtime lifecycle lock");
         drop(lifecycle);
-        let result = stop(&state, json!({})).await.unwrap();
+        let result = stop(
+            &state,
+            crate::parameters::decode(json!({})).expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result.is_error, Some(true));
     }
 
@@ -948,7 +972,10 @@ mod tests {
 
         let result = wait_for_output(
             &state,
-            json!({"pattern": "initialization failed", "timeout_ms": 10}),
+            crate::parameters::decode(
+                json!({"pattern": "initialization failed", "timeout_ms": 10}),
+            )
+            .expect("valid fixture request"),
         )
         .await
         .expect("waiting for retained output should succeed");
@@ -976,7 +1003,8 @@ mod tests {
             Duration::from_secs(1),
             wait_for_output(
                 &state,
-                json!({"pattern":"FINAL_READY", "timeout_ms":300000}),
+                crate::parameters::decode(json!({"pattern":"FINAL_READY", "timeout_ms":300000}))
+                    .expect("valid fixture request"),
             ),
         )
         .await
@@ -1104,7 +1132,7 @@ mod tests {
 }
 
 /// Stop the running DreamDaemon instance
-pub async fn stop(state: &ServerState, _args: Value) -> Result<ToolResult> {
+pub async fn stop(state: &ServerState, _args: crate::parameters::StopParams) -> Result<ToolResult> {
     let _lifecycle = state.lifecycle().await;
     stop_with_lifecycle(state).await
 }
@@ -1146,7 +1174,10 @@ pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResul
 }
 
 /// Get status of the running game
-pub async fn status(state: &ServerState, _args: Value) -> Result<ToolResult> {
+pub async fn status(
+    state: &ServerState,
+    _args: crate::parameters::StatusParams,
+) -> Result<ToolResult> {
     let mut state = state.runtime().await;
     if !state.is_game_running() {
         let integrity = finalize_standard_integrity(&mut state, "natural_exit").await?;
@@ -1189,14 +1220,14 @@ pub async fn status(state: &ServerState, _args: Value) -> Result<ToolResult> {
 }
 
 /// Send a Topic() call to the running game server
-pub async fn topic(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn topic(
+    state: &ServerState,
+    args: crate::parameters::TopicParams,
+) -> Result<ToolResult> {
     let request = (|| -> Result<_> {
-        let topic = args
-            .get("topic")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("topic must be a string"))?;
+        let topic = Some(args.topic.as_str()).ok_or_else(|| anyhow!("topic must be a string"))?;
         let packet = build_topic_packet(topic.strip_prefix('?').unwrap_or(topic))?;
-        let timeout_ms = super::bounded_u64(&args, "timeout_ms", 5000, 1, MAX_TOPIC_TIMEOUT_MS)?;
+        let timeout_ms = args.timeout_ms.unwrap_or(5000);
         Ok((packet, timeout_ms))
     })();
     let (packet, timeout_ms) = match request {

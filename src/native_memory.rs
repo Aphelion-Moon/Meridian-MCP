@@ -7,6 +7,9 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub const SOURCE_REVISION: &str = "889006e334570a426f35c0a2f579c08d3d7b2186";
+pub(crate) const MAX_DURATION_MS: u64 = 60_000;
+pub(crate) const MAX_RECORDS: usize = 100_000;
+pub(crate) const MAX_ROW_LIMIT: usize = 1000;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -21,13 +24,13 @@ pub enum MemoryAction {
 pub struct MemoryControl {
     pub action: MemoryAction,
     #[serde(default = "default_duration")]
-    #[schemars(range(min = 1, max = 60_000))]
+    #[schemars(range(min = 1, max = MAX_DURATION_MS))]
     pub duration_ms: u64,
     #[serde(default = "default_records")]
-    #[schemars(range(min = 1, max = 100_000))]
+    #[schemars(range(min = 1, max = MAX_RECORDS))]
     pub max_records: usize,
     #[serde(default = "default_rows")]
-    #[schemars(range(min = 1, max = 1000))]
+    #[schemars(range(min = 1, max = MAX_ROW_LIMIT))]
     pub row_limit: usize,
 }
 fn default_duration() -> u64 {
@@ -41,14 +44,7 @@ fn default_rows() -> usize {
 }
 impl MemoryControl {
     pub fn parse(value: Value) -> Result<Self> {
-        let request: Self = serde_json::from_value(value)?;
-        if !(1..=60_000).contains(&request.duration_ms)
-            || !(1..=100_000).contains(&request.max_records)
-            || !(1..=1000).contains(&request.row_limit)
-        {
-            bail!("Native memory capture bounds exceeded");
-        }
-        Ok(request)
+        crate::parameters::decode(value).map_err(Into::into)
     }
     pub fn command(&self) -> Result<String> {
         Ok(format!(

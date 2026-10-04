@@ -2,7 +2,7 @@ use crate::analysis_snapshot::AnalysisSnapshot;
 use crate::build_provenance::ProvenanceStatus;
 use crate::fixture_manifest::{FixtureManifest, RequiredProcDocument, VerifiedFixtureManifest};
 use crate::mcp::ToolResult;
-use crate::parameters::FixtureSyncParams;
+
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
@@ -127,20 +127,25 @@ impl Issues {
 pub async fn check_sync(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::CheckFixtureSyncParams,
 ) -> Result<ToolResult> {
-    let issue_limit = super::bounded_u64(&args, "issue_limit", 50, 0, 200)? as usize;
-    let params: FixtureSyncParams = serde_json::from_value(args)
-        .map_err(|error| anyhow!("invalid fixture sync arguments: {error}"))?;
+    let issue_limit = args.issue_limit.unwrap_or(50) as usize;
+    let params = args;
     let mut issues = Issues::new(issue_limit);
-    let fixture = match load_manifest(context, state, &params.fixture_manifest_path).await {
+    let fixture = match load_manifest(
+        context,
+        state,
+        std::path::Path::new(&params.fixture_manifest_path),
+    )
+    .await
+    {
         Ok(fixture) => fixture,
         Err(error) => {
             let message = error.to_string();
             let excerpt = super::build_response::bounded_text(&message, 4096, 4096, false);
             issues.push(FixtureIssue {
                 code: "fixture_manifest_invalid",
-                path: &params.fixture_manifest_path.to_string_lossy(),
+                path: &params.fixture_manifest_path,
                 message: Some(excerpt),
                 message_truncated: (excerpt.len() != message.len()).then_some(true),
                 ..Default::default()
@@ -241,7 +246,11 @@ async fn matching_or_fixture_snapshot(
     let temporary = state.isolated_analysis_state();
     let parsed = super::parse::parse_environment_with_policy(
         &temporary,
-        json!({"dme_path": dme_path.display().to_string()}),
+        crate::parameters::ParseEnvironmentParams {
+            dme_path: dme_path.display().to_string(),
+            force: None,
+            timeout_ms: None,
+        },
         context.policy(),
     )
     .await?;
@@ -365,7 +374,11 @@ mod tests {
         let args = json!({"fixture_manifest_path": root.join("Cargo.toml")});
         let premature = tokio::time::timeout(
             Duration::from_millis(50),
-            check_sync(&context, &state, args.clone()),
+            check_sync(
+                &context,
+                &state,
+                crate::parameters::decode(args.clone()).expect("valid fixture request"),
+            ),
         )
         .await;
         drop(release);
@@ -374,7 +387,13 @@ mod tests {
             premature.is_err(),
             "fixture manifest I/O bypassed the occupied blocking-job pool"
         );
-        let result = check_sync(&context, &state, args).await.unwrap();
+        let result = check_sync(
+            &context,
+            &state,
+            crate::parameters::decode(args).expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         let crate::result::ToolContent::Text { text } = &result.content[0];
         assert_eq!(
             serde_json::from_str::<Value>(text).unwrap()["classification"],

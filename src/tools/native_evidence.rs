@@ -2,16 +2,12 @@ use super::ToolExecutionContext;
 use crate::mcp::ToolResult;
 use crate::state::ServerState;
 use anyhow::{anyhow, Result};
-use serde::Deserialize;
-use serde_json::Value;
 
 pub async fn summary(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    request: crate::native_evidence::model::NativeEvidenceRequest,
 ) -> Result<ToolResult> {
-    let request: crate::native_evidence::model::NativeEvidenceRequest =
-        serde_json::from_value(args)?;
     let evidence = evidence_context(context);
     state
         .run_asset_job(move || {
@@ -21,18 +17,11 @@ pub async fn summary(
         .await
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CompareRequest {
-    runs: Vec<crate::native_evidence::model::NativeEvidenceRequest>,
-}
-
 pub async fn compare(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    request: crate::parameters::NativeEvidenceCompareParams,
 ) -> Result<ToolResult> {
-    let request: CompareRequest = serde_json::from_value(args)?;
     let evidence = evidence_context(context);
     let result = state
         .run_asset_job(move || {
@@ -102,8 +91,14 @@ mod tests {
         let memory = json!({"evidence_path": root.join("Cargo.toml")});
         let mut bypassed = Vec::new();
         for (name, args) in [
-            ("dm_native_evidence_summary", json!({"artifacts": []})),
-            ("dm_native_evidence_compare", json!({"runs": []})),
+            (
+                "dm_native_evidence_summary",
+                json!({"artifacts":[{"kind":"performance_csv","path":root.join("Cargo.toml")}]}),
+            ),
+            (
+                "dm_native_evidence_compare",
+                json!({"runs":[{"artifacts":[{"kind":"performance_csv","path":root.join("Cargo.toml")}]},{"artifacts":[{"kind":"performance_csv","path":root.join("Cargo.toml")}]}]}),
+            ),
             ("dm_memory_summary", memory.clone()),
             (
                 "dm_memory_compare",

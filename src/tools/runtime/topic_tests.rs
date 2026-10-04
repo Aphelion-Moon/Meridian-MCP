@@ -59,10 +59,15 @@ async fn topic_invalid_requests_fail_before_runtime_access() {
         json!({"topic":"ping\u{0}extra"}),
         json!({"topic":"x".repeat(65530)}),
     ] {
-        let result = tokio::time::timeout(Duration::from_millis(100), super::topic(&state, args))
-            .await
-            .expect("invalid Topic request waited for runtime access")
-            .unwrap();
+        let result = tokio::time::timeout(Duration::from_millis(100), async {
+            match crate::parameters::decode(args) {
+                Ok(request) => super::topic(&state, request).await,
+                Err(error) => Ok(error.result()),
+            }
+        })
+        .await
+        .expect("invalid Topic request waited for runtime access")
+        .unwrap();
         assert_eq!(result.is_error, Some(true));
         let crate::mcp::ToolContent::Text { text } = &result.content[0];
         assert!(text.contains("invalid_input"), "{text}");

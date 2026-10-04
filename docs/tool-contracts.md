@@ -10,7 +10,7 @@ Generated from `src/contracts.rs`; do not edit by hand.
 | `dm_compare_dmi_states` | Analysis | Provisional | read | - | 1048576 | Compare complete DMI states including common lazy changes. |
 | `dm_compile` | Development | Provisional | read, write, process, destructive | 1800000 | 1048576 | Run an allowlisted DreamMaker compiler gate. |
 | `dm_debug_control` | Development | Experimental | read, process, loopback | 30000 | 262144 | Pause, continue, or step the active debuggee. |
-| `dm_debug_evaluate` | Development | Experimental | read, process, loopback | 30000 | 1048576 | Evaluate an expression in the active debuggee. |
+| `dm_debug_evaluate` | Development | Experimental | read, process, loopback, project behavior, destructive | 30000 | 1048576 | Evaluate an expression in the active debuggee. |
 | `dm_debug_exception_info` | Development | Experimental | read, process, loopback | - | 262144 | Read the last retained runtime exception. |
 | `dm_debug_launch` | Development | Experimental | read, process, loopback | 60000 | 262144 | Launch one owned interactive or headless auxtools session. |
 | `dm_debug_memory` | Development | Experimental | read, process, loopback | 30000 | 1048576 | Control bounded, opt-in native allocation attribution. |
@@ -53,7 +53,7 @@ Generated from `src/contracts.rs`; do not edit by hand.
 | `dm_server_status` | Analysis | Provisional | memory | - | 262144 | Report immutable startup policy, build identity, analysis generation, and owned runtime summary. |
 | `dm_status` | Development | Provisional | read, write | - | 1048576 | Inspect server-owned DreamDaemon state. |
 | `dm_stop` | Development | Provisional | read, write, destructive | - | 262144 | Stop the server-owned DreamDaemon process. |
-| `dm_topic` | Development | Provisional | loopback | 60000 | 262144 | Call world.Topic on the loopback game server. |
+| `dm_topic` | Development | Provisional | loopback, project behavior, destructive | 60000 | 262144 | Call world.Topic on the loopback game server. |
 | `dm_tracy_capture` | Development | Experimental | read, write, process, loopback | 330000 | 1048576 | Rotate the persistent collector for one validated window and publish an atomic `.tracy` plus schema-2 sidecar pair. |
 | `dm_tracy_compare` | Development | Experimental | read, process | 180000 | 1048576 | Compare two traces by proc source identity. |
 | `dm_tracy_control_stats` | Development | Experimental | read, process | 2400000 | 1048576 | Validate 3-20 repeated Tracy controls and calculate fixed noise statistics. |

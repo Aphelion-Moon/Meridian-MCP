@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use anyhow::Result;
+use serde_json::json;
 
 use crate::analysis_snapshot::AnalysisContext;
 use crate::mcp::ToolResult;
@@ -11,17 +11,17 @@ fn get_file_path(context: &AnalysisContext, file_id: dreammaker::FileId) -> Stri
 }
 
 /// Get definition location for a symbol
-pub async fn get_definition(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn get_definition(
+    state: &ServerState,
+    args: crate::parameters::GetDefinitionParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
 
-    let type_path = args
-        .get("type_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
+    let type_path = args.type_path.as_str();
 
-    let member_name = args.get("member_name").and_then(|v| v.as_str());
+    let member_name = args.member_name.as_deref();
 
     match objtree.find(type_path) {
         Some(ty) => {
@@ -119,6 +119,7 @@ mod tests {
     use super::*;
     use crate::mcp::ToolContent;
     use crate::tools::parse::parse_environment;
+    use serde_json::Value;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -171,10 +172,11 @@ mod tests {
         for (member, kind) in [("inherited_value", "var"), ("inherited_proc", "proc")] {
             let result = get_definition(
                 &state,
-                json!({
+                crate::parameters::decode(json!({
                     "type_path": "/datum/definition_parent/child",
                     "member_name": member,
-                }),
+                }))
+                .expect("valid fixture request"),
             )
             .await
             .unwrap();

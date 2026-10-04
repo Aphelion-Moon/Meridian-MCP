@@ -34,6 +34,12 @@ fn payload(result: meridian_mcp::result::ToolResult) -> Value {
     serde_json::from_str(text).unwrap()
 }
 
+fn error_payload(result: meridian_mcp::result::ToolResult) -> Value {
+    assert_eq!(result.is_error, Some(true), "{result:?}");
+    let ToolContent::Text { text } = &result.content[0];
+    serde_json::from_str(text).unwrap()
+}
+
 async fn fixture() -> (ToolExecutionContext, ServerState, std::path::PathBuf) {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/language");
     let context = ToolExecutionContext::new(
@@ -174,8 +180,21 @@ async fn language_queries_reject_invalid_limits_and_missing_types() {
         "dm_document_symbols",
     ] {
         for limit in [json!(0), json!(-1), json!("10"), json!(true)] {
-            let result = call_tool(&context, &state, tool, json!({"type_path":"/datum/query_base","member_name":"charge","file_path":root.join("semantics.dm"),"limit":limit})).await;
-            assert!(result.is_err(), "{tool} accepted invalid limit {limit}");
+            let mut args = if tool == "dm_document_symbols" {
+                json!({"file_path":root.join("semantics.dm")})
+            } else {
+                json!({"type_path":"/datum/query_base","member_name":"charge"})
+            };
+            args["limit"] = limit.clone();
+            let result = call_tool(&context, &state, tool, args).await.unwrap();
+            assert_eq!(
+                result.is_error,
+                Some(true),
+                "{tool} accepted invalid limit {limit}"
+            );
+            let error = error_payload(result);
+            assert_eq!(error["code"], "invalid_input", "{error}");
+            assert_eq!(error["details"]["field"], "limit", "{error}");
         }
     }
     let missing = call_tool(
@@ -342,12 +361,13 @@ async fn continuation_rejects_changed_queries_and_stale_snapshots() {
         for invalid in [json!(true), json!(1), json!("invalid"), json!(null)] {
             let mut args = query.clone();
             args[field] = invalid;
-            assert!(
-                call_tool(&context, &state, "dm_find_implementations", args)
-                    .await
-                    .is_err(),
-                "accepted {field}"
-            );
+            let result = call_tool(&context, &state, "dm_find_implementations", args).await;
+            if let Ok(result) = result {
+                assert_eq!(result.is_error, Some(true), "accepted {field}");
+                let error = error_payload(result);
+                assert_eq!(error["code"], "invalid_input", "{error}");
+                assert_eq!(error["details"]["field"], field, "{error}");
+            }
         }
     }
 }

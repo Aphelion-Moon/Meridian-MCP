@@ -14,6 +14,112 @@ fn payload(result: &ToolResult) -> serde_json::Value {
     serde_json::from_str(message(result)).expect("tool policy errors should be structured JSON")
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn non_unicode_canonical_paths_cannot_change_during_typed_dispatch() {
+    use std::os::unix::{ffi::OsStringExt, fs::symlink};
+    let root = std::env::temp_dir().join(format!("meridian-wire-path-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let native = root.join(std::ffi::OsString::from_vec(b"map-\xff.dmm".to_vec()));
+    std::fs::write(&native, "native path A").unwrap();
+    std::fs::write(native.to_string_lossy().as_ref(), "different path B").unwrap();
+    let alias = root.join("alias.dmm");
+    symlink(&native, &alias).unwrap();
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+    );
+    let result = call_tool(
+        &context,
+        &ServerState::new(),
+        "dm_map_info",
+        json!({"dmm_path":alias}),
+    )
+    .await
+    .unwrap();
+    let error = payload(&result);
+    assert_eq!(error["code"], "unsupported_path_encoding", "{error}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn strict_requests_reject_malformed_fields_before_path_or_state_access() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![root], Vec::new()).unwrap(),
+    );
+    for (name, args, field) in [
+        (
+            "dm_memory_compare",
+            json!({"baseline":["evidence.json",null,null,0],"current":{"evidence_path":"evidence.json"}}),
+            "baseline",
+        ),
+        (
+            "dm_native_evidence_summary",
+            json!({"artifacts":[["performance_csv","fixture.csv"]]}),
+            "artifacts[0]",
+        ),
+        (
+            "dm_server_status",
+            json!({"unexpected": true}),
+            "unexpected",
+        ),
+        (
+            "dm_parse_environment",
+            json!({"dme_path":"missing.dme", "force":"false"}),
+            "force",
+        ),
+        (
+            "dm_get_proc",
+            json!({"type_path":"/datum", "proc_name":"New", "include_source":null}),
+            "include_source",
+        ),
+        (
+            "dm_search_context",
+            json!({"query":"door", "kind":"unknown"}),
+            "kind",
+        ),
+        (
+            "dm_compare_dmi_states",
+            json!({"left_dmi_path":"missing.dmi", "left_state":"a", "right_dmi_path":"missing.dmi", "right_state":"b", "left_duplicate_index":4294967296_u64}),
+            "left_duplicate_index",
+        ),
+    ] {
+        let result = call_tool(&context, &ServerState::new(), name, args)
+            .await
+            .unwrap();
+        let error = payload(&result);
+        assert_eq!(error["code"], "invalid_input", "{name}: {error}");
+        assert_eq!(error["details"]["field"], field, "{name}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn canonical_evidence_aliases_are_rejected_before_artifact_reads() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+    );
+    let result = call_tool(
+        &context,
+        &ServerState::new(),
+        "dm_native_evidence_summary",
+        json!({
+            "artifacts":[
+                {"kind":"performance_csv","path":root.join("Cargo.toml")},
+                {"kind":"performance_csv","path":root.join("src/../Cargo.toml")}
+            ]
+        }),
+    )
+    .await
+    .unwrap();
+    let error = payload(&result);
+    assert_eq!(error["code"], "invalid_input", "{error}");
+    assert_eq!(error["details"]["field"], "artifacts[1].path", "{error}");
+}
+
 #[tokio::test]
 async fn rift_compile_cannot_broaden_the_startup_network_ceiling() {
     let root =

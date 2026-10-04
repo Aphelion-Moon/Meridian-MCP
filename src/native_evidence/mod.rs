@@ -19,47 +19,7 @@ pub struct NativeEvidenceContext {
 }
 
 pub fn validate_request(request: &NativeEvidenceRequest) -> Result<()> {
-    if request.artifacts.is_empty()
-        || request.artifacts.len() > crate::limits::MAX_EVIDENCE_ARTIFACTS
-    {
-        bail!("artifacts must contain 1-32 entries");
-    }
-    if request.phases.len() > crate::limits::MAX_EVIDENCE_PHASES {
-        bail!("phase limit exceeded");
-    }
-    timeline::validate_phases(&request.phases)?;
-    let phase_ids = request
-        .phases
-        .iter()
-        .map(|phase| phase.id.as_str())
-        .collect::<BTreeSet<_>>();
-    if phase_ids.len() != request.phases.len() {
-        bail!("phase identifiers must be unique");
-    }
-    for artifact in &request.artifacts {
-        if let Some(options) = &artifact.options {
-            if options.selected_metrics.len() > crate::limits::MAX_EVIDENCE_SELECTED_METRICS {
-                bail!("selected metric limit exceeded");
-            }
-            if options.group_fields.len() > 64
-                || options.group_fields.iter().any(|field| field.len() > 256)
-            {
-                bail!("event group field limit exceeded");
-            }
-            if options
-                .selected_metrics
-                .iter()
-                .collect::<BTreeSet<_>>()
-                .len()
-                != options.selected_metrics.len()
-                || options.group_fields.iter().collect::<BTreeSet<_>>().len()
-                    != options.group_fields.len()
-            {
-                bail!("selected metric and group field names must be unique");
-            }
-        }
-    }
-    Ok(())
+    crate::parameters::Request::validate(request).map_err(Into::into)
 }
 
 pub fn parse_artifact(

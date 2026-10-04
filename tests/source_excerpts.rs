@@ -204,11 +204,12 @@ async fn search_rejects_invalid_filters_flags_and_limits() {
             args.clone(),
         )
         .await;
-        let error = result.expect_err(&format!("accepted {args}"));
-        assert!(
-            error.to_string().contains(key),
-            "wrong error for {args}: {error}"
-        );
+        let result = result.unwrap();
+        assert_eq!(result.is_error, Some(true), "accepted {args}");
+        let ToolContent::Text { text } = &result.content[0];
+        let error: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(error["code"], "invalid_input", "{error}");
+        assert_eq!(error["details"]["field"], key, "{error}");
     }
 }
 
@@ -280,7 +281,11 @@ async fn exact_inspection_accepts_a_source_budget_or_omits_source() {
             args.clone(),
         )
         .await;
-        let error = result.expect_err(&format!("accepted {args}"));
-        assert!(error.to_string().contains(key), "{error}");
+        let result = result.unwrap();
+        assert_eq!(result.is_error, Some(true), "accepted {args}");
+        let ToolContent::Text { text } = &result.content[0];
+        let error: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(error["code"], "invalid_input", "{error}");
+        assert_eq!(error["details"]["field"], key, "{error}");
     }
 }

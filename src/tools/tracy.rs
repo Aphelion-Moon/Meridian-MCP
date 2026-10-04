@@ -69,15 +69,14 @@ async fn stop_wake_client(client: &mut crate::state::TracyWakeClient) -> Result<
     crate::process::wait_for_cleanup(&client.containment).await
 }
 
-pub async fn prepare(context: &ToolExecutionContext, args: Value) -> Result<ToolResult> {
+pub async fn prepare(
+    context: &ToolExecutionContext,
+    args: crate::parameters::TracyPrepareParams,
+) -> Result<ToolResult> {
     let installation = context
         .tracy()
         .ok_or_else(|| anyhow!("Tracy installation unavailable"))?;
-    let dmb_path = Path::new(
-        args.get("dmb_path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("dmb_path is required"))?,
-    );
+    let dmb_path = Path::new(args.dmb_path.as_str());
     let parent = dmb_path
         .parent()
         .ok_or_else(|| anyhow!("dmb_path has no parent"))?;
@@ -87,10 +86,7 @@ pub async fn prepare(context: &ToolExecutionContext, args: Value) -> Result<Tool
         .file_name()
         .ok_or_else(|| anyhow!("verified hook has no file name"))?;
     let destination = parent.join(hook_name);
-    let overwrite = args
-        .get("overwrite")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let overwrite = args.overwrite.unwrap_or(false);
 
     if destination.exists()
         && hash_file(&destination)?.eq_ignore_ascii_case(&installation.hook.sha256)
@@ -121,7 +117,7 @@ pub async fn prepare(context: &ToolExecutionContext, args: Value) -> Result<Tool
 pub async fn launch(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyLaunchParams,
 ) -> Result<ToolResult> {
     let _lifecycle = state.lifecycle().await;
     let prior_journal_id = state
@@ -162,19 +158,14 @@ pub async fn launch(
 async fn launch_inner(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyLaunchParams,
 ) -> Result<ToolResult> {
-    let dmb_path = Path::new(required_string(&args, "dmb_path")?);
+    let dmb_path = Path::new(args.dmb_path.as_str());
     let canonical_dmb = dmb_path.canonicalize()?;
-    let game_port = u16::try_from(super::bounded_u64(&args, "game_port", 1337, 1, 65_535)?)?;
-    let readiness_timeout_ms =
-        super::bounded_u64(&args, "startup_timeout_ms", 60_000, 1_000, 60_000)?;
-    let initialization_timeout_ms =
-        super::bounded_u64(&args, "initialization_timeout_ms", 180_000, 1, 300_000)?;
-    let require_verified_provenance = args
-        .get("require_verified_provenance")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let game_port = u16::try_from(args.game_port.unwrap_or(1337))?;
+    let readiness_timeout_ms = args.startup_timeout_ms.unwrap_or(60_000);
+    let initialization_timeout_ms = args.initialization_timeout_ms.unwrap_or(180_000);
+    let require_verified_provenance = args.require_verified_provenance.unwrap_or(false);
     let mut lease = match context
         .execution_lease(
             &canonical_dmb,
@@ -229,8 +220,8 @@ async fn launch_inner(
     )?;
     let integrity = crate::workspace_integrity::IntegrityBaseline::capture(&integrity_root)?;
     let repository_dirty_digest = integrity.digest.clone();
-    let workload_draft = workload_from_args(&args)?;
-    let experiment_name = optional_string(&args, "experiment_name")?;
+    let workload_draft = args.workload()?;
+    let experiment_name = args.experiment_name.clone();
     if let Some(name) = &experiment_name {
         crate::tracy_experiment::validate_workload(WorkloadInput {
             external_run_id: Some(name.clone()),
@@ -241,16 +232,15 @@ async fn launch_inner(
         super::runtime::find_dreamdaemon_for_compilers(context.policy().compiler_allowlist())
             .ok_or_else(|| anyhow!("DreamDaemon not found. Please install BYOND."))?
             .canonicalize()?;
-    let runtime_configuration = optional_string(&args, "config_directory")?
+    let runtime_configuration = args
+        .config_directory
+        .clone()
         .map(|path| context.policy().read_path(path))
         .transpose()?
         .map(|path| crate::tracy_runtime_config::inspect_runtime_configuration(&path))
         .transpose()?;
-    let wake_sleeping_world = runtime_configuration.is_some()
-        && args
-            .get("wake_sleeping_world")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
+    let wake_sleeping_world =
+        runtime_configuration.is_some() && args.wake_sleeping_world.unwrap_or(true);
     let wake_client = wake_sleeping_world
         .then(|| wake_client_executable(&dreamdaemon))
         .transpose()?;
@@ -281,7 +271,7 @@ async fn launch_inner(
     let hook_patch_sha256 = canonical_sha256(&installation.hook.patches)?;
     let experiment_directory = context
         .policy()
-        .read_path(required_string(&args, "experiment_directory")?)?;
+        .read_path(args.experiment_directory.as_str())?;
     if !experiment_directory.is_dir() {
         return Err(anyhow!(
             "experiment_directory must be an existing contained directory"
@@ -345,7 +335,16 @@ async fn launch_inner(
     let runtime_result = super::runtime::run_profiled_with_lifecycle(
         context,
         state,
-        json!({"dmb_path":dmb_path,"port":game_port,"require_verified_provenance":require_verified_provenance,"daemon_args":daemon_args}),
+        crate::parameters::RunParams {
+            dmb_path: dmb_path.display().to_string(),
+            port: Some(game_port as u64),
+            require_verified_provenance: Some(require_verified_provenance),
+            daemon_args: Some(daemon_args),
+            working_directory: None,
+            wait_for: None,
+            wait_regex: None,
+            startup_timeout_ms: None,
+        },
         profiler_port,
     )
     .await?;
@@ -724,7 +723,7 @@ async fn launch_inner(
 pub async fn capture(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyCaptureParams,
 ) -> Result<ToolResult> {
     let _publication = state
         .try_tracy_publication()
@@ -745,53 +744,34 @@ pub async fn capture(
             .clone()
             .ok_or_else(|| anyhow!("active Tracy runtime has no collector"))?
     };
-    let duration_ms = args
-        .get("duration_ms")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| anyhow!("duration_ms is required"))?;
-    let memory_limit_mb = args
-        .get("memory_limit_mb")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| anyhow!("memory_limit_mb is required"))?;
+    let duration_ms = args.duration_ms;
+    let memory_limit_mb = args.memory_limit_mb;
     if !(1..=300_000).contains(&duration_ms) || !(16..=4096).contains(&memory_limit_mb) {
         return Err(anyhow!(
             "capture duration or memory limit is outside the permitted range"
         ));
     }
-    let phase = required_string(&args, "phase")?.to_owned();
+    let phase = args.phase.as_str().to_owned();
     if !valid_phase(&phase) {
         return Err(anyhow!(
             "phase must contain 1-64 lowercase ASCII letters, digits, underscore, or hyphen"
         ));
     }
-    let phase_iteration = args
-        .get("phase_iteration")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| anyhow!("phase_iteration is required"))?;
+    let phase_iteration = args.phase_iteration;
     let phase_iteration = u32::try_from(phase_iteration)
         .ok()
         .filter(|value| *value > 0)
         .ok_or_else(|| anyhow!("phase_iteration must be between 1 and 4294967295"))?;
-    let supplied_workload = workload_from_args(&args)?;
-    let capture_annotations = args
-        .get("capture_annotations")
-        .map(|value| serde_json::from_value(value.clone()))
-        .transpose()?
-        .unwrap_or_default();
+    let supplied_workload = args.workload()?;
+    let capture_annotations = args.capture_annotations.clone().unwrap_or_default();
     let capture_annotations = crate::tracy_experiment::validate_workload(WorkloadInput {
         annotations: capture_annotations,
         ..Default::default()
     })?
     .annotations;
-    let output_path = Path::new(required_string(&args, "output_path")?);
-    let overwrite = args
-        .get("overwrite")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let capture_network = args
-        .get("capture_network")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let output_path = Path::new(args.output_path.as_str());
+    let overwrite = args.overwrite.unwrap_or(false);
+    let capture_network = args.capture_network.unwrap_or(false);
     let mut network_audit = crate::network_audit::NetworkAuditCollector::new(capture_network);
     let process_identities = owned_process_identities(state).await;
     let profiler_port = {
@@ -1527,15 +1507,15 @@ pub(super) async fn stop_with_lifecycle(
 pub async fn hotspots(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyHotspotsParams,
 ) -> Result<ToolResult> {
     invoke_analysis(
         context,
         TracyCommand::Hotspots,
         json!({
-            "trace_path": required_string(&args, "trace_path")?,
-            "limit": args.get("limit").and_then(Value::as_u64).unwrap_or(100),
-            "sort": args.get("sort").and_then(Value::as_str).unwrap_or("inclusive"),
+            "trace_path": args.trace_path.as_str(),
+            "limit": args.limit.unwrap_or(100),
+            "sort": args.sort.as_ref().map(|value| value.as_str()).unwrap_or("inclusive"),
         }),
         Duration::from_secs(120),
         state,
@@ -1547,15 +1527,15 @@ pub async fn hotspots(
 pub async fn zone(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyZoneParams,
 ) -> Result<ToolResult> {
     invoke_analysis(
         context,
         TracyCommand::Zone,
         json!({
-            "trace_path": required_string(&args, "trace_path")?,
-            "name": required_string(&args, "name")?,
-            "limit": args.get("limit").and_then(Value::as_u64).unwrap_or(100),
+            "trace_path": args.trace_path.as_str(),
+            "name": args.name.as_str(),
+            "limit": args.limit.unwrap_or(100),
         }),
         Duration::from_secs(120),
         state,
@@ -1567,12 +1547,12 @@ pub async fn zone(
 pub async fn frame_stats(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyFrameStatsParams,
 ) -> Result<ToolResult> {
     invoke_analysis(
         context,
         TracyCommand::FrameStats,
-        json!({"trace_path":required_string(&args, "trace_path")?}),
+        json!({"trace_path":args.trace_path.as_str()}),
         Duration::from_secs(120),
         state,
         None,
@@ -1583,13 +1563,14 @@ pub async fn frame_stats(
 pub async fn compare(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyCompareParams,
 ) -> Result<ToolResult> {
-    let baseline_path = Path::new(required_string(&args, "baseline_path")?);
-    let current_path = Path::new(required_string(&args, "current_path")?);
+    let baseline_path = Path::new(args.baseline_path.as_str());
+    let current_path = Path::new(args.current_path.as_str());
     let mode = match args
-        .get("comparison_mode")
-        .and_then(Value::as_str)
+        .comparison_mode
+        .as_ref()
+        .map(|value| value.as_str())
         .unwrap_or("same_experiment_same_phase")
     {
         "same_experiment_same_phase" => {
@@ -1626,10 +1607,10 @@ pub async fn compare(
         ));
     }
     let mut compare_params = json!({
-        "baseline_path": required_string(&args, "baseline_path")?,
-        "current_path": required_string(&args, "current_path")?,
-        "minimum_delta_ns": args.get("minimum_delta_ns").and_then(Value::as_u64).unwrap_or(0),
-        "limit": args.get("limit").and_then(Value::as_u64).unwrap_or(100),
+        "baseline_path": args.baseline_path.as_str(),
+        "current_path": args.current_path.as_str(),
+        "minimum_delta_ns": args.minimum_delta_ns.unwrap_or(0),
+        "limit": args.limit.unwrap_or(100),
     });
     if let (Some(baseline), Some(current), Some(object)) = (
         baseline_metadata.as_ref(),
@@ -1669,34 +1650,28 @@ pub async fn compare(
 pub async fn control_stats(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
-    args: Value,
+    args: crate::parameters::TracyControlStatsParams,
 ) -> Result<ToolResult> {
     let installation = context
         .tracy()
         .ok_or_else(|| anyhow!("Tracy installation unavailable"))?;
-    let requested = args
-        .get("trace_paths")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("trace_paths is required"))?;
+    let requested = &args.trace_paths;
     if !(3..=20).contains(&requested.len()) {
         return Err(anyhow!("trace_paths must contain 3-20 controls"));
     }
     let mut trace_paths = Vec::new();
     let mut unique = std::collections::BTreeSet::new();
     for value in requested {
-        let path = context.policy().read_path(
-            value
-                .as_str()
-                .ok_or_else(|| anyhow!("trace_paths must contain strings"))?,
-        )?;
+        let path = context.policy().read_path(value.as_str())?;
         if !unique.insert(path.clone()) {
             return Err(anyhow!("trace_paths contains a duplicate path"));
         }
         trace_paths.push(path);
     }
     let percentile = args
-        .get("frame_percentile")
-        .and_then(Value::as_str)
+        .frame_percentile
+        .as_ref()
+        .map(|value| value.as_str())
         .unwrap_or("p95");
     let percentile_key = match percentile {
         "p50" => "p50_ns",
@@ -1704,21 +1679,7 @@ pub async fn control_stats(
         "p99" => "p99_ns",
         _ => return Err(anyhow!("frame_percentile is not supported")),
     };
-    let zone_keys = args
-        .get("zone_keys")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .map(|item| {
-                    item.as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| anyhow!("zone_keys must contain strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let zone_keys = args.zone_keys.clone().unwrap_or_default();
     if zone_keys.len() > 32 {
         return Err(anyhow!("zone_keys exceeds the fixed entry limit"));
     }
@@ -1733,8 +1694,9 @@ pub async fn control_stats(
     }
     let metadata = metadata.into_iter().flatten().collect::<Vec<_>>();
     let comparison_mode = match args
-        .get("comparison_mode")
-        .and_then(Value::as_str)
+        .comparison_mode
+        .as_ref()
+        .map(|value| value.as_str())
         .unwrap_or("same_experiment_same_phase")
     {
         "same_experiment_same_phase" => {
@@ -2021,12 +1983,6 @@ async fn correlate_sources(state: &crate::state::ServerState, result: &mut Value
     }
 }
 
-fn required_string<'a>(args: &'a Value, name: &str) -> Result<&'a str> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("{name} is required"))
-}
-
 fn hash_file(path: &Path) -> Result<String> {
     let mut input = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
@@ -2039,49 +1995,6 @@ fn hash_file(path: &Path) -> Result<String> {
         hasher.update(&buffer[..count]);
     }
     Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn workload_from_args(args: &Value) -> Result<WorkloadInput> {
-    let feature_set = args
-        .get("feature_set")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .map(|item| {
-                    item.as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| anyhow!("feature_set must contain strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
-    let annotations = args
-        .get("annotations")
-        .map(|value| serde_json::from_value(value.clone()))
-        .transpose()?
-        .unwrap_or_default();
-    Ok(crate::tracy_experiment::validate_workload(WorkloadInput {
-        map: optional_string(args, "map")?,
-        seed: optional_string(args, "seed")?,
-        configuration_profile: optional_string(args, "configuration_profile")?,
-        feature_set,
-        scenario: optional_string(args, "scenario")?,
-        external_run_id: optional_string(args, "external_run_id")?,
-        annotations,
-    })?)
-}
-
-fn optional_string(args: &Value, name: &str) -> Result<Option<String>> {
-    args.get(name)
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| anyhow!("{name} must be a string"))
-        })
-        .transpose()
 }
 
 fn git_revision(root: &Path) -> Option<String> {
@@ -2439,7 +2352,14 @@ mod tests {
 
         let blocked = tokio::time::timeout(
             std::time::Duration::from_millis(20),
-            launch(&context, &state, json!({})),
+            launch(
+                &context,
+                &state,
+                crate::parameters::decode(
+                    json!({"dmb_path":root.join("missing.dmb"),"experiment_directory":root}),
+                )
+                .unwrap(),
+            ),
         )
         .await;
 
@@ -2448,7 +2368,16 @@ mod tests {
             "launch bypassed the runtime lifecycle lock"
         );
         drop(lifecycle);
-        assert!(launch(&context, &state, json!({})).await.is_err());
+        assert!(launch(
+            &context,
+            &state,
+            crate::parameters::decode(
+                json!({"dmb_path":root.join("missing.dmb"),"experiment_directory":root})
+            )
+            .unwrap()
+        )
+        .await
+        .is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 

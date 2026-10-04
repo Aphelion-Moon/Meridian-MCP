@@ -3,27 +3,24 @@ use crate::mcp::ToolResult;
 use crate::memory_evidence::{MemoryCompareRequest, MemoryRequest};
 use crate::state::ServerState;
 use anyhow::Result;
-use serde_json::Value;
+pub(super) enum MemoryInput {
+    Summary(MemoryRequest),
+    Compare(MemoryCompareRequest),
+}
 
 pub async fn run(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
-    comparison: bool,
+    args: MemoryInput,
 ) -> Result<ToolResult> {
     let policy = context.policy().clone();
     let result = state
         .run_asset_job(move || {
-            let value = if comparison {
-                crate::memory_evidence::compare(
-                    &policy,
-                    serde_json::from_value::<MemoryCompareRequest>(args)?,
-                )?
-            } else {
-                serde_json::to_value(crate::memory_evidence::summarize(
-                    &policy,
-                    serde_json::from_value::<MemoryRequest>(args)?,
-                )?)?
+            let value = match args {
+                MemoryInput::Summary(request) => {
+                    serde_json::to_value(crate::memory_evidence::summarize(&policy, request)?)?
+                }
+                MemoryInput::Compare(request) => crate::memory_evidence::compare(&policy, request)?,
             };
             Ok(ToolResult::text(serde_json::to_string_pretty(&value)?))
         })

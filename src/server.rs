@@ -19,9 +19,9 @@ mod runtime_ownership_tests;
 
 #[derive(Clone)]
 pub struct MeridianServer {
-    config: Arc<ServerConfig>,
     execution: ToolExecutionContext,
     state: Arc<ServerState>,
+    catalog: Arc<[Tool]>,
 }
 
 impl MeridianServer {
@@ -55,7 +55,7 @@ impl MeridianServer {
                 )
                 .await?;
             }
-            tools::runtime::stop(&self.state, serde_json::json!({})).await?;
+            tools::runtime::stop(&self.state, crate::parameters::StopParams::default()).await?;
             Ok::<(), anyhow::Error>(())
         })
         .await
@@ -103,37 +103,26 @@ impl MeridianServer {
             tracy,
             private_state,
         );
+        let catalog = execution
+            .definitions()
+            .into_iter()
+            .map(|definition| to_sdk_tool(definition, config.rift_build_access()))
+            .collect::<Vec<_>>();
         Ok(Self {
-            config: Arc::new(config),
+            catalog: Arc::from(catalog),
             execution,
             state: Arc::new(ServerState::new()),
         })
     }
 
     pub fn tool_names(&self) -> Vec<String> {
-        tools::get_tool_definitions_for_runtime(
-            self.config.mode(),
-            self.config.rift_build_access(),
-            self.execution.dmdoc_helper().is_some(),
-            self.execution.debugger().is_some(),
-            self.execution.tracy().is_some(),
-        )
-        .into_iter()
-        .map(|definition| definition.name)
-        .collect()
+        self.catalog
+            .iter()
+            .map(|tool| tool.name.to_string())
+            .collect()
     }
-
     fn tools(&self) -> Vec<Tool> {
-        tools::get_tool_definitions_for_runtime(
-            self.config.mode(),
-            self.config.rift_build_access(),
-            self.execution.dmdoc_helper().is_some(),
-            self.execution.debugger().is_some(),
-            self.execution.tracy().is_some(),
-        )
-        .into_iter()
-        .map(|definition| to_sdk_tool(definition, self.config.rift_build_access()))
-        .collect()
+        self.catalog.to_vec()
     }
 }
 
@@ -147,13 +136,23 @@ impl ServerHandler for MeridianServer {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        Ok(ListToolsResult::with_all_items(self.tools()))
+        let result = ListToolsResult::with_all_items(self.tools());
+        let modern = context
+            .protocol_version()
+            .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2026_07_28);
+        Ok(if modern {
+            result
+                .with_ttl_ms(60_000)
+                .with_cache_scope(rmcp::model::CacheScope::Private)
+        } else {
+            result
+        })
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        self.tools().into_iter().find(|tool| tool.name == name)
+        self.catalog.iter().find(|tool| tool.name == name).cloned()
     }
 
     async fn call_tool(
@@ -222,10 +221,11 @@ fn to_sdk_tool(definition: ToolDefinition, rift_build: crate::RiftBuildAccess) -
                 !contract.effects.writes_files
                     && !contract.effects.spawns_process
                     && !contract.effects.network_loopback
-                    && !external_network,
+                    && !external_network
+                    && !contract.effects.project_behavior,
             )
             .destructive(contract.effects.destructive)
-            .open_world(external_network)
+            .open_world(external_network || contract.effects.project_behavior)
     });
     let mut tool = Tool::new(definition.name, definition.description, input_schema);
     tool.annotations = annotations;
@@ -263,6 +263,22 @@ mod tests {
 
         assert_eq!(annotations.read_only_hint, Some(false));
         assert_eq!(annotations.destructive_hint, Some(true));
+    }
+
+    #[test]
+    fn project_code_effects_are_advisory_and_independent_of_rift_network_access() {
+        for name in ["dm_topic", "dm_debug_evaluate"] {
+            let definition = tools::get_tool_definitions()
+                .into_iter()
+                .find(|tool| tool.name == name)
+                .unwrap();
+            let annotations = to_sdk_tool(definition, crate::RiftBuildAccess::Disabled)
+                .annotations
+                .unwrap();
+            assert_eq!(annotations.read_only_hint, Some(false));
+            assert_eq!(annotations.destructive_hint, Some(true));
+            assert_eq!(annotations.open_world_hint, Some(true));
+        }
     }
 
     #[test]

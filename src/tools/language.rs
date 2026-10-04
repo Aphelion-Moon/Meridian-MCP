@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Result};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Map};
 use std::path::Path;
 
 use crate::index::{ReferenceHit, ReferenceKind, SymbolId};
-use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
 use crate::spaceman::language::ResolvedReference;
 use crate::state::ServerState;
@@ -12,17 +11,6 @@ use dreammaker::Location;
 
 mod page;
 use page::Page;
-
-fn member_name(args: &Value) -> Result<Option<&str>> {
-    args.get("member_name")
-        .map(|value| {
-            value
-                .as_str()
-                .filter(|name| !name.is_empty())
-                .ok_or_else(|| anyhow!("member_name must be a non-empty string"))
-        })
-        .transpose()
-}
 
 fn resolve_symbol(
     objtree: &ObjectTree,
@@ -76,14 +64,22 @@ fn resolve_symbol(
     }
 }
 
-pub async fn document_symbols(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn document_symbols(
+    state: &ServerState,
+    args: crate::parameters::DocumentSymbolsParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let file = args
-        .get("file_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing file_path argument"))?;
-    let maximum = ServerLimits::default().max_document_symbols;
-    let page = Page::new(&snapshot, &args, json!(["document_symbols", file]), maximum)?;
+    let file = args.file_path.as_str();
+    let page = Page::new(
+        &snapshot,
+        args.limit,
+        args.detail
+            .as_ref()
+            .map(|detail| detail.as_str())
+            .unwrap_or("full"),
+        args.cursor.as_deref(),
+        json!(["document_symbols", file]),
+    )?;
     let symbols = snapshot.language_index.document_symbols(Path::new(file));
     page.respond(
         &snapshot,
@@ -94,23 +90,26 @@ pub async fn document_symbols(state: &ServerState, args: Value) -> Result<ToolRe
     )
 }
 
-pub async fn find_implementations(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn find_implementations(
+    state: &ServerState,
+    args: crate::parameters::FindImplementationsParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let owner = args
-        .get("type_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
-    let member = member_name(&args)?;
+    let owner = args.type_path.as_str();
+    let member = args.member_name.as_deref();
     let (symbol, _, _) = resolve_symbol(&snapshot.objtree, owner, member)?;
     if !snapshot.language_index.hierarchy_is_valid() {
         return Err(anyhow!("Cannot query implementations of an invalid semantic type hierarchy; inspect parser diagnostics."));
     }
-    let maximum = ServerLimits::default().max_reference_results;
     let page = Page::new(
         &snapshot,
-        &args,
+        args.limit,
+        args.detail
+            .as_ref()
+            .map(|detail| detail.as_str())
+            .unwrap_or("full"),
+        args.cursor.as_deref(),
         json!(["implementations", owner, member]),
-        maximum,
     )?;
     let implementations = snapshot
         .language_index
@@ -133,41 +132,32 @@ pub async fn find_implementations(state: &ServerState, args: Value) -> Result<To
     )
 }
 
-pub async fn find_references(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn find_references(
+    state: &ServerState,
+    args: crate::parameters::FindReferencesParams,
+) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let owner = args
-        .get("type_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing type_path argument"))?;
-    let member = member_name(&args)?;
+    let owner = args.type_path.as_str();
+    let member = args.member_name.as_deref();
     let (symbol, upstream_symbol, location) = resolve_symbol(&snapshot.objtree, owner, member)?;
-    let maximum = ServerLimits::default().max_reference_results;
-    let include_declaration = args
-        .get("include_declaration")
-        .map(|value| {
-            value
-                .as_bool()
-                .ok_or_else(|| anyhow!("include_declaration must be a boolean"))
-        })
-        .transpose()?
-        .unwrap_or(false);
-    let kind = args
-        .get("kind")
-        .map(|value| match value.as_str() {
-            Some("call") => Ok(ReferenceKind::Call),
-            Some("read") => Ok(ReferenceKind::Read),
-            Some("write") => Ok(ReferenceKind::Write),
-            Some("type_path") => Ok(ReferenceKind::TypePath),
-            Some("macro_expansion") => Ok(ReferenceKind::MacroExpansion),
-            Some("declaration") => Ok(ReferenceKind::Declaration),
-            _ => Err(anyhow!("Invalid reference kind")),
-        })
-        .transpose()?;
+    let include_declaration = args.include_declaration.unwrap_or(false);
+    let kind = args.kind.map(|kind| match kind {
+        crate::parameters::FindReferencesKind::Call => ReferenceKind::Call,
+        crate::parameters::FindReferencesKind::Read => ReferenceKind::Read,
+        crate::parameters::FindReferencesKind::Write => ReferenceKind::Write,
+        crate::parameters::FindReferencesKind::TypePath => ReferenceKind::TypePath,
+        crate::parameters::FindReferencesKind::MacroExpansion => ReferenceKind::MacroExpansion,
+        crate::parameters::FindReferencesKind::Declaration => ReferenceKind::Declaration,
+    });
     let page = Page::new(
         &snapshot,
-        &args,
+        args.limit,
+        args.detail
+            .as_ref()
+            .map(|detail| detail.as_str())
+            .unwrap_or("full"),
+        args.cursor.as_deref(),
         json!(["references", owner, member, kind, include_declaration]),
-        maximum,
     )?;
     let uses = snapshot.reference_table.references(upstream_symbol);
     let declaration = include_declaration.then_some(ResolvedReference {

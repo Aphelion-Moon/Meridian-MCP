@@ -109,7 +109,7 @@ async fn compiler_relative_dme_is_resolved_at_dispatch_and_artifact_is_created()
     std::fs::create_dir_all(&project).unwrap();
     let dme = project.join("fixture.dme");
     std::fs::write(&dme, "// fixture").unwrap();
-    let result = call_tool(&context(&root), &ServerState::new(), "dm_compile", json!({"dme_path":"project/fixture.dme", "working_directory":working, "defines":["VALUE=7","-DFLAG"],"timeout_ms":u64::MAX,"idle_timeout_ms":u64::MAX})).await.unwrap();
+    let result = call_tool(&context(&root), &ServerState::new(), "dm_compile", json!({"dme_path":"project/fixture.dme", "working_directory":working, "defines":["VALUE=7","-DFLAG"],"timeout_ms":1_800_000,"idle_timeout_ms":900_000})).await.unwrap();
     let data = payload(&result);
     let artifact = dme.with_extension("dmb").exists();
     std::fs::remove_dir_all(root).unwrap();

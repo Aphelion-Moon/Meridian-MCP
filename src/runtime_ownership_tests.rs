@@ -99,7 +99,12 @@ async fn topic_wait_keeps_status_and_stop_responsive() {
     }
     let request_state = std::sync::Arc::clone(&state);
     let mut request = tokio::spawn(async move {
-        runtime::topic(&request_state, json!({"topic":"ping","timeout_ms":2000})).await
+        runtime::topic(
+            &request_state,
+            crate::parameters::decode(json!({"topic":"ping","timeout_ms":2000}))
+                .expect("valid fixture request"),
+        )
+        .await
     });
     tokio::time::timeout(Duration::from_secs(2), ready)
         .await
@@ -107,11 +112,17 @@ async fn topic_wait_keeps_status_and_stop_responsive() {
         .unwrap();
     let status = tokio::time::timeout(
         Duration::from_millis(150),
-        runtime::status(&state, json!({})),
+        runtime::status(
+            &state,
+            crate::parameters::decode(json!({})).expect("valid fixture request"),
+        ),
     )
     .await;
-    let stop =
-        tokio::time::timeout(Duration::from_millis(150), runtime::stop(&state, json!({}))).await;
+    let stop = tokio::time::timeout(
+        Duration::from_millis(150),
+        runtime::stop(&state, crate::parameters::StopParams::default()),
+    )
+    .await;
     let early_reply = tokio::time::timeout(Duration::from_millis(150), &mut request).await;
     let cancelled_with_runtime = early_reply.is_ok();
     let _ = release.send(());
@@ -122,7 +133,9 @@ async fn topic_wait_keeps_status_and_stop_responsive() {
     }
     .unwrap()
     .unwrap();
-    runtime::stop(&state, json!({})).await.unwrap();
+    runtime::stop(&state, crate::parameters::StopParams::default())
+        .await
+        .unwrap();
     assert!(status.is_ok(), "Topic wait held the runtime status lock");
     assert!(stop.is_ok(), "Topic wait blocked runtime stop");
     assert!(cancelled_with_runtime, "Topic request outlived its runtime");
@@ -146,20 +159,30 @@ async fn output_wait_keeps_status_and_stop_responsive() {
     }
     let mut wait = Box::pin(runtime::wait_for_output(
         &state,
-        json!({"pattern":"MISSING", "timeout_ms":300000}),
+        crate::parameters::decode(json!({"pattern":"MISSING", "timeout_ms":300000}))
+            .expect("valid fixture request"),
     ));
     tokio::select! {
         result = &mut wait => panic!("wait finished before stop: {result:?}"),
         () = tokio::task::yield_now() => {}
     }
-    tokio::time::timeout(Duration::from_secs(1), runtime::status(&state, json!({})))
-        .await
-        .expect("status blocked by output wait")
-        .unwrap();
-    tokio::time::timeout(Duration::from_secs(1), runtime::stop(&state, json!({})))
-        .await
-        .expect("stop blocked by output wait")
-        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        runtime::status(
+            &state,
+            crate::parameters::decode(json!({})).expect("valid fixture request"),
+        ),
+    )
+    .await
+    .expect("status blocked by output wait")
+    .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        runtime::stop(&state, crate::parameters::StopParams::default()),
+    )
+    .await
+    .expect("stop blocked by output wait")
+    .unwrap();
     let original_exit = state.runtime().await.last_exit_code;
     let (child, containment) = crate::process::spawn_runtime_process(
         &mut tokio::process::Command::from(fixture_command("leaf", std::path::Path::new("unused"))),
@@ -185,7 +208,9 @@ async fn output_wait_keeps_status_and_stop_responsive() {
     assert_eq!(result["matched"], false);
     assert_eq!(result["last_exit_code"], json!(original_exit));
     assert_eq!(result["recent_output"], json!([]));
-    runtime::stop(&state, json!({})).await.unwrap();
+    runtime::stop(&state, crate::parameters::StopParams::default())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -257,25 +282,35 @@ async fn launch_readiness_is_stoppable_and_cancellation_releases_ownership() {
             excluded["code"], "execution_busy",
             "a launch allowed a competing build: {excluded}"
         );
-        tokio::time::timeout(Duration::from_secs(1), runtime::status(&state, json!({})))
-            .await
-            .expect("launch readiness blocked status")
-            .unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            runtime::status(
+                &state,
+                crate::parameters::decode(json!({})).expect("valid fixture request"),
+            ),
+        )
+        .await
+        .expect("launch readiness blocked status")
+        .unwrap();
         if cancel {
             drop(launch);
         } else {
-            tokio::time::timeout(Duration::from_secs(1), runtime::stop(&state, json!({})))
-                .await
-                .expect("launch readiness blocked stop")
-                .unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                runtime::stop(&state, crate::parameters::StopParams::default()),
+            )
+            .await
+            .expect("launch readiness blocked stop")
+            .unwrap();
             let replacement = runtime::run(
                 &context,
                 &state,
-                json!({
+                crate::parameters::decode(json!({
                     "dmb_path":directory.join("fixture.dmb"),
                     "daemon_args":["--marker", directory.join("replacement.pids")],
                     "wait_for":"RUNTIME_TREE_READY"
-                }),
+                }))
+                .expect("valid fixture request"),
             )
             .await
             .unwrap();
@@ -292,7 +327,9 @@ async fn launch_readiness_is_stoppable_and_cancellation_releases_ownership() {
                 state.runtime().await.is_game_running(),
                 "old launch stopped its replacement"
             );
-            runtime::stop(&state, json!({})).await.unwrap();
+            runtime::stop(&state, crate::parameters::StopParams::default())
+                .await
+                .unwrap();
         }
         tokio::time::timeout(Duration::from_secs(3), async {
             while identities
@@ -381,7 +418,7 @@ async fn invalid_readiness_regex_never_starts_the_runtime() {
     .await;
     let launched = !std::sync::Arc::ptr_eq(&output_before, &state.runtime().await.output_log);
     let marker_written = marker.exists();
-    crate::tools::runtime::stop(&state, serde_json::json!({}))
+    crate::tools::runtime::stop(&state, crate::parameters::StopParams::default())
         .await
         .unwrap();
     let unverified = crate::tools::call_tool(
@@ -413,7 +450,7 @@ async fn invalid_readiness_regex_never_starts_the_runtime() {
     .await
     .unwrap();
     let valid_started = directory.join("valid.pids").exists();
-    crate::tools::runtime::stop(&state, serde_json::json!({}))
+    crate::tools::runtime::stop(&state, crate::parameters::StopParams::default())
         .await
         .unwrap();
     drop(state);
@@ -594,12 +631,13 @@ fn fixture() {
                 crate::tools::runtime::run(
                     &context,
                     &state,
-                    serde_json::json!({
+                    crate::parameters::decode(serde_json::json!({
                         "dmb_path": directory.join("fixture.dmb"),
                         "daemon_args": ["--marker", pids],
                         "wait_for": "NEVER_READY",
                         "startup_timeout_ms": 300000
-                    }),
+                    }))
+                    .expect("valid fixture request"),
                 )
                 .await
             });
@@ -868,11 +906,12 @@ async fn failed_cleanup_keeps_integrity_active_and_retryable() {
         })
         .await
         .unwrap();
-        assert!(
-            crate::tools::runtime::status(&server.state, serde_json::json!({}))
-                .await
-                .is_err()
-        );
+        assert!(crate::tools::runtime::status(
+            &server.state,
+            crate::parameters::decode(serde_json::json!({})).expect("valid fixture request")
+        )
+        .await
+        .is_err());
         {
             let runtime = server.state.runtime().await;
             assert!(runtime.containment.is_some());
@@ -880,9 +919,12 @@ async fn failed_cleanup_keeps_integrity_active_and_retryable() {
             assert!(runtime.integrity_summary.is_none());
         }
         retained_startup_owner.inject_cleanup_fault(0);
-        crate::tools::runtime::status(&server.state, serde_json::json!({}))
-            .await
-            .unwrap();
+        crate::tools::runtime::status(
+            &server.state,
+            crate::parameters::decode(serde_json::json!({})).expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
         let identities: Vec<ProcessIdentity> =
             serde_json::from_slice(&std::fs::read(marker).unwrap()).unwrap();
         assert!(identities

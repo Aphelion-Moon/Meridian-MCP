@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use dmi::{Dir, Dirs};
 use dmm_tools::dmi::render::{IconRenderer, RenderType};
 use dmm_tools::dmi::Image;
-use serde_json::{json, Value};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -145,9 +145,9 @@ impl AssetScan {
 pub async fn info(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::DmiInfoParams,
 ) -> Result<ToolResult> {
-    let path = required_path(&args, "dmi_path")?;
+    let path = PathBuf::from(&args.dmi_path);
     let asset = load(context, state, &path).await?;
     let profile = profile_dmi(&asset, &ServerLimits::default())?;
     let mut metadata = ToolMetadata::complete(
@@ -163,24 +163,18 @@ pub async fn info(
 pub async fn compare(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::CompareDmiStatesParams,
 ) -> Result<ToolResult> {
-    let left = load(context, state, &required_path(&args, "left_dmi_path")?).await?;
-    let right = load(context, state, &required_path(&args, "right_dmi_path")?).await?;
+    let left = load(context, state, &PathBuf::from(&args.left_dmi_path)).await?;
+    let right = load(context, state, &PathBuf::from(&args.right_dmi_path)).await?;
     let comparison = compare_states(
         &left,
-        required_str(&args, "left_state")?,
-        args.get("left_duplicate_index")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as u32,
+        args.left_state.as_str(),
+        args.left_duplicate_index.unwrap_or(0) as u32,
         &right,
-        required_str(&args, "right_state")?,
-        args.get("right_duplicate_index")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as u32,
-        args.get("minimum_similarity")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.985) as f32,
+        args.right_state.as_str(),
+        args.right_duplicate_index.unwrap_or(0) as u32,
+        args.minimum_similarity.unwrap_or(0.985) as f32,
     )?;
     let mut metadata = ToolMetadata::complete(
         state
@@ -382,9 +376,9 @@ async fn duplicate_clusters(
 pub async fn find_duplicates(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::FindDmiDuplicatesParams,
 ) -> Result<ToolResult> {
-    let root = match args.get("scope_path").and_then(Value::as_str) {
+    let root = match args.scope_path.as_deref() {
         Some(path) => PathBuf::from(path),
         None => state
             .snapshot()
@@ -399,13 +393,9 @@ pub async fn find_duplicates(
         context,
         state,
         &root,
-        args.get("include_glob").and_then(Value::as_str),
-        args.get("minimum_similarity")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.985) as f32,
-        args.get("max_matches")
-            .and_then(Value::as_u64)
-            .unwrap_or(10_000) as usize,
+        args.include_glob.as_deref(),
+        args.minimum_similarity.unwrap_or(0.985) as f32,
+        args.max_matches.unwrap_or(10_000) as usize,
         &mut scan,
     )
     .await?;
@@ -426,12 +416,12 @@ pub async fn find_duplicates(
 pub async fn audit_icons(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::AuditIconsParams,
 ) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
     let root = args
-        .get("scope_path")
-        .and_then(Value::as_str)
+        .scope_path
+        .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             snapshot
@@ -445,13 +435,9 @@ pub async fn audit_icons(
         context,
         state,
         &root,
-        args.get("include_glob").and_then(Value::as_str),
-        args.get("minimum_similarity")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.985) as f32,
-        args.get("max_matches")
-            .and_then(Value::as_u64)
-            .unwrap_or(10_000) as usize,
+        args.include_glob.as_deref(),
+        args.minimum_similarity.unwrap_or(0.985) as f32,
+        args.max_matches.unwrap_or(10_000) as usize,
         &mut scan,
     )
     .await?;
@@ -502,15 +488,11 @@ pub async fn audit_icons(
         }
     }
     let mut unused_states = Vec::new();
-    if args
-        .get("include_unused")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+    if args.include_unused.unwrap_or(false) {
         let (files, unused_reasons) = discover_dmis_with_policy(
             context.policy(),
             &root,
-            args.get("include_glob").and_then(Value::as_str),
+            args.include_glob.as_deref(),
             state.asset_limits(),
         )?;
         for reason in unused_reasons {
@@ -549,16 +531,13 @@ pub async fn audit_icons(
 pub async fn extract(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::ExtractDmiParams,
 ) -> Result<ToolResult> {
-    let source = required_path(&args, "dmi_path")?;
-    let output = required_path(&args, "output_path")?;
+    let source = PathBuf::from(&args.dmi_path);
+    let output = PathBuf::from(&args.output_path);
     let asset = load(context, state, &source).await?;
-    let state_name = required_str(&args, "state")?;
-    let duplicate = args
-        .get("duplicate_index")
-        .and_then(Value::as_u64)
-        .unwrap_or(0) as u32;
+    let state_name = args.state.as_str();
+    let duplicate = args.duplicate_index.unwrap_or(0) as u32;
     let icon_state = asset
         .icon
         .metadata
@@ -566,7 +545,11 @@ pub async fn extract(
         .iter()
         .find(|value| value.name == state_name && value.duplicate_index == duplicate)
         .ok_or_else(|| DmiError::Invalid("requested state not found".into()))?;
-    let kind = args.get("kind").and_then(Value::as_str).unwrap_or("auto");
+    let kind = args
+        .kind
+        .as_ref()
+        .map(|value| value.as_str())
+        .unwrap_or("auto");
     let renderer = IconRenderer::new(&asset.icon);
     let automatic = renderer.prepare_render_state(icon_state)?;
     let automatic_encoder = match automatic.render_type {
@@ -593,8 +576,9 @@ pub async fn extract(
     }
     let selected_direction = if kind == "frame" {
         let direction = parse_direction(
-            args.get("direction")
-                .and_then(Value::as_str)
+            args.direction
+                .as_ref()
+                .map(|value| value.as_str())
                 .unwrap_or("south"),
         )?;
         validate_direction(icon_state.dirs, direction)?;
@@ -602,7 +586,7 @@ pub async fn extract(
     } else {
         None
     };
-    let selected_frame = args.get("frame").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let selected_frame = args.frame.unwrap_or(0) as u32;
     if kind == "frame" && selected_frame as usize >= icon_state.frames.count() {
         return Err(anyhow!("frame is outside the selected state"));
     }
@@ -610,9 +594,7 @@ pub async fn extract(
     let artifact = write_atomic(
         context.policy(),
         &output,
-        args.get("overwrite")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        args.overwrite.unwrap_or(false),
         |file| {
             match kind {
                 "auto" | "png" | "gif" => automatic.render(file),
@@ -702,15 +684,6 @@ fn validate_direction(dirs: Dirs, direction: Dir) -> Result<()> {
     } else {
         Err(anyhow!("direction is not present in the selected state"))
     }
-}
-
-fn required_path(args: &Value, name: &str) -> Result<PathBuf> {
-    Ok(PathBuf::from(required_str(args, name)?))
-}
-fn required_str<'a>(args: &'a Value, name: &str) -> Result<&'a str> {
-    args.get(name)
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing {name} argument"))
 }
 
 #[cfg(test)]

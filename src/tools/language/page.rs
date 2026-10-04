@@ -26,17 +26,13 @@ fn cursor_hash() -> &'static RandomState {
 impl Page {
     pub(super) fn new(
         snapshot: &AnalysisSnapshot,
-        args: &Value,
+        limit: Option<u64>,
+        detail: &str,
+        cursor: Option<&str>,
         query: Value,
-        maximum: usize,
     ) -> Result<Self> {
-        let limit = crate::tools::bounded_u64(args, "limit", 100, 1, maximum as u64)? as usize;
-        let compact = match args.get("detail") {
-            None => false,
-            Some(Value::String(detail)) if detail == "full" => false,
-            Some(Value::String(detail)) if detail == "compact" => true,
-            _ => return Err(anyhow!("detail must be full or compact")),
-        };
+        let limit = limit.unwrap_or(100) as usize;
+        let compact = detail == "compact";
         let mut page = Self {
             offset: 0,
             limit,
@@ -47,10 +43,7 @@ impl Page {
                 query.to_string(),
             )),
         };
-        if let Some(value) = args.get("cursor") {
-            let cursor = value
-                .as_str()
-                .ok_or_else(|| anyhow!("cursor must be an opaque string from the previous page"))?;
+        if let Some(cursor) = cursor {
             let offset = cursor
                 .split(':')
                 .nth(1)

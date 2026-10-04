@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde_json::{json, Map, Value};
 
 const STREAM_JSON_BYTES: usize = 64 * 1024;
@@ -16,29 +16,17 @@ impl ResponseOptions {
     pub fn diagnostic_limit(&self) -> usize {
         self.diagnostic_limit
     }
-    pub fn parse(args: &Value) -> Result<Self> {
-        Ok(Self {
-            include_output: match args.get("include_output") {
-                None => true,
-                Some(value) => value
-                    .as_bool()
-                    .ok_or_else(|| anyhow!("include_output must be a boolean"))?,
-            },
-            output_max_bytes: bounded_integer(args, "output_max_bytes", 8192, 1, 65536)?,
-            diagnostic_limit: bounded_integer(args, "diagnostic_limit", 50, 0, 200)?,
-        })
+    pub fn new(
+        include_output: Option<bool>,
+        output_max_bytes: Option<u64>,
+        diagnostic_limit: Option<u64>,
+    ) -> Self {
+        Self {
+            include_output: include_output.unwrap_or(true),
+            output_max_bytes: output_max_bytes.unwrap_or(8192) as usize,
+            diagnostic_limit: diagnostic_limit.unwrap_or(50) as usize,
+        }
     }
-}
-
-fn bounded_integer(args: &Value, name: &str, default: u64, min: u64, max: u64) -> Result<usize> {
-    let value = match args.get(name) {
-        None => default,
-        Some(value) => value
-            .as_u64()
-            .ok_or_else(|| anyhow!("{name} must be an integer"))?,
-    };
-    anyhow::ensure!((min..=max).contains(&value), "{name} must be {min}..={max}");
-    Ok(value as usize)
 }
 
 // serde_json uses these escapes for string contents. Count UTF-8 and JSON bytes
@@ -373,11 +361,7 @@ mod tests {
         for key in ["output_directory", "index", "helper", "backup_directory"] {
             result[key] = json!("p".repeat(9000));
         }
-        let text = format_helper(
-            result,
-            ResponseOptions::parse(&json!({"output_max_bytes":65536})).unwrap(),
-        )
-        .unwrap();
+        let text = format_helper(result, ResponseOptions::new(None, Some(65536), None)).unwrap();
         assert!(text.len() <= 262144);
         let body: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(body["success"], false);
@@ -422,12 +406,7 @@ mod tests {
         ] {
             result[name] = json!("p".repeat(8000));
         }
-        let text = format_rift(
-            result,
-            ResponseOptions::parse(&json!({"output_max_bytes":65536,"diagnostic_limit":200}))
-                .unwrap(),
-        )
-        .unwrap();
+        let text = format_rift(result, ResponseOptions::new(None, Some(65536), Some(200))).unwrap();
         assert!(text.len() <= REPLY_JSON_BYTES);
         let body: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(body["success"], false);
@@ -478,12 +457,7 @@ mod tests {
         ] {
             result[field] = json!("p".repeat(8000));
         }
-        let text = format(
-            result,
-            ResponseOptions::parse(&json!({"output_max_bytes":65536,"diagnostic_limit":200}))
-                .unwrap(),
-        )
-        .unwrap();
+        let text = format(result, ResponseOptions::new(None, Some(65536), Some(200))).unwrap();
         assert!(text.len() <= REPLY_JSON_BYTES);
         let body: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(body["success"], false);

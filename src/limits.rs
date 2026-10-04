@@ -99,3 +99,7 @@ impl Default for ServerLimits {
         }
     }
 }
+
+pub const MAX_EVIDENCE_GROUP_FIELDS: usize = 64;
+pub const MAX_EVIDENCE_GROUP_FIELD_BYTES: usize = 256;
+pub const MAX_EVIDENCE_PHASE_ID_BYTES: usize = 256;

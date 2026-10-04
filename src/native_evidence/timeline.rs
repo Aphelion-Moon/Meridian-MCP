@@ -3,7 +3,7 @@ use anyhow::{bail, Result};
 
 pub fn validate_phases(phases: &[PhaseInput]) -> Result<()> {
     for phase in phases {
-        if phase.id.is_empty() || phase.id.len() > 256 {
+        if phase.id.is_empty() || phase.id.len() > crate::limits::MAX_EVIDENCE_PHASE_ID_BYTES {
             bail!("phase identifiers must contain 1-256 bytes");
         }
         if let (Some(start), Some(end)) = (

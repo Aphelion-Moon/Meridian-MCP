@@ -1,28 +1,35 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde_json::{json, Map, Value};
 
 use crate::mcp::ToolResult;
 use crate::search::{SearchIndex, SearchRequest, SymbolKind};
-use crate::source::{SourceExcerpt, MAX_SOURCE_LINES};
+use crate::source::SourceExcerpt;
 use crate::state::ServerState;
 
 const DEFAULT_RESULT_LIMIT: usize = 10;
-const MAX_RESULT_LIMIT: usize = 50;
 const DEFAULT_SOURCE_LINES: usize = 40;
 
-pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let query = args
-        .get("query")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|query| !query.is_empty())
-        .ok_or_else(|| anyhow!("Missing or empty query argument"))?;
-
-    let kind = parse_kind(optional_nonempty_string(&args, "kind")?.unwrap_or("all"))?;
-    let type_prefix = optional_nonempty_string(&args, "type_prefix")?;
-    let file_filter = optional_nonempty_string(&args, "file_filter")?;
-    let limit = bounded_usize(&args, "limit", DEFAULT_RESULT_LIMIT, 1, MAX_RESULT_LIMIT)?;
-    let (include_source, max_source_lines) = source_options(&args, DEFAULT_SOURCE_LINES)?;
+pub(crate) async fn search_context(
+    state: &ServerState,
+    args: crate::parameters::SearchContextParams,
+) -> Result<ToolResult> {
+    let query = args.query.trim();
+    let kind = match args
+        .kind
+        .unwrap_or(crate::parameters::SearchContextKind::All)
+    {
+        crate::parameters::SearchContextKind::All => None,
+        crate::parameters::SearchContextKind::Type => Some(SymbolKind::Type),
+        crate::parameters::SearchContextKind::Proc => Some(SymbolKind::Proc),
+        crate::parameters::SearchContextKind::Var => Some(SymbolKind::Var),
+    };
+    let type_prefix = args.type_prefix.as_deref();
+    let file_filter = args.file_filter.as_deref();
+    let limit = args.limit.unwrap_or(DEFAULT_RESULT_LIMIT as u64) as usize;
+    let (include_source, max_source_lines) = (
+        args.include_source.unwrap_or(true),
+        args.max_source_lines.unwrap_or(DEFAULT_SOURCE_LINES as u64) as usize,
+    );
 
     let snapshot = match state.snapshot().await {
         Ok(snapshot) => snapshot,
@@ -101,53 +108,6 @@ pub(crate) async fn search_context(state: &ServerState, args: Value) -> Result<T
     Ok(ToolResult::text(serde_json::to_string_pretty(&response)?))
 }
 
-fn parse_kind(kind: &str) -> Result<Option<SymbolKind>> {
-    match kind {
-        "all" => Ok(None),
-        "type" => Ok(Some(SymbolKind::Type)),
-        "proc" => Ok(Some(SymbolKind::Proc)),
-        "var" => Ok(Some(SymbolKind::Var)),
-        _ => Err(anyhow!(
-            "Invalid kind '{kind}'. Expected all, type, proc, or var."
-        )),
-    }
-}
-
-pub(super) fn source_options(args: &Value, default_lines: usize) -> Result<(bool, usize)> {
-    let include_source = match args.get("include_source") {
-        None => true,
-        Some(value) => value
-            .as_bool()
-            .ok_or_else(|| anyhow!("include_source must be a boolean"))?,
-    };
-    let max_source_lines =
-        bounded_usize(args, "max_source_lines", default_lines, 1, MAX_SOURCE_LINES)?;
-    Ok((include_source, max_source_lines))
-}
-
-fn optional_nonempty_string<'a>(args: &'a Value, name: &str) -> Result<Option<&'a str>> {
-    args.get(name)
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| anyhow!("{name} must be a non-empty string"))
-        })
-        .transpose()
-}
-
-fn bounded_usize(
-    args: &Value,
-    name: &str,
-    default: usize,
-    minimum: usize,
-    maximum: usize,
-) -> Result<usize> {
-    super::bounded_u64(args, name, default as u64, minimum as u64, maximum as u64)
-        .map(|value| value as usize)
-}
-
 pub(super) fn add_source_fields(
     result: &mut Map<String, Value>,
     source: Option<&SourceExcerpt>,
@@ -189,9 +149,13 @@ mod tests {
     async fn context_search_before_parsing_returns_actionable_tool_error() {
         let state = crate::state::ServerState::new();
 
-        let result = search_context(&state, serde_json::json!({"query": "air"}))
-            .await
-            .expect("tool call should serialize an expected state error");
+        let result = search_context(
+            &state,
+            crate::parameters::decode(serde_json::json!({"query": "air"}))
+                .expect("valid fixture request"),
+        )
+        .await
+        .expect("tool call should serialize an expected state error");
         let value = serde_json::to_value(result).expect("tool result should serialize");
 
         assert_eq!(value["isError"], true);

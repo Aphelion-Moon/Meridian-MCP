@@ -76,38 +76,15 @@ struct RiftResultRecord {
 pub async fn compile(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::RiftCompileParams,
 ) -> Result<ToolResult> {
-    let response = match response::ResponseOptions::parse(&args) {
-        Ok(options) => options,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "invalid_arguments",
-                error.to_string(),
-                "Use output controls within the advertised types and bounds.",
-            ))
-        }
-    };
-    let params: RiftCompileParams = match serde_json::from_value(args) {
-        Ok(params) => params,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "invalid_arguments",
-                format!("invalid rift_compile arguments: {error}"),
-                "Use only the fields advertised by the rift_compile schema.",
-            ));
-        }
-    };
-    let (timeout_ms, idle_timeout_ms) = match params.validated_timeouts() {
-        Ok(timeouts) => timeouts,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "invalid_arguments",
-                error,
-                "Use timeout values within the advertised bounds.",
-            ));
-        }
-    };
+    let response = response::ResponseOptions::new(
+        args.include_output,
+        args.output_max_bytes,
+        args.diagnostic_limit,
+    );
+    let params = args;
+    let (timeout_ms, idle_timeout_ms) = params.validated_timeouts().expect("validated request");
     if params.network_mode() == RiftNetworkMode::Allow
         && context.rift_build_access() != RiftBuildAccess::Network
     {
@@ -170,7 +147,7 @@ pub async fn compile(
         }
     };
     let fixture = match params.fixture_manifest_path.as_deref() {
-        Some(path) => Some(super::fixture::load_manifest(context, state, path).await),
+        Some(path) => Some(super::fixture::load_manifest(context, state, Path::new(path)).await),
         None => None,
     };
     let fixture = match fixture.transpose() {
@@ -237,7 +214,7 @@ pub async fn compile(
         &command_processor,
         &compiler,
         params.network_mode(),
-        params.force_rebuild,
+        params.force_rebuild.unwrap_or(false),
         timeout_policy,
     );
     let script_argument = match cmd_script_argument(&project.rift_build) {
@@ -295,7 +272,7 @@ pub async fn compile(
             stdin: None,
             timeout: deadline.saturating_duration_since(tokio::time::Instant::now()),
             idle_timeout: timeout_policy.outer_idle_timeout,
-            capture_network: params.capture_network,
+            capture_network: params.capture_network.unwrap_or(false),
             cancellation: context.cancellation(),
         },
         |stream, bytes| output.observe(stream, bytes),
@@ -600,7 +577,12 @@ fn classify_result(
             Some("wrapper_result_invalid"),
         )
     } else if let Some(result) = rift_result.as_ref().ok().and_then(Option::as_ref) {
-        match validate_rift_result(result, &after, artifacts_changed, params.force_rebuild) {
+        match validate_rift_result(
+            result,
+            &after,
+            artifacts_changed,
+            params.force_rebuild.unwrap_or(false),
+        ) {
             Ok(evidence) => (evidence, None),
             Err(_) => (
                 BuildEvidence::InsufficientEvidence,
@@ -609,7 +591,7 @@ fn classify_result(
         }
     } else if artifacts_changed {
         (BuildEvidence::FreshArtifacts, None)
-    } else if cache_evidence.is_some() && !params.force_rebuild {
+    } else if cache_evidence.is_some() && !params.force_rebuild.unwrap_or(false) {
         (BuildEvidence::ValidCacheHit, None)
     } else {
         (
@@ -647,8 +629,8 @@ fn classify_result(
         "byond_version": profile.byond_version(),
         "startup_ceiling": access_name(context.rift_build_access()),
         "network_mode": network_mode_name(params.network_mode()),
-        "force_rebuild": params.force_rebuild,
-        "capture_network": params.capture_network,
+        "force_rebuild": params.force_rebuild.unwrap_or(false),
+        "capture_network": params.capture_network.unwrap_or(false),
         "timeout_ms": timeout_ms,
         "idle_timeout_ms": idle_timeout_ms,
         "controller_timeout": {

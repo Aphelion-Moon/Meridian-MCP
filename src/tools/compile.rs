@@ -23,7 +23,6 @@ use crate::process::{run_owned_process_observed, ProcessSpec, TerminationReason}
 use crate::state::ServerState;
 
 const DEFAULT_IDLE_TIMEOUT_MS: u64 = 45_000;
-const MAX_IDLE_TIMEOUT_MS: u64 = 900_000;
 
 #[derive(Debug, PartialEq, Eq)]
 enum DiagnosticSeverity {
@@ -239,7 +238,7 @@ fn compiler_environment() -> Vec<(OsString, OsString)> {
 pub async fn compile(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::CompileParams,
 ) -> Result<ToolResult> {
     let CompileOptions {
         dme_path,
@@ -251,16 +250,7 @@ pub async fn compile(
         idle_timeout_ms,
         capture_network,
         response,
-    } = match CompileOptions::parse(&args) {
-        Ok(options) => options,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "invalid_input",
-                error.to_string(),
-                "Correct the named compiler argument and retry.",
-            ))
-        }
-    };
+    } = CompileOptions::from(args);
     let requested_path = PathBuf::from(&dme_path);
     let path = resolve_requested_path(&requested_path, requested_working_directory.as_deref());
     if !path.is_file() {

@@ -19,56 +19,22 @@ struct Options {
     overwrite: bool,
     response: ResponseOptions,
 }
-impl Options {
-    fn parse(args: &Value) -> Result<Self> {
-        let object = args
-            .as_object()
-            .ok_or_else(|| anyhow!("documentation arguments must be an object"))?;
-        for name in object.keys() {
-            anyhow::ensure!(
-                [
-                    "output_directory",
-                    "overwrite",
-                    "include_output",
-                    "output_max_bytes"
-                ]
-                .contains(&name.as_str()),
-                "unknown documentation argument: {name}"
-            );
+impl From<crate::parameters::GenerateDocsParams> for Options {
+    fn from(args: crate::parameters::GenerateDocsParams) -> Self {
+        Self {
+            output: args.output_directory.into(),
+            overwrite: args.overwrite.unwrap_or(false),
+            response: ResponseOptions::new(args.include_output, args.output_max_bytes, None),
         }
-        let output = args["output_directory"]
-            .as_str()
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| anyhow!("output_directory must be a nonempty string"))?;
-        let overwrite = match args.get("overwrite") {
-            None => false,
-            Some(value) => value
-                .as_bool()
-                .ok_or_else(|| anyhow!("overwrite must be a boolean"))?,
-        };
-        Ok(Self {
-            output: output.into(),
-            overwrite,
-            response: ResponseOptions::parse(args)?,
-        })
     }
 }
 
 pub async fn generate(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::GenerateDocsParams,
 ) -> Result<ToolResult> {
-    let options = match Options::parse(&args) {
-        Ok(options) => options,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "invalid_arguments",
-                error.to_string(),
-                "Use the advertised documentation fields, types and output bounds.",
-            ))
-        }
-    };
+    let options = Options::from(args);
     let helper = context
         .dmdoc_helper()
         .ok_or_else(|| anyhow!("dmdoc helper unavailable"))?;

@@ -55,6 +55,18 @@ pub struct PathPolicy {
 }
 
 impl PathPolicy {
+    /// Keep the path authorized by policy identical to the string passed to a
+    /// wire-request handler. Display formatting would replace invalid bytes.
+    pub(crate) fn wire_path(&self, path: PathBuf) -> Result<String, PolicyError> {
+        path.to_str().map(str::to_owned).ok_or_else(|| {
+            self.error(
+                "unsupported_path_encoding",
+                path,
+                "canonical tool path cannot be represented as Unicode",
+            )
+        })
+    }
+
     pub fn new(roots: Vec<PathBuf>, executables: Vec<PathBuf>) -> Result<Self, PolicyError> {
         if roots.is_empty() {
             return Err(error(

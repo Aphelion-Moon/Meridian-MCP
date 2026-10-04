@@ -17,10 +17,17 @@ pub enum ArtifactKind {
 #[serde(deny_unknown_fields)]
 pub struct ArtifactOptions {
     #[serde(default)]
+    #[schemars(length(max = crate::limits::MAX_EVIDENCE_SELECTED_METRICS))]
+    #[schemars(extend("uniqueItems" = true))]
     pub selected_metrics: Vec<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub wall_time_field: Option<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub world_time_field: Option<String>,
     #[serde(default)]
+    #[schemars(length(max = crate::limits::MAX_EVIDENCE_GROUP_FIELDS), inner(length(max = crate::limits::MAX_EVIDENCE_GROUP_FIELD_BYTES)), extend("uniqueItems" = true, "x-itemMaxUtf8Bytes" = crate::limits::MAX_EVIDENCE_GROUP_FIELD_BYTES))]
     pub group_fields: Vec<String>,
 }
 
@@ -29,35 +36,64 @@ pub struct ArtifactOptions {
 pub struct ArtifactDescriptor {
     pub kind: ArtifactKind,
     pub path: PathBuf,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "ArtifactOptions", skip_serializing_if = "Option::is_none")]
     pub options: Option<ArtifactOptions>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PhaseInput {
+    /// Unique phase identifier, limited to 256 UTF-8 bytes.
+    #[schemars(length(min = 1, max = crate::limits::MAX_EVIDENCE_PHASE_ID_BYTES), extend("x-maxUtf8Bytes" = crate::limits::MAX_EVIDENCE_PHASE_ID_BYTES))]
     pub id: String,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub wall_start: Option<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub wall_end: Option<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
     pub world_start_ds: Option<i64>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
     pub world_end_ds: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkloadIdentityInput {
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub map: Option<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub seed: Option<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub configuration_profile: Option<String>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub scenario: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NativeEvidenceRequest {
+    #[schemars(length(min = 1, max = crate::limits::MAX_EVIDENCE_ARTIFACTS))]
     pub artifacts: Vec<ArtifactDescriptor>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(with = "PathBuf", skip_serializing_if = "Option::is_none")]
     pub dmb_path: Option<PathBuf>,
+    #[serde(default, deserialize_with = "crate::parameters::optional")]
+    #[schemars(
+        with = "WorkloadIdentityInput",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub workload: Option<WorkloadIdentityInput>,
     #[serde(default)]
+    #[schemars(length(max = crate::limits::MAX_EVIDENCE_PHASES))]
     pub phases: Vec<PhaseInput>,
 }
 

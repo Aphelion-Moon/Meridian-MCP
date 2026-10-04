@@ -10,7 +10,7 @@ use crate::spaceman::debugger::{
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -20,19 +20,10 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::process::Command;
 
-fn duration(args: &Value, key: &str, default: u64, maximum: u64) -> Duration {
-    Duration::from_millis(
-        args.get(key)
-            .and_then(Value::as_u64)
-            .unwrap_or(default)
-            .min(maximum),
-    )
-}
-
 pub async fn launch(
     context: &ToolExecutionContext,
     state: &ServerState,
-    args: Value,
+    args: crate::parameters::DebugLaunchParams,
 ) -> Result<ToolResult> {
     let _lifecycle = state.lifecycle().await;
     if state.runtime().await.is_game_running() {
@@ -40,15 +31,9 @@ pub async fn launch(
             "a DreamDaemon runtime is active; stop it before launching the debugger"
         ));
     }
-    let dmb_path = args
-        .get("dmb_path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing dmb_path"))?;
+    let dmb_path = args.dmb_path.as_str();
     let dmb_path = std::path::PathBuf::from(dmb_path);
-    let require_verified = args
-        .get("require_verified_provenance")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let require_verified = args.require_verified_provenance.unwrap_or(false);
     let mut lease = match context
         .execution_lease(
             &dmb_path,
@@ -56,11 +41,7 @@ pub async fn launch(
                 .parent()
                 .ok_or_else(|| anyhow!("DMB has no parent"))?,
             "debugger",
-            context.deadline(
-                args.get("startup_timeout_ms")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(60_000),
-            ),
+            context.deadline(args.startup_timeout_ms.unwrap_or(60_000)),
         )
         .await?
     {
@@ -82,8 +63,9 @@ pub async fn launch(
     let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)).await?;
     let port = listener.local_addr()?.port();
     let host_mode = args
-        .get("host_mode")
-        .and_then(Value::as_str)
+        .host_mode
+        .as_ref()
+        .map(|value| value.as_str())
         .unwrap_or("interactive");
     let debugger_host = normalize_spawn_path(&debugger_host_executable(&args, installation)?);
     let dmb_spawn_path = normalize_spawn_path(&dmb_path);
@@ -92,12 +74,7 @@ pub async fn launch(
             .parent()
             .ok_or_else(|| anyhow!("DMB path has no parent"))?,
     );
-    let memory_profile = match args.get("memory_profile") {
-        None => false,
-        Some(value) => value
-            .as_bool()
-            .ok_or_else(|| anyhow!("memory_profile must be a boolean"))?,
-    };
+    let memory_profile = args.memory_profile.unwrap_or(false);
     let memory_helper = memory_profile
         .then(crate::native_memory::installed_memory_helper)
         .transpose()?;
@@ -131,12 +108,7 @@ pub async fn launch(
     };
     let limits = ServerLimits::default();
     let accepted = tokio::time::timeout(
-        duration(
-            &args,
-            "startup_timeout_ms",
-            limits.max_debug_startup_ms,
-            limits.max_debug_startup_ms,
-        ),
+        Duration::from_millis(args.startup_timeout_ms.unwrap_or(limits.max_debug_startup_ms)),
         async {
             tokio::select! {
                 accepted = listener.accept() => accepted.map_err(anyhow::Error::from),
@@ -215,10 +187,14 @@ pub async fn launch(
     ))
 }
 
-fn debugger_host_executable(args: &Value, installation: &DebuggerInstallation) -> Result<PathBuf> {
+fn debugger_host_executable(
+    args: &crate::parameters::DebugLaunchParams,
+    installation: &DebuggerInstallation,
+) -> Result<PathBuf> {
     match args
-        .get("host_mode")
-        .and_then(Value::as_str)
+        .host_mode
+        .as_ref()
+        .map(|mode| mode.as_str())
         .unwrap_or("interactive")
     {
         "interactive" => Ok(installation.dreamseeker.clone()),
@@ -315,16 +291,15 @@ pub async fn threads(state: &ServerState) -> Result<ToolResult> {
     ))
 }
 
-pub async fn stack_trace(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let thread_id = required_u32(&args, "thread_id")?;
+pub async fn stack_trace(
+    state: &ServerState,
+    args: crate::parameters::DebugStackTraceParams,
+) -> Result<ToolResult> {
+    let thread_id = args.thread_id as u32;
     let limits = ServerLimits::default();
-    let start_frame = args
-        .get("start_frame")
-        .and_then(Value::as_u64)
-        .map(|v| v as u32);
+    let start_frame = args.start_frame.map(|v| v as u32);
     let count = args
-        .get("count")
-        .and_then(Value::as_u64)
+        .count
         .map(|value| value.min(limits.max_debug_frames as u64) as u32);
     let (generation, response) = request(
         state,
@@ -353,11 +328,14 @@ pub async fn stack_trace(state: &ServerState, args: Value) -> Result<ToolResult>
     ))
 }
 
-pub async fn scopes(state: &ServerState, args: Value) -> Result<ToolResult> {
+pub async fn scopes(
+    state: &ServerState,
+    args: crate::parameters::DebugScopesParams,
+) -> Result<ToolResult> {
     let (generation, response) = request(
         state,
         AuxRequest::Scopes {
-            frame_id: required_u32(&args, "frame_id")?,
+            frame_id: args.frame_id as u32,
         },
     )
     .await?;
@@ -375,11 +353,11 @@ pub async fn scopes(state: &ServerState, args: Value) -> Result<ToolResult> {
     ))
 }
 
-pub async fn variables(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let reference = args
-        .get("variables_reference")
-        .and_then(Value::as_i64)
-        .ok_or_else(|| anyhow!("Missing variables_reference"))?;
+pub async fn variables(
+    state: &ServerState,
+    args: crate::parameters::DebugVariablesParams,
+) -> Result<ToolResult> {
+    let reference = args.variables_reference;
     let (generation, response) = request(
         state,
         AuxRequest::Variables {
@@ -403,12 +381,16 @@ pub async fn variables(state: &ServerState, args: Value) -> Result<ToolResult> {
     Ok(json_success(metadata, json!({"variables":vars})))
 }
 
-pub async fn evaluate(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let expression = required_string(&args, "expression", 16_384)?;
+pub async fn evaluate(
+    state: &ServerState,
+    args: crate::parameters::DebugEvaluateParams,
+) -> Result<ToolResult> {
+    let expression = args.expression.clone();
     validate_expression(&expression)?;
     let context = args
-        .get("context")
-        .and_then(Value::as_str)
+        .context
+        .as_ref()
+        .map(|value| value.as_str())
         .map(str::to_owned);
     if context
         .as_deref()
@@ -419,10 +401,7 @@ pub async fn evaluate(state: &ServerState, args: Value) -> Result<ToolResult> {
     let (generation, response) = request(
         state,
         AuxRequest::Eval {
-            frame_id: args
-                .get("frame_id")
-                .and_then(Value::as_u64)
-                .map(|v| v as u32),
+            frame_id: args.frame_id.map(|v| v as u32),
             command: expression,
             context,
         },
@@ -444,8 +423,11 @@ fn validate_expression(expression: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn memory(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let control = crate::native_memory::MemoryControl::parse(args)?;
+pub async fn memory(
+    state: &ServerState,
+    args: crate::native_memory::MemoryControl,
+) -> Result<ToolResult> {
+    let control = args;
     let mut slot = state.debugger().await;
     let session = slot
         .as_mut()
@@ -486,11 +468,11 @@ pub async fn memory(state: &ServerState, args: Value) -> Result<ToolResult> {
     ))
 }
 
-pub async fn set_exception_breakpoints(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let enabled = args
-        .get("break_on_runtimes")
-        .and_then(Value::as_bool)
-        .ok_or_else(|| anyhow!("Missing break_on_runtimes"))?;
+pub async fn set_exception_breakpoints(
+    state: &ServerState,
+    args: crate::parameters::DebugSetExceptionBreakpointsParams,
+) -> Result<ToolResult> {
+    let enabled = args.break_on_runtimes;
     let mut slot = state.debugger().await;
     let session = slot
         .as_mut()
@@ -508,15 +490,12 @@ pub async fn set_exception_breakpoints(state: &ServerState, args: Value) -> Resu
     ))
 }
 
-pub async fn control(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let action = args
-        .get("action")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing action"))?;
-    let thread = args
-        .get("thread_id")
-        .and_then(Value::as_u64)
-        .map(|v| v as u32);
+pub async fn control(
+    state: &ServerState,
+    args: crate::parameters::DebugControlParams,
+) -> Result<ToolResult> {
+    let action = args.action.as_str();
+    let thread = args.thread_id.map(|v| v as u32);
     let request_value = match action {
         "pause" => AuxRequest::Pause,
         "continue" => AuxRequest::Continue {
@@ -549,34 +528,28 @@ pub async fn control(state: &ServerState, args: Value) -> Result<ToolResult> {
     ))
 }
 
-pub async fn set_function_breakpoints(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let breakpoints = args
-        .get("breakpoints")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("breakpoints must be an array"))?;
+pub async fn set_function_breakpoints(
+    state: &ServerState,
+    args: crate::parameters::DebugSetFunctionBreakpointsParams,
+) -> Result<ToolResult> {
+    let breakpoints = &args.breakpoints;
     if breakpoints.len() > 10_000 {
         return Err(anyhow!("breakpoint limit exceeded"));
     }
     let mut desired = Vec::new();
     for breakpoint in breakpoints {
-        let path = required_string(breakpoint, "proc_path", 4096)?;
+        let path = breakpoint.proc_path.clone();
         if !path.starts_with('/') {
             return Err(anyhow!("proc_path must be canonical"));
         }
-        let condition = optional_string(breakpoint, "condition", 4096)?;
+        let condition = breakpoint.condition.clone();
         desired.push((
             InstructionRef {
                 proc: ProcRef {
                     path,
-                    override_id: breakpoint
-                        .get("override_id")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0) as u32,
+                    override_id: breakpoint.override_id.unwrap_or(0) as u32,
                 },
-                offset: breakpoint
-                    .get("offset")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0) as u32,
+                offset: breakpoint.offset.unwrap_or(0) as u32,
             },
             condition,
         ));
@@ -584,17 +557,13 @@ pub async fn set_function_breakpoints(state: &ServerState, args: Value) -> Resul
     replace_breakpoints(state, desired).await
 }
 
-pub async fn set_breakpoints(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let source_path = std::path::PathBuf::from(
-        args.get("source_path")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("Missing source_path"))?,
-    );
+pub async fn set_breakpoints(
+    state: &ServerState,
+    args: crate::parameters::DebugSetBreakpointsParams,
+) -> Result<ToolResult> {
+    let source_path = std::path::PathBuf::from(args.source_path.as_str());
     let snapshot = state.snapshot().await?;
-    let breakpoints = args
-        .get("breakpoints")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("breakpoints must be an array"))?;
+    let breakpoints = &args.breakpoints;
     if breakpoints.len() > 10_000 {
         return Err(anyhow!("breakpoint limit exceeded"));
     }
@@ -607,7 +576,7 @@ pub async fn set_breakpoints(state: &ServerState, args: Value) -> Result<ToolRes
     }
     let mut desired = Vec::new();
     for breakpoint in breakpoints {
-        let line = required_u32(breakpoint, "line")?;
+        let line = breakpoint.line as u32;
         let symbol = snapshot
             .language_index
             .proc_at(&source_path, line)
@@ -639,7 +608,7 @@ pub async fn set_breakpoints(state: &ServerState, args: Value) -> Result<ToolRes
         };
         desired.push((
             InstructionRef { proc, offset },
-            optional_string(breakpoint, "condition", 4096)?,
+            breakpoint.condition.clone(),
         ));
     }
     replace_breakpoints_in_session(session, desired).await
@@ -717,8 +686,11 @@ pub async fn exception_info(state: &ServerState) -> Result<ToolResult> {
     ))
 }
 
-pub async fn source(state: &ServerState, args: Value) -> Result<ToolResult> {
-    if args.get("source_reference").and_then(Value::as_u64) != Some(1) {
+pub async fn source(
+    state: &ServerState,
+    args: crate::parameters::DebugSourceParams,
+) -> Result<ToolResult> {
+    if args.source_reference != 1 {
         return Err(anyhow!("unknown debugger source reference"));
     }
     let slot = state.debugger().await;
@@ -735,19 +707,19 @@ pub async fn source(state: &ServerState, args: Value) -> Result<ToolResult> {
     ))
 }
 
-pub async fn wait_for_event(state: &ServerState, args: Value) -> Result<ToolResult> {
-    let timeout = duration(&args, "timeout_ms", 30_000, 300_000);
-    let after_sequence = args
-        .get("after_sequence")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+pub async fn wait_for_event(
+    state: &ServerState,
+    args: crate::parameters::DebugWaitForEventParams,
+) -> Result<ToolResult> {
+    let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(30_000));
+    let after_sequence = args.after_sequence.unwrap_or(0);
     let kinds = args
-        .get("kinds")
-        .and_then(Value::as_array)
+        .kinds
+        .as_ref()
         .map(|values| {
             values
                 .iter()
-                .filter_map(Value::as_str)
+                .map(|kind| kind.as_str())
                 .map(str::to_owned)
                 .collect::<HashSet<_>>()
         })
@@ -834,31 +806,6 @@ fn event_result(
     ))
 }
 
-fn required_u32(args: &Value, key: &str) -> Result<u32> {
-    args.get(key)
-        .and_then(Value::as_u64)
-        .map(|v| v as u32)
-        .ok_or_else(|| anyhow!("Missing {key}"))
-}
-
-fn required_string(args: &Value, key: &str, maximum: usize) -> Result<String> {
-    let value = args
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("Missing {key}"))?;
-    if value.len() > maximum {
-        return Err(anyhow!("{key} exceeds maximum length"));
-    }
-    Ok(value.to_owned())
-}
-
-fn optional_string(args: &Value, key: &str, maximum: usize) -> Result<Option<String>> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(|_| required_string(args, key, maximum))
-        .transpose()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -887,8 +834,11 @@ mod tests {
 
     #[test]
     fn debugger_host_defaults_to_interactive_dreamseeker() {
-        let executable = debugger_host_executable(&json!({}), &debugger_installation_fixture())
-            .expect("the default debugger host should be valid");
+        let executable = debugger_host_executable(
+            &crate::parameters::decode(json!({"dmb_path":"fixture.dmb"})).unwrap(),
+            &debugger_installation_fixture(),
+        )
+        .expect("the default debugger host should be valid");
 
         assert_eq!(executable, PathBuf::from("dreamseeker.exe"));
     }
@@ -896,7 +846,8 @@ mod tests {
     #[test]
     fn debugger_host_supports_headless_dreamdaemon() {
         let executable = debugger_host_executable(
-            &json!({"host_mode":"headless"}),
+            &crate::parameters::decode(json!({"dmb_path":"fixture.dmb","host_mode":"headless"}))
+                .unwrap(),
             &debugger_installation_fixture(),
         )
         .expect("the headless debugger host should be valid");
@@ -906,12 +857,10 @@ mod tests {
 
     #[test]
     fn debugger_host_rejects_unknown_modes() {
-        let error = debugger_host_executable(
-            &json!({"host_mode":"detached"}),
-            &debugger_installation_fixture(),
+        let error = crate::parameters::decode::<crate::parameters::DebugLaunchParams>(
+            json!({"dmb_path":"fixture.dmb","host_mode":"detached"}),
         )
-        .expect_err("unknown debugger host modes must fail closed");
-
+        .unwrap_err();
         assert!(error.to_string().contains("host_mode"));
     }
 
