@@ -250,6 +250,49 @@ fn a_location_record_cannot_verify_another_artifact() {
         .reasons
         .iter()
         .any(|reason| reason.code == "artifact_location_changed"));
+
+    let legacy_record_path = fixture
+        .state
+        .join("builds")
+        .join(format!("{}.json", second.artifact_key));
+    let legacy_record = std::fs::read(&legacy_record_path).unwrap();
+    let legacy_location = std::fs::read(&original_location).unwrap();
+    let attempt = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    let current: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            fixture
+                .state
+                .join("artifacts-v2")
+                .join(&attempt.artifact_key)
+                .join("state.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(current["record"].is_null());
+    assert!(!store.evaluate_launch(&fixture.dmb, false).unwrap().allowed);
+    assert_eq!(std::fs::read(legacy_record_path).unwrap(), legacy_record);
+    assert_eq!(std::fs::read(original_location).unwrap(), legacy_location);
+}
+
+#[cfg(unix)]
+#[test]
+fn non_unicode_managed_locations_are_rejected_before_identity_is_lost() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let fixture = ProvenanceFixture::new("non-unicode-location");
+    let store = fixture.store("repo-a");
+    for byte in [0xfe, 0xff] {
+        let artifact = fixture
+            .workspace
+            .join(OsString::from_vec(vec![byte, b'.', b'd', b'm', b'b']));
+        std::fs::write(&artifact, b"owned artifact").unwrap();
+        assert!(store.artifact_key(&artifact).is_err());
+    }
+    let parent = fixture.workspace.join(OsString::from_vec(vec![0xfe]));
+    std::fs::create_dir(&parent).unwrap();
+    assert!(store.artifact_key(&parent.join("new.dmb")).is_err());
 }
 
 #[cfg(unix)]

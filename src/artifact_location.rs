@@ -19,6 +19,9 @@ pub(crate) fn canonical_location(path: &Path) -> Result<PathBuf> {
 
 pub(crate) fn location_key(path: &Path) -> Result<String> {
     let path = canonical_location(path)?;
+    if path.to_str().is_none() {
+        bail!("managed artifact locations must be Unicode");
+    }
     check_supported_location(&path)?;
     #[cfg(windows)]
     {

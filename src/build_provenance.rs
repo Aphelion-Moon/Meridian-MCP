@@ -208,6 +208,12 @@ impl BuildProvenanceStore {
         let key = location_key(&dmb_path)?;
         let transaction = self.state.transaction()?;
         let previous = self.load_state(&transaction, &dmb_path, &key)?;
+        // Legacy location pointers may identify another artifact. Retain their
+        // stale evidence in the legacy store, not as this location's last build.
+        let record = previous.and_then(|state| state.record).filter(|record| {
+            self.artifact_key(&record.dmb.path)
+                .is_ok_and(|record_key| record_key == key)
+        });
         let attempt = BuildAttempt {
             schema: 1,
             attempt_id: random_id()?,
@@ -222,7 +228,7 @@ impl BuildProvenanceStore {
             &ArtifactState {
                 schema: 2,
                 artifact_key: key,
-                record: previous.and_then(|state| state.record),
+                record,
                 attempt: attempt.clone(),
             },
         )?;
