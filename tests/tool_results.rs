@@ -14,6 +14,8 @@ fn metadata() -> ToolMetadata {
         meridian_mcp_build: meridian_mcp::build_identity::current().clone(),
         spacemandmm_revision: "351ddc0ffb2439876d4565ce5130bb6b027ee605",
         state_generation: Some(7),
+        analysis: None,
+        runtime_id: None,
         asset_generation: None,
         truncated: false,
         truncation_reasons: Vec::new(),

@@ -105,7 +105,7 @@ pub(crate) async fn search_context(
             "documents_scored": execution.documents_scored,
         },
     });
-    Ok(ToolResult::text(serde_json::to_string_pretty(&response)?))
+    crate::result::analysis_text(&snapshot, response)
 }
 
 pub(super) fn add_source_fields(

@@ -528,7 +528,7 @@ static CONTRACTS: &[ToolContract] = &[
         1_048_576
     ),
     contract!(
-        "dm_debug_memory", crate::native_memory::MemoryControl, DebugMemory, Debugger,
+        "dm_debug_memory", crate::parameters::DebugMemoryParams, DebugMemory, Debugger,
         "Control bounded, opt-in native allocation attribution.",
         Development,
         DEBUG,

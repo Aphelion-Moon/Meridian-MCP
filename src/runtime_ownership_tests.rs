@@ -69,6 +69,38 @@ fn fixture_provenance() -> crate::LaunchProvenance {
     }
 }
 
+#[tokio::test]
+async fn topic_delivery_failure_keeps_its_error_code_and_captured_runtime_id() {
+    initialize_owner();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let state = crate::state::ServerState::new();
+    let runtime_id = state.new_runtime_id().unwrap();
+    let (child, containment) = crate::process::spawn_runtime_process(
+        &mut tokio::process::Command::from(fixture_command("leaf", std::path::Path::new("unused"))),
+    )
+    .unwrap();
+    {
+        let mut runtime = state.runtime().await;
+        runtime.runtime_id = Some(runtime_id.clone());
+        runtime.set_game_process(child, port, fixture_provenance());
+        runtime.containment = Some(containment);
+    }
+    let result = crate::tools::runtime::topic(
+        &state,
+        crate::parameters::decode(serde_json::json!({"topic":"ping","timeout_ms":5000})).unwrap(),
+    )
+    .await;
+    state.runtime().await.stop_game_process().await.unwrap();
+    let result = result.expect("Topic delivery errors must return a domain error result");
+    assert_eq!(result.is_error, Some(true));
+    let crate::result::ToolContent::Text { text } = &result.content[0];
+    let payload: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(payload["code"], "external_tool_failure");
+    assert_eq!(payload["details"]["runtime_id"], runtime_id);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn topic_wait_keeps_status_and_stop_responsive() {
     use crate::tools::runtime;

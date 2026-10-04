@@ -71,7 +71,7 @@ pub async fn get_definition(
                         "state_generation": snapshot.generation,
                         "spacemandmm_revision": snapshot.spacemandmm_revision,
                     });
-                    return Ok(ToolResult::text(serde_json::to_string_pretty(&result)?));
+                    return crate::result::analysis_text(&snapshot, result);
                 }
                 if let Some((owner, file_path, line, column)) = variable {
                     let result = json!({
@@ -87,7 +87,7 @@ pub async fn get_definition(
                         "state_generation": snapshot.generation,
                         "spacemandmm_revision": snapshot.spacemandmm_revision,
                     });
-                    return Ok(ToolResult::text(serde_json::to_string_pretty(&result)?));
+                    return crate::result::analysis_text(&snapshot, result);
                 }
 
                 Ok(ToolResult::error(format!(
@@ -107,7 +107,7 @@ pub async fn get_definition(
                     "state_generation": snapshot.generation,
                     "spacemandmm_revision": snapshot.spacemandmm_revision
                 });
-                Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+                crate::result::analysis_text(&snapshot, result)
             }
         }
         None => Ok(ToolResult::error(format!("Type not found: {type_path}"))),

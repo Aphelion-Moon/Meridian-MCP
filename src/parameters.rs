@@ -303,6 +303,14 @@ impl Request for NativeEvidenceCompareParams {
 pub struct GetTypeParams {
     /// The type path (e.g., '/obj/item', '/mob/living')
     pub type_path: String,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for GetTypeParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -335,6 +343,14 @@ pub struct GetProcParams {
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = MAX_SOURCE_LINES))]
     #[schemars(extend("default" = serde_json::json!(80)))]
     pub max_source_lines: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for GetProcParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -359,6 +375,14 @@ pub struct GetVarParams {
     pub type_path: String,
     /// Name of the variable
     pub var_name: String,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for GetVarParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -404,8 +428,16 @@ pub struct ListTypesParams {
         skip_serializing_if = "Option::is_none"
     )]
     #[schemars(with = "String")]
-    #[schemars(regex(pattern = "^[0-9]+$"))]
+    #[schemars(regex(pattern = "^v2:[0-9]+:[0-9a-f]{16}$"))]
     pub cursor: Option<String>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for ListTypesParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -421,11 +453,7 @@ impl Request for ListTypesParams {
             )?;
         }
         if let Some(value) = &self.cursor {
-            if value.contains('\0')
-                || value.is_empty()
-                || !value.bytes().all(|b| b.is_ascii_digit())
-                || value.parse::<usize>().is_err()
-            {
+            if value.len() > 64 || !value.starts_with("v2:") || value.contains('\0') {
                 return Err(InputError::new(
                     "cursor",
                     "request field is outside its advertised bounds",
@@ -484,6 +512,14 @@ pub struct SearchSymbolsParams {
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = SEARCH_SYMBOLS_LIMIT_MAX))]
     #[schemars(extend("default" = serde_json::json!(50)))]
     pub limit: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for SearchSymbolsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -577,6 +613,14 @@ pub struct SearchContextParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = MAX_SOURCE_LINES))]
     pub max_source_lines: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for SearchContextParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -708,7 +752,7 @@ pub struct CheckErrorsParams {
         skip_serializing_if = "Option::is_none"
     )]
     #[schemars(with = "String")]
-    #[schemars(regex(pattern = "^[0-9]+$"))]
+    #[schemars(regex(pattern = "^v2:[0-9]+:[0-9a-f]{16}$"))]
     pub cursor: Option<String>,
     /// Maximum diagnostics returned in this page. Summary counts cover every matching diagnostic.
     #[serde(
@@ -720,6 +764,14 @@ pub struct CheckErrorsParams {
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = CHECK_ERRORS_LIMIT_MAX))]
     #[schemars(extend("default" = serde_json::json!(50)))]
     pub limit: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for CheckErrorsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -730,11 +782,7 @@ impl Request for CheckErrorsParams {
             text("rule", value, CHECK_ERRORS_RULE_MIN, None)?;
         }
         if let Some(value) = &self.cursor {
-            if value.contains('\0')
-                || value.is_empty()
-                || !value.bytes().all(|b| b.is_ascii_digit())
-                || value.parse::<usize>().is_err()
-            {
+            if value.len() > 64 || !value.starts_with("v2:") || value.contains('\0') {
                 return Err(InputError::new(
                     "cursor",
                     "request field is outside its advertised bounds",
@@ -766,6 +814,14 @@ pub struct GetDefinitionParams {
     )]
     #[schemars(with = "String")]
     pub member_name: Option<String>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for GetDefinitionParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -822,6 +878,14 @@ pub struct DocumentSymbolsParams {
     #[schemars(with = "DocumentSymbolsDetail")]
     #[schemars(extend("default" = serde_json::json!("full")))]
     pub detail: Option<DocumentSymbolsDetail>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for DocumentSymbolsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -937,6 +1001,14 @@ pub struct FindReferencesParams {
     #[schemars(with = "FindReferencesDetail")]
     #[schemars(extend("default" = serde_json::json!("full")))]
     pub detail: Option<FindReferencesDetail>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for FindReferencesParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -1012,6 +1084,14 @@ pub struct FindImplementationsParams {
     #[schemars(with = "FindImplementationsDetail")]
     #[schemars(extend("default" = serde_json::json!("full")))]
     pub detail: Option<FindImplementationsDetail>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for FindImplementationsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -1067,6 +1147,14 @@ pub struct GenerateDocsParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = OUTPUT_MAX_BYTES_MAX))]
     pub output_max_bytes: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for GenerateDocsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -1546,6 +1634,14 @@ pub struct AuditIconsParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = AUDIT_ICONS_MAX_MATCHES_MAX))]
     pub max_matches: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for AuditIconsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -1753,6 +1849,14 @@ pub struct RenderMapParams {
     )]
     #[schemars(with = "Vec<String>")]
     pub disable_passes: Option<Vec<String>>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for RenderMapParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -1920,6 +2024,14 @@ pub struct RenderMapsParams {
     )]
     #[schemars(with = "bool")]
     pub overwrite: Option<bool>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for RenderMapsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2073,7 +2185,16 @@ impl Request for DebugLaunchParams {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct DebugStopParams {}
+pub struct DebugStopParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for DebugStopParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -2119,6 +2240,22 @@ pub struct DebugSetBreakpointsParams {
     pub source_path: String,
     #[schemars(length(max = DEBUG_SET_BREAKPOINTS_BREAKPOINTS_MAX))]
     pub breakpoints: Vec<DebugSetBreakpointsBreakpointsItem>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugSetBreakpointsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2208,6 +2345,22 @@ impl Request for DebugSetFunctionBreakpointsBreakpointsItem {
 pub struct DebugSetFunctionBreakpointsParams {
     #[schemars(length(max = DEBUG_SET_FUNCTION_BREAKPOINTS_BREAKPOINTS_MAX))]
     pub breakpoints: Vec<DebugSetFunctionBreakpointsBreakpointsItem>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugSetFunctionBreakpointsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2233,6 +2386,14 @@ impl Request for DebugSetFunctionBreakpointsParams {
 #[serde(deny_unknown_fields)]
 pub struct DebugSetExceptionBreakpointsParams {
     pub break_on_runtimes: bool,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugSetExceptionBreakpointsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2277,6 +2438,14 @@ pub struct DebugControlParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_NONNEGATIVE_INTEGER, max = MAX_PROTOCOL_U32))]
     pub thread_id: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugControlParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2299,7 +2468,16 @@ impl Request for DebugControlParams {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct DebugThreadsParams {}
+pub struct DebugThreadsParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for DebugThreadsParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -2327,6 +2505,14 @@ pub struct DebugStackTraceParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = DEBUG_STACK_TRACE_COUNT_MAX))]
     pub count: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugStackTraceParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2354,6 +2540,14 @@ impl Request for DebugStackTraceParams {
 pub struct DebugScopesParams {
     #[schemars(range(min = MIN_NONNEGATIVE_INTEGER, max = MAX_PROTOCOL_U32))]
     pub frame_id: u64,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugScopesParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2370,6 +2564,14 @@ impl Request for DebugScopesParams {
 pub struct DebugVariablesParams {
     #[schemars(range(min = PROTOCOL_I32_MIN, max = PROTOCOL_I32_MAX))]
     pub variables_reference: i64,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugVariablesParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2426,6 +2628,14 @@ pub struct DebugEvaluateParams {
     )]
     #[schemars(with = "DebugEvaluateContext")]
     pub context: Option<DebugEvaluateContext>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugEvaluateParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2450,7 +2660,16 @@ impl Request for DebugEvaluateParams {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct DebugExceptionInfoParams {}
+pub struct DebugExceptionInfoParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for DebugExceptionInfoParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -2462,6 +2681,14 @@ impl Request for DebugExceptionInfoParams {
 pub struct DebugSourceParams {
     #[schemars(extend("enum" = [1]))]
     pub source_reference: u64,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugSourceParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2532,6 +2759,14 @@ pub struct DebugWaitForEventParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_NONNEGATIVE_INTEGER, max = DEBUG_WAIT_FOR_EVENT_TIMEOUT_MS_MAX))]
     pub timeout_ms: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for DebugWaitForEventParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2691,6 +2926,14 @@ pub struct WaitForOutputParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_NONNEGATIVE_INTEGER, max = WAIT_FOR_OUTPUT_TIMEOUT_MS_MAX))]
     pub timeout_ms: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for WaitForOutputParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -2715,7 +2958,16 @@ impl Request for WaitForOutputParams {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
-pub struct StopParams {}
+pub struct StopParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for StopParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -2724,7 +2976,16 @@ impl Request for StopParams {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct StatusParams {}
+pub struct StatusParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for StatusParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -2747,6 +3008,14 @@ pub struct TopicParams {
     #[schemars(with = "u64")]
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = TOPIC_TIMEOUT_MS_MAX))]
     pub timeout_ms: Option<u64>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for TopicParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3112,6 +3381,14 @@ pub struct TracyCaptureParams {
     #[schemars(extend("maxProperties" = crate::tracy_experiment::MAX_ANNOTATIONS), inner(length(max = crate::tracy_experiment::MAX_ANNOTATION_VALUE_BYTES)))]
     /// Up to 32 annotations with 1-64 ASCII snake-case key bytes and at most 512 UTF-8 bytes per value.
     pub capture_annotations: Option<BTreeMap<String, String>>,
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
 }
 impl Request for TracyCaptureParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3235,7 +3512,16 @@ fn workload_error(error: crate::tracy_experiment::ExperimentError) -> InputError
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct TracyStatusParams {}
+pub struct TracyStatusParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for TracyStatusParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -3244,7 +3530,16 @@ impl Request for TracyStatusParams {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct TracyStopParams {}
+pub struct TracyStopParams {
+    /// Optional identity expectation; a stale handle fails before work starts.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
 impl Request for TracyStopParams {
     fn validate(&self) -> Result<(), InputError> {
         Ok(())
@@ -3294,6 +3589,14 @@ pub struct TracyHotspotsParams {
     #[schemars(with = "TracyHotspotsSort")]
     #[schemars(extend("default" = serde_json::json!("inclusive")))]
     pub sort: Option<TracyHotspotsSort>,
+    /// Optional expectation for source correlation; artifact analysis needs no parse.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for TracyHotspotsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3326,6 +3629,14 @@ pub struct TracyZoneParams {
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = TRACY_ZONE_LIMIT_MAX))]
     #[schemars(extend("default" = serde_json::json!(100)))]
     pub limit: Option<u64>,
+    /// Optional expectation for source correlation; artifact analysis needs no parse.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for TracyZoneParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3355,6 +3666,14 @@ impl Request for TracyZoneParams {
 #[serde(deny_unknown_fields)]
 pub struct TracyFrameStatsParams {
     pub trace_path: String,
+    /// Optional expectation for source correlation; artifact analysis needs no parse.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for TracyFrameStatsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3410,6 +3729,14 @@ pub struct TracyCompareParams {
     #[schemars(range(min = MIN_POSITIVE_INTEGER, max = TRACY_COMPARE_LIMIT_MAX))]
     #[schemars(extend("default" = serde_json::json!(100)))]
     pub limit: Option<u64>,
+    /// Optional expectation for source correlation; artifact analysis needs no parse.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for TracyCompareParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3493,6 +3820,14 @@ pub struct TracyControlStatsParams {
     #[schemars(with = "TracyControlStatsComparisonMode")]
     #[schemars(extend("default" = serde_json::json!("same_experiment_same_phase")))]
     pub comparison_mode: Option<TracyControlStatsComparisonMode>,
+    /// Optional expectation for source correlation; artifact analysis needs no parse.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::SnapshotId")]
+    pub expected_snapshot: Option<crate::identity::SnapshotId>,
 }
 impl Request for TracyControlStatsParams {
     fn validate(&self) -> Result<(), InputError> {
@@ -3574,6 +3909,61 @@ impl Request for crate::memory_evidence::MemoryCompareRequest {
         Ok(())
     }
 }
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DebugMemoryParams {
+    pub action: crate::native_memory::MemoryAction,
+    #[serde(default = "crate::native_memory::default_duration")]
+    #[schemars(range(min = 1, max = crate::native_memory::MAX_DURATION_MS))]
+    pub duration_ms: u64,
+    #[serde(default = "crate::native_memory::default_records")]
+    #[schemars(range(min = 1, max = crate::native_memory::MAX_RECORDS))]
+    pub max_records: usize,
+    #[serde(default = "crate::native_memory::default_rows")]
+    #[schemars(range(min = 1, max = crate::native_memory::MAX_ROW_LIMIT))]
+    pub row_limit: usize,
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "crate::identity::RuntimeId")]
+    pub expected_runtime: Option<crate::identity::RuntimeId>,
+}
+impl DebugMemoryParams {
+    pub(crate) fn into_control(self) -> crate::native_memory::MemoryControl {
+        crate::native_memory::MemoryControl {
+            action: self.action,
+            duration_ms: self.duration_ms,
+            max_records: self.max_records,
+            row_limit: self.row_limit,
+        }
+    }
+}
+impl Request for DebugMemoryParams {
+    fn validate(&self) -> Result<(), InputError> {
+        range(
+            "duration_ms",
+            self.duration_ms,
+            Some(1),
+            Some(crate::native_memory::MAX_DURATION_MS),
+        )?;
+        range(
+            "max_records",
+            self.max_records as u64,
+            Some(1),
+            Some(crate::native_memory::MAX_RECORDS as u64),
+        )?;
+        range(
+            "row_limit",
+            self.row_limit as u64,
+            Some(1),
+            Some(crate::native_memory::MAX_ROW_LIMIT as u64),
+        )?;
+        Ok(())
+    }
+}
+
 impl Request for crate::native_memory::MemoryControl {
     fn validate(&self) -> Result<(), InputError> {
         if !(1..=crate::native_memory::MAX_DURATION_MS).contains(&self.duration_ms) {
@@ -3732,7 +4122,7 @@ pub(crate) enum ToolRequest {
     MapInfo(MapInfoParams),
     FindOnMap(FindOnMapParams),
     DebugLaunch(DebugLaunchParams),
-    DebugMemory(crate::native_memory::MemoryControl),
+    DebugMemory(DebugMemoryParams),
     DebugStop(DebugStopParams),
     DebugSetBreakpoints(DebugSetBreakpointsParams),
     DebugSetFunctionBreakpoints(DebugSetFunctionBreakpointsParams),
@@ -3764,6 +4154,74 @@ pub(crate) enum ToolRequest {
 }
 
 impl ToolRequest {
+    pub(crate) fn snapshot_expectation(&self) -> Option<Option<&str>> {
+        match self {
+            Self::GetType(args) => Some(args.expected_snapshot.as_deref()),
+            Self::GetProc(args) => Some(args.expected_snapshot.as_deref()),
+            Self::GetVar(args) => Some(args.expected_snapshot.as_deref()),
+            Self::ListTypes(args) => Some(args.expected_snapshot.as_deref()),
+            Self::SearchSymbols(args) => Some(args.expected_snapshot.as_deref()),
+            Self::SearchContext(args) => Some(args.expected_snapshot.as_deref()),
+            Self::CheckErrors(args) => Some(args.expected_snapshot.as_deref()),
+            Self::GetDefinition(args) => Some(args.expected_snapshot.as_deref()),
+            Self::DocumentSymbols(args) => Some(args.expected_snapshot.as_deref()),
+            Self::FindReferences(args) => Some(args.expected_snapshot.as_deref()),
+            Self::FindImplementations(args) => Some(args.expected_snapshot.as_deref()),
+            Self::GenerateDocs(args) => Some(args.expected_snapshot.as_deref()),
+            Self::AuditIcons(args) => Some(args.expected_snapshot.as_deref()),
+            Self::RenderMap(args) => Some(args.expected_snapshot.as_deref()),
+            Self::RenderMaps(args) => Some(args.expected_snapshot.as_deref()),
+            Self::DebugSetBreakpoints(args) => Some(args.expected_snapshot.as_deref()),
+            Self::DebugSetFunctionBreakpoints(args) => args.expected_snapshot.as_deref().map(Some),
+            Self::TracyHotspots(args) => args.expected_snapshot.as_deref().map(Some),
+            Self::TracyZone(args) => args.expected_snapshot.as_deref().map(Some),
+            Self::TracyFrameStats(args) => args.expected_snapshot.as_deref().map(Some),
+            Self::TracyCompare(args) => args.expected_snapshot.as_deref().map(Some),
+            Self::TracyControlStats(args) => args.expected_snapshot.as_deref().map(Some),
+            _ => None,
+        }
+    }
+    pub(crate) fn uses_optional_analysis(&self) -> bool {
+        matches!(
+            self,
+            Self::TracyHotspots(_)
+                | Self::TracyZone(_)
+                | Self::TracyFrameStats(_)
+                | Self::TracyCompare(_)
+                | Self::TracyControlStats(_)
+        )
+    }
+    pub(crate) fn runtime_expectation(&self) -> Option<(bool, Option<&str>)> {
+        match self {
+            Self::DebugStop(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugSetBreakpoints(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugSetFunctionBreakpoints(args) => {
+                Some((true, args.expected_runtime.as_deref()))
+            }
+            Self::DebugSetExceptionBreakpoints(args) => {
+                Some((true, args.expected_runtime.as_deref()))
+            }
+            Self::DebugControl(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugThreads(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugStackTrace(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugScopes(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugVariables(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugEvaluate(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugMemory(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugExceptionInfo(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugSource(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::DebugWaitForEvent(args) => Some((true, args.expected_runtime.as_deref())),
+            Self::WaitForOutput(args) => Some((false, args.expected_runtime.as_deref())),
+            Self::Stop(args) => Some((false, args.expected_runtime.as_deref())),
+            Self::Status(args) => Some((false, args.expected_runtime.as_deref())),
+            Self::Topic(args) => Some((false, args.expected_runtime.as_deref())),
+            Self::TracyCapture(args) => Some((false, args.expected_runtime.as_deref())),
+            Self::TracyStatus(args) => Some((false, args.expected_runtime.as_deref())),
+            Self::TracyStop(args) => Some((false, args.expected_runtime.as_deref())),
+            _ => None,
+        }
+    }
+
     /// Aliases become comparable only after the startup path policy canonicalizes
     /// each artifact. Check before any artifact parsing or blocking admission.
     pub(crate) fn validate_canonical_paths(&self) -> Result<(), InputError> {

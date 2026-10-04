@@ -191,11 +191,7 @@ async fn run_internal(
         startup_timeout_ms,
         require_verified,
     } = options;
-    let active_snapshot = if profiler_port.is_none() {
-        server_state.active_snapshot().await
-    } else {
-        None
-    };
+    let active_snapshot = server_state.active_snapshot().await;
     let mut state = server_state.runtime().await;
     // Check if already running
     if state.is_game_running() {
@@ -272,6 +268,18 @@ async fn run_internal(
         path.display(),
         port
     );
+    let runtime_id = if profiler_port.is_some() {
+        state
+            .runtime_id
+            .clone()
+            .ok_or_else(|| anyhow!("Tracy runtime identity was not prepared"))?
+    } else {
+        server_state.new_runtime_id()?
+    };
+    let analysis_identity = active_snapshot
+        .as_ref()
+        .filter(|snapshot| snapshot.environment_path.with_extension("dmb") == path)
+        .map(|snapshot| snapshot.identity());
     state.clear_runtime_diagnostics();
     state.integrity_summary = None;
 
@@ -329,6 +337,8 @@ async fn run_internal(
     state.containment = Some(containment);
     state.execution_lease = Some(lease);
 
+    state.runtime_id = Some(runtime_id.clone());
+    state.analysis_identity = analysis_identity.clone();
     let pid = child.id();
 
     let stdout = child.stdout.take();
@@ -398,6 +408,8 @@ async fn run_internal(
     }
 
     let mut result = json!({
+        "runtime_id": runtime_id,
+        "analysis": analysis_identity,
         "success": true,
         "pid": pid,
         "port": port,
@@ -696,7 +708,7 @@ pub async fn wait_for_output(
         Ok(options) => options,
         Err(error) => return Ok(invalid_arguments(error)),
     };
-    let mut state = server_state.runtime().await;
+    let mut state = server_state.runtime_checked().await?;
     let running = state.is_game_running();
     let has_runtime_diagnostics =
         state.last_exit_code.is_some() || !state.recent_output(1).is_empty();
@@ -714,11 +726,16 @@ pub async fn wait_for_output(
     server_state.observe_runtime(&mut state);
     let output = Arc::clone(&state.output_log);
     let provenance = state.launch_provenance.clone();
+    let runtime_id = state.runtime_id.clone();
+    let analysis = state.analysis_identity.clone();
     drop(state);
     let result = wait_for_output_value(&output, &options.pattern, options.timeout_ms).await?;
     let mut state = server_state.runtime().await;
     if !Arc::ptr_eq(&output, &state.output_log) {
         let mut result = result;
+        result["runtime_id"] = json!(runtime_id);
+        result["analysis"] = json!(analysis);
+        result["session_replaced"] = json!(true);
         result["launch_provenance"] = json!(provenance);
         result["recent_output_entries"] = json!(output
             .lock()
@@ -744,6 +761,8 @@ pub async fn wait_for_output(
         finalize_standard_integrity(&mut state, "natural_exit").await?
     };
     let mut result = result;
+    result["runtime_id"] = json!(runtime_id);
+    result["analysis"] = json!(analysis);
     result["integrity"] = json!(integrity);
     result["launch_provenance"] = json!(state.launch_provenance);
     result["recent_output_entries"] = json!(state.recent_output_entries(50));
@@ -1138,7 +1157,7 @@ pub async fn stop(state: &ServerState, _args: crate::parameters::StopParams) -> 
 }
 
 pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResult> {
-    let mut state = state.runtime().await;
+    let mut state = state.runtime_checked().await?;
     let was_running = state.is_game_running();
     if !was_running
         && state.integrity.is_none()
@@ -1159,6 +1178,8 @@ pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResul
         "success": !was_running || process_stopped,
         "process_stopped": process_stopped,
         "message": "DreamDaemon stopped",
+        "runtime_id": state.runtime_id,
+        "analysis": state.analysis_identity,
         "launch_provenance": state.launch_provenance,
         "integrity": integrity,
         "warnings": integrity.as_ref().map(|summary| &summary.warnings).unwrap_or(&Vec::new()),
@@ -1178,7 +1199,7 @@ pub async fn status(
     state: &ServerState,
     _args: crate::parameters::StatusParams,
 ) -> Result<ToolResult> {
-    let mut state = state.runtime().await;
+    let mut state = state.runtime_checked().await?;
     if !state.is_game_running() {
         let integrity = finalize_standard_integrity(&mut state, "natural_exit").await?;
         return Ok(ToolResult::text(
@@ -1186,6 +1207,8 @@ pub async fn status(
                 "running": false,
                 "runtime_kind": state.kind,
                 "last_exit_code": state.last_exit_code,
+                "runtime_id": state.runtime_id,
+                "analysis": state.analysis_identity,
                 "launch_provenance": state.launch_provenance,
                 "integrity": integrity,
                 "recent_output": state.recent_output(50),
@@ -1212,6 +1235,8 @@ pub async fn status(
             "pid": pid,
             "recent_output": state.recent_output(50),
             "recent_output_entries": state.recent_output_entries(50),
+            "runtime_id": state.runtime_id,
+            "analysis": state.analysis_identity,
             "launch_provenance": state.launch_provenance,
             "integrity": integrity
         })
@@ -1234,27 +1259,46 @@ pub async fn topic(
         Ok(request) => request,
         Err(error) => return Ok(invalid_arguments(error)),
     };
-    let mut runtime = state.runtime().await;
+    let lifecycle = state.lifecycle().await;
+    let mut runtime = state.runtime_checked().await?;
     if !runtime.is_game_running() {
         return Ok(ToolResult::error("No game instance is currently running."));
     }
     state.observe_runtime(&mut runtime);
     let port = runtime.game_port.unwrap_or(1337);
     let output = Arc::clone(&runtime.output_log);
+    let runtime_id = runtime.runtime_id.clone();
+    let analysis = runtime.analysis_identity.clone();
     drop(runtime);
     info!("Sending Topic to port {port}");
     let address = format!("127.0.0.1:{port}");
-    let response = tokio::select! {
-        biased;
-        () = runtime_session_ended(&output) => {
-            return Ok(ToolResult::error("Runtime session ended during Topic request."));
-        }
-        response = send_topic_packet(&address, &packet, timeout_ms) => response,
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
+    // Keep replacement excluded through request delivery, then allow stop while
+    // awaiting the response on this session's already connected socket.
+    let delivered = tokio::time::timeout_at(deadline, async {
+        let mut stream = TcpStream::connect(&address).await?;
+        stream.write_all(&packet).await?;
+        Ok::<_, anyhow::Error>(stream)
+    })
+    .await;
+    drop(lifecycle);
+    let response = match delivered {
+        Ok(Ok(mut stream)) => tokio::select! {
+            biased;
+            () = runtime_session_ended(&output) => {
+                return Ok(ToolResult::error("Runtime session ended during Topic request."));
+            }
+            response = tokio::time::timeout_at(deadline, read_topic_response(&mut stream)) => response.map_err(anyhow::Error::from).and_then(|response| response),
+        },
+        Ok(Err(error)) => Err(error),
+        Err(error) => Err(error.into()),
     };
     match response {
         Ok(response) => Ok(ToolResult::text(
             json!({
                 "success": true,
+                "runtime_id": runtime_id,
+                "analysis": analysis,
                 "response": response
             })
             .to_string(),
@@ -1270,7 +1314,7 @@ pub async fn topic(
                 "Check the running world's Topic handler and retry within the timeout limit."
                     .to_owned(),
             ),
-            json!({}),
+            json!({"runtime_id":runtime_id,"analysis":analysis}),
         )),
     }
 }
@@ -1314,19 +1358,23 @@ async fn send_topic_packet(address: &str, packet: &[u8], timeout_ms: u64) -> Res
     tokio::time::timeout(Duration::from_millis(timeout_ms), async {
         let mut stream = TcpStream::connect(address).await?;
         stream.write_all(packet).await?;
-        let mut header = [0; 4];
-        stream.read_exact(&mut header).await?;
-        anyhow::ensure!(header[..2] == [0, 0x83], "Invalid response header");
-        let length = u16::from_be_bytes([header[2], header[3]]) as usize;
-        if length == 0 {
-            return Ok(String::new());
-        }
-        let mut response = vec![0; length];
-        stream.read_exact(&mut response).await?;
-        decode_topic_response(&response)
+        read_topic_response(&mut stream).await
     })
     .await
     .with_context(|| format!("Topic request timed out after {timeout_ms} ms"))?
+}
+
+async fn read_topic_response(stream: &mut TcpStream) -> Result<String> {
+    let mut header = [0; 4];
+    stream.read_exact(&mut header).await?;
+    anyhow::ensure!(header[..2] == [0, 0x83], "Invalid response header");
+    let length = u16::from_be_bytes([header[2], header[3]]) as usize;
+    if length == 0 {
+        return Ok(String::new());
+    }
+    let mut response = vec![0; length];
+    stream.read_exact(&mut response).await?;
+    decode_topic_response(&response)
 }
 
 fn build_topic_packet(topic: &str) -> Result<Vec<u8>> {

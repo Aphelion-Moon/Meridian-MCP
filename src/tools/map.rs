@@ -151,6 +151,7 @@ pub async fn render_map(
     )?;
 
     Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
+        "analysis": snapshot.identity(),
         "success": true,
         "dmm_path": dmm_path,
         "z_level": z_level,
@@ -253,6 +254,9 @@ pub async fn render_maps(
     state: &ServerState,
     args: crate::parameters::RenderMapsParams,
 ) -> Result<ToolResult> {
+    let snapshot = state.snapshot().await?;
+    let admitted = state.for_request(Some(std::sync::Arc::clone(&snapshot)), None);
+    let state = &admitted;
     let files = &args.files;
     let limits = ServerLimits::default();
     if files.len() > limits.max_render_files {
@@ -283,6 +287,7 @@ pub async fn render_maps(
                 return Err(anyhow!("render output extension must be .png"));
             }
             let request = crate::parameters::RenderMapParams {
+                expected_snapshot: None,
                 dmm_path: dmm.display().to_string(),
                 output_path: Some(output.display().to_string()),
                 overwrite: Some(overwrite),
@@ -316,12 +321,7 @@ pub async fn render_maps(
         }
     }
     Ok(json_success(
-        ToolMetadata::complete(
-            state
-                .active_snapshot()
-                .await
-                .map(|snapshot| snapshot.generation),
-        ),
+        ToolMetadata::for_snapshot(&snapshot),
         json!({"completed":completed,"failed":failed,"files":results}),
     ))
 }

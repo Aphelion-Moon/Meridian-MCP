@@ -150,12 +150,7 @@ pub async fn info(
     let path = PathBuf::from(&args.dmi_path);
     let asset = load(context, state, &path).await?;
     let profile = profile_dmi(&asset, &ServerLimits::default())?;
-    let mut metadata = ToolMetadata::complete(
-        state
-            .active_snapshot()
-            .await
-            .map(|snapshot| snapshot.generation),
-    );
+    let mut metadata = ToolMetadata::complete(None);
     metadata.asset_generation = Some(asset.asset_generation);
     Ok(json_success(metadata, json!({ "profile": profile })))
 }
@@ -176,12 +171,7 @@ pub async fn compare(
         args.right_duplicate_index.unwrap_or(0) as u32,
         args.minimum_similarity.unwrap_or(0.985) as f32,
     )?;
-    let mut metadata = ToolMetadata::complete(
-        state
-            .active_snapshot()
-            .await
-            .map(|snapshot| snapshot.generation),
-    );
+    let mut metadata = ToolMetadata::complete(None);
     metadata.asset_generation = Some(left.asset_generation.max(right.asset_generation));
     Ok(json_success(metadata, json!({ "comparison": comparison })))
 }
@@ -399,12 +389,7 @@ pub async fn find_duplicates(
         &mut scan,
     )
     .await?;
-    let mut metadata = ToolMetadata::complete(
-        state
-            .active_snapshot()
-            .await
-            .map(|snapshot| snapshot.generation),
-    );
+    let mut metadata = ToolMetadata::complete(None);
     metadata.truncated = !reasons.is_empty();
     metadata.truncation_reasons = reasons;
     Ok(json_success(
@@ -519,7 +504,7 @@ pub async fn audit_icons(
         }
     }
     let complete = dynamic_references.is_empty() && reasons.is_empty();
-    let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
+    let mut metadata = ToolMetadata::for_snapshot(&snapshot);
     metadata.truncated = !reasons.is_empty();
     metadata.truncation_reasons = reasons;
     Ok(json_success(
@@ -630,12 +615,7 @@ pub async fn extract(
             .map_err(|error| AtomicOutputError::writer(error.to_string()))
         },
     )?;
-    let mut metadata = ToolMetadata::complete(
-        state
-            .active_snapshot()
-            .await
-            .map(|snapshot| snapshot.generation),
-    );
+    let mut metadata = ToolMetadata::complete(None);
     metadata.asset_generation = Some(asset.asset_generation);
     Ok(json_success(
         metadata,

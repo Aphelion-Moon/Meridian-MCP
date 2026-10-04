@@ -161,6 +161,7 @@ pub async fn check_sync(
     for required in &fixture.required_procs {
         check_required_proc(&snapshot, required, &mut issues);
     }
+    let analysis = snapshot.identity();
     drop(snapshot);
     let policy = context.policy().clone();
     let limits = state.asset_limits().clone();
@@ -201,6 +202,7 @@ pub async fn check_sync(
     };
 
     issues.respond(json!({
+        "analysis": analysis,
         "classification": classification,
         "validation_complete": true,
         "fixture_id": fixture.fixture_id,

@@ -17,6 +17,12 @@ pub async fn status(context: &ToolExecutionContext, state: &ServerState) -> Resu
             .map(|profile| profile.root())
             .or_else(|| snapshot.environment_path.parent());
         json!({
+            "snapshot_id": snapshot.snapshot_id,
+            "generation": snapshot.generation,
+            "environment": snapshot.environment_path,
+            "source": "cached_snapshot",
+            "completeness": "complete",
+            "disk_state": "unknown",
             "parsed": true,
             "state_generation": snapshot.generation,
             "environment_path": snapshot.environment_path,

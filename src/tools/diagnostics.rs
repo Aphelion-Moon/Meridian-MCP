@@ -44,27 +44,44 @@ pub async fn check_errors(
     args: crate::parameters::CheckErrorsParams,
 ) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
+    let codec = crate::cursor::Cursor::new(
+        &snapshot,
+        "full",
+        json!([
+            "diagnostics",
+            "cached_order_v1",
+            args.file_path.as_deref().map(normalize_path_for_match),
+            args.severity,
+            args.component,
+            args.rule,
+            args.configured
+        ]),
+    );
+    let cursor = codec.decode(args.cursor.as_deref())?;
     let query = DiagnosticQuery {
         file_path: args.file_path,
         severity: args.severity.map(|value| value.as_str().into()),
         component: args.component.map(|value| value.as_str().into()),
         rule: args.rule,
         configured: args.configured,
-        cursor: args
-            .cursor
-            .as_deref()
-            .map(str::parse::<usize>)
-            .transpose()?
-            .unwrap_or(0),
+        cursor,
         limit: args.limit.unwrap_or(DEFAULT_DIAGNOSTIC_LIMIT as u64) as usize,
     };
 
     info!("Reading cached DreamChecker diagnostics...");
 
-    let page = query_diagnostics(&snapshot.diagnostics, &query);
+    let mut page = query_diagnostics(&snapshot.diagnostics, &query);
+    anyhow::ensure!(
+        cursor <= page.total_count,
+        "Cursor offset exceeds the result count"
+    );
+    page.next_cursor = page
+        .next_cursor
+        .as_ref()
+        .map(|offset| codec.encode(offset.parse().expect("internal diagnostic offset")));
     let has_more = page.next_cursor.is_some();
     let count = page.diagnostics.len();
-    let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
+    let mut metadata = ToolMetadata::for_snapshot(&snapshot);
     if has_more {
         metadata.truncated = true;
         metadata

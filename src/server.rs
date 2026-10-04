@@ -168,7 +168,7 @@ impl ServerHandler for MeridianServer {
             arguments,
         )
         .await
-        .unwrap_or_else(|error| DomainToolResult::error(error.to_string()));
+        .unwrap_or_else(crate::result::tool_error);
         let result = enforce_output_limit(&request.name, result);
         Ok(CallToolResponse::Complete(to_sdk_result(result)))
     }
@@ -192,7 +192,7 @@ fn enforce_output_limit(name: &str, result: DomainToolResult) -> DomainToolResul
         return result;
     }
 
-    structured_error(
+    let mut bounded = structured_error(
         ToolErrorCode::LimitExceeded,
         "tool output exceeded its declared transport limit",
         Some("Narrow the request or use the tool's pagination controls.".to_owned()),
@@ -201,7 +201,9 @@ fn enforce_output_limit(name: &str, result: DomainToolResult) -> DomainToolResul
             "output_bytes": output_bytes,
             "max_output_bytes": contract.max_output_bytes,
         }),
-    )
+    );
+    bounded.meta = result.meta;
+    bounded
 }
 
 fn to_sdk_tool(definition: ToolDefinition, rift_build: crate::RiftBuildAccess) -> Tool {
@@ -240,16 +242,69 @@ fn to_sdk_result(result: DomainToolResult) -> CallToolResult {
             DomainContent::Text { text } => ContentBlock::text(text),
         })
         .collect();
-    if result.is_error == Some(true) {
+    let mut sdk = if result.is_error == Some(true) {
         CallToolResult::error(content)
     } else {
         CallToolResult::success(content)
-    }
+    };
+    sdk.meta = result.meta.map(|meta| {
+        serde_json::Map::from_iter([(
+            "analysis".to_owned(),
+            serde_json::to_value(meta.analysis).expect("analysis identity serialization"),
+        )])
+        .into()
+    });
+    sdk
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn semantic_error_identity_survives_sdk_conversion_and_output_replacement() {
+        let state = ServerState::new();
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/language/fixture.dme");
+        let context = ToolExecutionContext::new(
+            crate::CapabilityMode::Analysis,
+            PathPolicy::new(vec![fixture.parent().unwrap().to_owned()], vec![]).unwrap(),
+        );
+        crate::tools::call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            serde_json::json!({"dme_path":fixture}),
+        )
+        .await
+        .unwrap();
+        let analysis = state.snapshot().await.unwrap().identity();
+        let result = DomainToolResult::error("legacy error text").with_analysis(analysis.clone());
+        let sdk = serde_json::to_value(to_sdk_result(result)).unwrap();
+        assert_eq!(sdk["isError"], true);
+        assert_eq!(sdk["content"][0]["text"], "legacy error text");
+        assert_eq!(
+            sdk["_meta"]["analysis"],
+            serde_json::to_value(&analysis).unwrap()
+        );
+        let error: anyhow::Error = crate::result::SemanticCallError {
+            error: anyhow::anyhow!("legacy failed query"),
+            analysis: analysis.clone(),
+        }
+        .into();
+        let sdk = serde_json::to_value(to_sdk_result(crate::result::tool_error(error))).unwrap();
+        assert_eq!(sdk["content"][0]["text"], "legacy failed query");
+        assert_eq!(
+            sdk["_meta"]["analysis"]["snapshot_id"],
+            analysis.snapshot_id
+        );
+        let limited = enforce_output_limit(
+            "dm_stop",
+            DomainToolResult::text("x".repeat(300000)).with_analysis(analysis.clone()),
+        );
+        assert_eq!(limited.is_error, Some(true));
+        assert_eq!(limited.meta.unwrap().analysis, analysis);
+    }
 
     #[test]
     fn sdk_annotations_follow_contract_effects() {

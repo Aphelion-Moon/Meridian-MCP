@@ -190,6 +190,8 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
     );
     let state = ServerState::new();
     let mut outcomes = Vec::new();
+    let mut previous_id: Option<String> = None;
+    let mut stale_controls = Vec::new();
     for (case, input, cwd) in [
         ("default", json!(dmb), None),
         ("absolute", json!(dmb), Some(&requested)),
@@ -205,6 +207,30 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
             args["working_directory"] = json!(cwd);
         }
         let result = call_tool(&context, &state, "dm_run", args).await.unwrap();
+        let launched = payload(&result);
+        if let Some(previous_id) = &previous_id {
+            stale_controls.push(payload(
+                &call_tool(
+                    &context,
+                    &state,
+                    "dm_stop",
+                    json!({"expected_runtime":previous_id}),
+                )
+                .await
+                .unwrap(),
+            ));
+            stale_controls.push(payload(
+                &call_tool(
+                    &context,
+                    &state,
+                    "dm_status",
+                    json!({"expected_runtime":previous_id}),
+                )
+                .await
+                .unwrap(),
+            ));
+        }
+        previous_id = launched["runtime_id"].as_str().map(str::to_owned);
         if case == "absolute" {
             std::fs::write(&tracked, "after").unwrap();
         }
@@ -229,4 +255,12 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
         (result["success"] != true || result["working_directory"] != expected_cd || !has_cwd || !has_bind || !has_cd || !tracks_artifact).then(|| format!("{case}: cwd={has_cwd}, explicit_cd={has_cd}, loopback={has_bind}, artifact_integrity={tracks_artifact}, result={result}"))
     }).collect();
     assert!(problems.is_empty(), "{}", problems.join("\n"));
+    assert!(previous_id.is_some(), "launch must identify its runtime");
+    assert_eq!(stale_controls.len(), 4);
+    assert!(
+        stale_controls
+            .iter()
+            .all(|body| body["code"] == "stale_generation"),
+        "{stale_controls:?}"
+    );
 }

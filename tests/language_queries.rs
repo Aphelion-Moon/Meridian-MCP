@@ -334,8 +334,14 @@ async fn continuation_rejects_changed_queries_and_stale_snapshots() {
             .await
             .is_err()
     );
-    // Presentation and page size do not change the ordered result set.
+    // Detail is part of the cursor contract; page size may change.
     next["detail"] = json!("compact");
+    assert!(
+        call_tool(&context, &state, "dm_find_implementations", next.clone())
+            .await
+            .is_err()
+    );
+    next["detail"] = json!("full");
     next["limit"] = json!(2);
     let rest = payload(
         call_tool(&context, &state, "dm_find_implementations", next.clone())

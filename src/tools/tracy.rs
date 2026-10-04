@@ -121,8 +121,8 @@ pub async fn launch(
 ) -> Result<ToolResult> {
     let _lifecycle = state.lifecycle().await;
     let prior_journal_id = state
-        .tracy_capture()
-        .await
+        .tracy_capture_checked()
+        .await?
         .integrity_journal
         .as_ref()
         .map(|journal| journal.summary().journal_id);
@@ -131,14 +131,14 @@ pub async fn launch(
         .as_ref()
         .map_or(true, |tool_result| tool_result.is_error == Some(true));
     let current_journal_id = state
-        .tracy_capture()
-        .await
+        .tracy_capture_checked()
+        .await?
         .integrity_journal
         .as_ref()
         .map(|journal| journal.summary().journal_id);
     let owns_lease = state
-        .runtime()
-        .await
+        .runtime_checked()
+        .await?
         .execution_lease
         .as_ref()
         .is_some_and(|lease| {
@@ -160,6 +160,7 @@ async fn launch_inner(
     state: &crate::state::ServerState,
     args: crate::parameters::TracyLaunchParams,
 ) -> Result<ToolResult> {
+    let runtime_id = state.new_runtime_id()?;
     let dmb_path = Path::new(args.dmb_path.as_str());
     let canonical_dmb = dmb_path.canonicalize()?;
     let game_port = u16::try_from(args.game_port.unwrap_or(1337))?;
@@ -208,7 +209,7 @@ async fn launch_inner(
         ));
     }
     {
-        let mut runtime = state.runtime().await;
+        let mut runtime = state.runtime_checked().await?;
         if runtime.is_game_running() {
             return Err(anyhow!("an MCP-owned runtime is already active"));
         }
@@ -280,8 +281,9 @@ async fn launch_inner(
     // Journal creation begins durable finalization obligations. Retain the
     // lease in shared state before the next cancellable await.
     {
-        let mut runtime = state.runtime().await;
+        let mut runtime = state.runtime_checked().await?;
         lease.mark_writer_started();
+        runtime.runtime_id = Some(runtime_id.clone());
         runtime.execution_lease = Some(lease);
     }
     let mut integrity_journal = match crate::workspace_integrity::IntegrityJournal::create(
@@ -315,7 +317,8 @@ async fn launch_inner(
     let pre_launch_checkpoint = integrity.checkpoint("pre_launch", &integrity_owned_paths)?;
     integrity_journal.record(context.policy(), pre_launch_checkpoint)?;
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
+        capture.runtime_id = Some(runtime_id.clone());
         capture.integrity = Some(integrity);
         capture.integrity_journal = Some(integrity_journal);
         capture.integrity_owned_paths = integrity_owned_paths;
@@ -352,18 +355,18 @@ async fn launch_inner(
         return Ok(runtime_result);
     }
     let experiment_started_at = tokio::time::Instant::now();
-    let initial_process_identities = owned_process_identities(state).await;
+    let initial_process_identities = owned_process_identities(state).await?;
     let (memory_series, memory_stop, memory_task) =
         start_memory_sampler(&initial_process_identities, experiment_started_at);
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         capture.memory_series = Some(memory_series);
         capture.memory_stop = Some(memory_stop);
         capture.memory_task = Some(memory_task);
         capture.experiment_started_at = Some(experiment_started_at);
     }
-    let mut runtime = state.runtime().await;
-    let mut capture = state.tracy_capture().await;
+    let mut runtime = state.runtime_checked().await?;
+    let mut capture = state.tracy_capture_checked().await?;
     let collector = match TracyCollector::spawn(TracyCollectorSpec {
         helper: installation.helper.path.clone(),
         working_directory: dmb_path
@@ -390,9 +393,9 @@ async fn launch_inner(
     capture.phase = Some(TracySessionPhase::CollectorConnecting);
     drop(capture);
     drop(runtime);
-    let memory_series = state.tracy_capture().await.memory_series.clone();
+    let memory_series = state.tracy_capture_checked().await?.memory_series.clone();
     if let Some(memory_series) = memory_series {
-        register_memory_identities(&memory_series, &owned_process_identities(state).await).await;
+        register_memory_identities(&memory_series, &owned_process_identities(state).await?).await;
     }
     let readiness = match collector
         .session_start("127.0.0.1", profiler_port, readiness_timeout_ms)
@@ -401,7 +404,7 @@ async fn launch_inner(
         Ok(readiness) => readiness,
         Err(error) => {
             let stderr_tail = collector.stderr_tail().await;
-            let mut runtime = state.runtime().await;
+            let mut runtime = state.runtime_checked().await?;
             let _ = runtime.stop_game_process().await;
             return Err(anyhow!(
                 "Tracy collector readiness failed: {error}; stderr tail: {stderr_tail:?}"
@@ -456,7 +459,7 @@ async fn launch_inner(
         Ok(())
     })?;
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         capture.phase = Some(TracySessionPhase::HealthyIdle);
         capture.last_status = Some(readiness);
         capture.experiment = Some(ExperimentState {
@@ -552,7 +555,7 @@ async fn launch_inner(
             let executable = wake_client
                 .as_ref()
                 .expect("wake client was qualified before launch");
-            let mut capture = state.tracy_capture().await;
+            let mut capture = state.tracy_capture_checked().await?;
             let client = match spawn_wake_client(
                 executable,
                 canonical_dmb
@@ -563,7 +566,7 @@ async fn launch_inner(
                 Ok(client) => client,
                 Err(error) => {
                     drop(capture);
-                    if let Some(lease) = state.runtime().await.execution_lease.as_mut() {
+                    if let Some(lease) = state.runtime_checked().await?.execution_lease.as_mut() {
                         lease.require_recovery();
                     }
                     let topic_processed = topic_was_processed(&attempts);
@@ -576,8 +579,8 @@ async fn launch_inner(
                         "wake_client_error":error.to_string(),
                     });
                     state
-                        .tracy_capture()
-                        .await
+                        .tracy_capture_checked()
+                        .await?
                         .experiment
                         .as_mut()
                         .expect("launch initialized experiment state")
@@ -594,9 +597,9 @@ async fn launch_inner(
             let client_pid = client.process.id();
             capture.wake_client = Some(client);
             drop(capture);
-            let memory_series = state.tracy_capture().await.memory_series.clone();
+            let memory_series = state.tracy_capture_checked().await?.memory_series.clone();
             if let Some(memory_series) = memory_series {
-                register_memory_identities(&memory_series, &owned_process_identities(state).await)
+                register_memory_identities(&memory_series, &owned_process_identities(state).await?)
                     .await;
             }
             let before = collector
@@ -647,8 +650,8 @@ async fn launch_inner(
                 "sustained_producer_progress":false,
             });
             state
-                .tracy_capture()
-                .await
+                .tracy_capture_checked()
+                .await?
                 .experiment
                 .as_mut()
                 .expect("launch initialized experiment state")
@@ -677,15 +680,15 @@ async fn launch_inner(
         None
     };
     state
-        .tracy_capture()
-        .await
+        .tracy_capture_checked()
+        .await?
         .experiment
         .as_mut()
         .expect("launch initialized experiment state")
         .runtime_wake = runtime_wake.clone();
-    let process_identities = owned_process_identities(state).await;
+    let process_identities = owned_process_identities(state).await?;
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         let mut audit = crate::network_audit::NetworkAuditCollector::new(true);
         let process_ids = process_identities
             .iter()
@@ -704,17 +707,19 @@ async fn launch_inner(
         }));
     }
     let integrity_checkpoint = checkpoint_integrity(context, state, "post_launch").await?;
+    let metadata = runtime_metadata(state).await?;
+    let capture = state.tracy_capture_checked().await?;
     Ok(json_success(
-        ToolMetadata::complete(None),
+        metadata,
         json!({
             "lifecycle":"ready",
             "profiler_port":profiler_port,
-            "collector":state.tracy_capture().await.last_status,
-            "executable_identity":state.tracy_capture().await.experiment.as_ref().map(|experiment| &experiment.executable),
-            "runtime_configuration":state.tracy_capture().await.experiment.as_ref().and_then(|experiment| experiment.runtime_configuration.as_ref()),
+            "collector":capture.last_status,
+            "executable_identity":capture.experiment.as_ref().map(|experiment| &experiment.executable),
+            "runtime_configuration":capture.experiment.as_ref().and_then(|experiment| experiment.runtime_configuration.as_ref()),
             "runtime_wake":runtime_wake,
             "integrity_checkpoint":integrity_checkpoint,
-            "integrity_journal":state.tracy_capture().await.integrity_journal.as_ref().map(crate::workspace_integrity::IntegrityJournal::summary),
+            "integrity_journal":capture.integrity_journal.as_ref().map(crate::workspace_integrity::IntegrityJournal::summary),
             "launch_provenance":launch_provenance,
         }),
     ))
@@ -725,6 +730,8 @@ pub async fn capture(
     state: &crate::state::ServerState,
     args: crate::parameters::TracyCaptureParams,
 ) -> Result<ToolResult> {
+    let admitted = state.bind_current_runtime().await?;
+    let state = &admitted;
     let _publication = state
         .try_tracy_publication()
         .map_err(|_| anyhow!("a Tracy capture or its finalization is already active"))?;
@@ -732,14 +739,14 @@ pub async fn capture(
         .tracy()
         .ok_or_else(|| anyhow!("Tracy installation unavailable"))?;
     let collector = {
-        let mut runtime = state.runtime().await;
+        let mut runtime = state.runtime_checked().await?;
         if !runtime.is_game_running() || runtime.kind != Some(crate::state::RuntimeKind::Tracy) {
             return Err(anyhow!("no MCP-owned Tracy runtime is active"));
         }
         drop(runtime);
         state
-            .tracy_capture()
-            .await
+            .tracy_capture_checked()
+            .await?
             .collector
             .clone()
             .ok_or_else(|| anyhow!("active Tracy runtime has no collector"))?
@@ -773,9 +780,9 @@ pub async fn capture(
     let overwrite = args.overwrite.unwrap_or(false);
     let capture_network = args.capture_network.unwrap_or(false);
     let mut network_audit = crate::network_audit::NetworkAuditCollector::new(capture_network);
-    let process_identities = owned_process_identities(state).await;
+    let process_identities = owned_process_identities(state).await?;
     let profiler_port = {
-        let runtime = state.runtime().await;
+        let runtime = state.runtime_checked().await?;
         runtime.profiler_port
     };
     let owned_process_ids = process_identities
@@ -790,7 +797,7 @@ pub async fn capture(
         experiment_directory,
         runtime_wake,
     ) = {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         let (result, new_owned_path) = {
             let experiment = capture
                 .experiment
@@ -841,7 +848,7 @@ pub async fn capture(
     let reserved = reserve_trace_set(context.policy(), output_path, overwrite)?;
     let temporary_path = reserved.temporary_trace_path().to_owned();
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         match capture.begin_capture(&phase, phase_iteration) {
             Ok(()) => {}
             Err(crate::state::TracyCaptureStartError::Active) => {
@@ -858,8 +865,8 @@ pub async fn capture(
         capture.phase = Some(TracySessionPhase::CaptureActive);
     }
     let capture_begin_ms = state
-        .tracy_capture()
-        .await
+        .tracy_capture_checked()
+        .await?
         .experiment_started_at
         .map(|started| started.elapsed().as_millis() as u64)
         .unwrap_or(0);
@@ -873,18 +880,18 @@ pub async fn capture(
         )
         .await;
     let capture_end_ms = state
-        .tracy_capture()
-        .await
+        .tracy_capture_checked()
+        .await?
         .experiment_started_at
         .map(|started| started.elapsed().as_millis() as u64)
         .unwrap_or(capture_begin_ms.saturating_add(duration_ms));
     tokio::time::sleep(Duration::from_millis(550)).await;
-    let mut memory_series = if let Some(series) = state.tracy_capture().await.memory_series.clone()
-    {
-        capture_memory_window(&series.lock().await, capture_begin_ms, capture_end_ms)
-    } else {
-        Vec::new()
-    };
+    let mut memory_series =
+        if let Some(series) = state.tracy_capture_checked().await?.memory_series.clone() {
+            capture_memory_window(&series.lock().await, capture_begin_ms, capture_end_ms)
+        } else {
+            Vec::new()
+        };
     network_audit.sample(&owned_process_ids, duration_ms as u128);
     let network_audit = crate::network_audit::tracy_network_evidence(
         network_audit.finish(),
@@ -894,14 +901,14 @@ pub async fn capture(
         true,
     );
     let integrity_journal = state
-        .tracy_capture()
-        .await
+        .tracy_capture_checked()
+        .await?
         .integrity_journal
         .as_ref()
         .map(crate::workspace_integrity::IntegrityJournal::summary);
     let invocation = match invocation {
         Ok(invocation) => {
-            let mut capture = state.tracy_capture().await;
+            let mut capture = state.tracy_capture_checked().await?;
             capture.finish_capture(&phase, phase_iteration, true);
             capture.phase = Some(TracySessionPhase::HealthyIdle);
             invocation
@@ -912,7 +919,7 @@ pub async fn capture(
             details,
         }) if code == "invalid_capture" => {
             {
-                let mut capture = state.tracy_capture().await;
+                let mut capture = state.tracy_capture_checked().await?;
                 capture.finish_capture(&phase, phase_iteration, true);
                 capture.phase = Some(if details["collector_recovered"].as_bool() == Some(false) {
                     TracySessionPhase::RecoveryRequired
@@ -969,7 +976,7 @@ pub async fn capture(
                 TracyProtocolError::Helper { details, .. } => details.clone(),
                 _ => Value::Null,
             };
-            let mut capture = state.tracy_capture().await;
+            let mut capture = state.tracy_capture_checked().await?;
             capture.finish_capture(&phase, phase_iteration, window_started);
             capture.phase = Some(if collector_recovered {
                 TracySessionPhase::HealthyIdle
@@ -1087,7 +1094,7 @@ pub async fn capture(
     });
     let artifacts = reserved.promote(&sidecar)?;
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         capture
             .integrity_owned_paths
             .extend([artifacts.trace.path.clone(), artifacts.sidecar.path.clone()]);
@@ -1108,7 +1115,7 @@ pub async fn capture(
     }
     let integrity_checkpoint = checkpoint_integrity(context, state, "post_capture").await?;
     Ok(json_success(
-        ToolMetadata::complete(None),
+        runtime_metadata(state).await?,
         json!({
             "artifact":artifacts.trace,
             "sidecar":artifacts.sidecar,
@@ -1179,7 +1186,7 @@ async fn record_invalid_capture(
     phase_iteration: u32,
     validation: &Value,
 ) -> Result<Option<crate::workspace_integrity::IntegrityCheckpoint>> {
-    let mut capture = state.tracy_capture().await;
+    let mut capture = state.tracy_capture_checked().await?;
     capture.record_diagnostic(
         json!({
             "authoritative": false,
@@ -1204,7 +1211,7 @@ async fn checkpoint_integrity(
     action: &str,
 ) -> Result<Option<crate::workspace_integrity::IntegrityCheckpoint>> {
     let (baseline, owned_paths) = {
-        let capture = state.tracy_capture().await;
+        let capture = state.tracy_capture_checked().await?;
         (
             capture.integrity.clone(),
             capture.integrity_owned_paths.clone(),
@@ -1214,14 +1221,30 @@ async fn checkpoint_integrity(
         return Ok(None);
     };
     let checkpoint = baseline.checkpoint(action, &owned_paths)?;
-    let mut capture = state.tracy_capture().await;
+    let mut capture = state.tracy_capture_checked().await?;
     if let Some(journal) = capture.integrity_journal.as_mut() {
         journal.record(context.policy(), checkpoint.clone())?;
     }
     Ok(Some(checkpoint))
 }
 
+async fn runtime_metadata(state: &crate::state::ServerState) -> Result<ToolMetadata> {
+    let runtime = state.runtime_checked().await?;
+    let mut metadata = ToolMetadata::complete(
+        runtime
+            .analysis_identity
+            .as_ref()
+            .map(|identity| identity.generation),
+    );
+    metadata.runtime_id = runtime.runtime_id.clone();
+    metadata.analysis = runtime.analysis_identity.clone();
+    Ok(metadata)
+}
+
 pub async fn status(state: &crate::state::ServerState) -> Result<ToolResult> {
+    let admitted = state.bind_current_runtime().await?;
+    let state = &admitted;
+    let metadata = runtime_metadata(state).await?;
     let (
         running,
         kind,
@@ -1232,7 +1255,7 @@ pub async fn status(state: &crate::state::ServerState) -> Result<ToolResult> {
         recent_output,
         launch_provenance,
     ) = {
-        let mut runtime = state.runtime().await;
+        let mut runtime = state.runtime_checked().await?;
         let running = runtime.is_game_running();
         (
             running,
@@ -1248,7 +1271,7 @@ pub async fn status(state: &crate::state::ServerState) -> Result<ToolResult> {
             runtime.launch_provenance.clone(),
         )
     };
-    let collector = state.tracy_capture().await.collector.clone();
+    let collector = state.tracy_capture_checked().await?.collector.clone();
     let mut collector_stderr_tail = Vec::new();
     let mut collector_exit_code = None;
     let mut helper_status = None;
@@ -1262,7 +1285,15 @@ pub async fn status(state: &crate::state::ServerState) -> Result<ToolResult> {
             collector_exit_code = collector.exit_code().await;
         }
     }
-    let mut capture = state.tracy_capture().await;
+    #[cfg(test)]
+    {
+        let gate = state.tracy_status_test_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            let _ = gate.reached.send(());
+            let _ = tokio::time::timeout(Duration::from_secs(3), gate.release).await;
+        }
+    }
+    let mut capture = state.tracy_capture_checked().await?;
     if let Some(helper_status) = helper_status {
         capture.last_status = Some(helper_status);
     }
@@ -1270,7 +1301,7 @@ pub async fn status(state: &crate::state::ServerState) -> Result<ToolResult> {
         capture.phase = Some(TracySessionPhase::Stopped);
     }
     Ok(json_success(
-        ToolMetadata::complete(None),
+        metadata,
         json!({
             "running":running,
             "runtime_kind":kind,
@@ -1305,17 +1336,21 @@ pub(super) async fn stop_with_lifecycle(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
 ) -> Result<ToolResult> {
-    let cleanup_only = state.tracy_capture().await.integrity_journal.is_some()
+    let cleanup_only = state
+        .tracy_capture_checked()
+        .await?
+        .integrity_journal
+        .is_some()
         || state
-            .runtime()
-            .await
+            .runtime_checked()
+            .await?
             .execution_lease
             .as_ref()
             .is_some_and(|lease| lease.kind() == "tracy");
     let pre_stop_checkpoint = checkpoint_integrity(context, state, "pre_stop").await;
-    let stop_identities = owned_process_identities(state).await;
-    let stop_profiler_port = state.runtime().await.profiler_port;
-    let launch_provenance = state.runtime().await.launch_provenance.clone();
+    let stop_identities = owned_process_identities(state).await?;
+    let stop_profiler_port = state.runtime_checked().await?.profiler_port;
+    let launch_provenance = state.runtime_checked().await?.launch_provenance.clone();
     let mut stop_network_audit = crate::network_audit::NetworkAuditCollector::new(true);
     stop_network_audit.sample(
         &stop_identities
@@ -1324,7 +1359,7 @@ pub(super) async fn stop_with_lifecycle(
             .collect::<Vec<_>>(),
         0,
     );
-    let collector = state.tracy_capture().await.collector.clone();
+    let collector = state.tracy_capture_checked().await?.collector.clone();
     if let Some(collector) = collector {
         let _ = collector.cancel().await;
     }
@@ -1335,12 +1370,12 @@ pub(super) async fn stop_with_lifecycle(
         .map_err(|_| {
             anyhow!("Tracy capture publication remains active; execution ownership is retained")
         })?;
-    let collector = state.tracy_capture().await.collector.clone();
+    let collector = state.tracy_capture_checked().await?.collector.clone();
     let mut collector_cleanup_error = None;
     if let Some(collector) = collector {
         let stopped = collector.stop(Duration::from_secs(10)).await;
         if collector.cleanup_confirmed() {
-            state.tracy_capture().await.collector = None;
+            state.tracy_capture_checked().await?.collector = None;
         } else {
             collector_cleanup_error = Some(anyhow!(
                 "collector cleanup remains unconfirmed: {:?}",
@@ -1349,13 +1384,13 @@ pub(super) async fn stop_with_lifecycle(
         }
     }
     {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         if let Some(client) = capture.wake_client.as_mut() {
             stop_wake_client(client).await?;
             capture.wake_client = None;
         }
     }
-    let mut runtime = state.runtime().await;
+    let mut runtime = state.runtime_checked().await?;
     let runtime_was_running = runtime.is_game_running();
     let runtime_was_profiled = runtime.kind == Some(crate::state::RuntimeKind::Tracy);
     if runtime_was_running && runtime_was_profiled {
@@ -1376,7 +1411,7 @@ pub(super) async fn stop_with_lifecycle(
         diagnostic_records,
         mut network_records,
     ) = {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         if let Some(stop) = capture.memory_stop.take() {
             let _ = stop.send(true);
         }
@@ -1446,7 +1481,7 @@ pub(super) async fn stop_with_lifecycle(
         .filter_map(|result| result.err().map(ToString::to_string))
         .collect::<Vec<_>>();
     let journal_summary = if integrity_errors.is_empty() {
-        let mut capture = state.tracy_capture().await;
+        let mut capture = state.tracy_capture_checked().await?;
         if let Some(journal) = capture.integrity_journal.as_mut() {
             journal.finalize(context.policy())?;
         }
@@ -1460,14 +1495,14 @@ pub(super) async fn stop_with_lifecycle(
         summary
     } else {
         state
-            .tracy_capture()
-            .await
+            .tracy_capture_checked()
+            .await?
             .integrity_journal
             .as_ref()
             .map(crate::workspace_integrity::IntegrityJournal::summary)
     };
     if integrity_errors.is_empty() {
-        let mut runtime = state.runtime().await;
+        let mut runtime = state.runtime_checked().await?;
         if let Some(lease) = runtime
             .execution_lease
             .as_mut()
@@ -1491,7 +1526,7 @@ pub(super) async fn stop_with_lifecycle(
         ));
     }
     Ok(json_success(
-        ToolMetadata::complete(None),
+        runtime_metadata(state).await?,
         json!({
             "lifecycle":"stopped",
             "runtime_was_running":runtime_was_running,
@@ -1854,6 +1889,7 @@ async fn invoke_analysis(
     state: &crate::state::ServerState,
     context_fields: Option<Value>,
 ) -> Result<ToolResult> {
+    let snapshot = state.active_snapshot().await;
     let installation = context
         .tracy()
         .ok_or_else(|| anyhow!("Tracy installation unavailable"))?;
@@ -1935,12 +1971,21 @@ async fn invoke_analysis(
         "protocol_version".into(),
         json!(installation.helper.protocol_version),
     );
-    correlate_sources(state, &mut result).await;
-    Ok(json_success(ToolMetadata::complete(None), result))
+    correlate_sources(snapshot.as_deref(), &mut result);
+    Ok(json_success(
+        snapshot
+            .as_ref()
+            .map(|snapshot| ToolMetadata::for_snapshot(snapshot))
+            .unwrap_or_else(|| ToolMetadata::complete(None)),
+        result,
+    ))
 }
 
-async fn correlate_sources(state: &crate::state::ServerState, result: &mut Value) {
-    let Some(snapshot) = state.active_snapshot().await else {
+fn correlate_sources(
+    snapshot: Option<&crate::analysis_snapshot::AnalysisSnapshot>,
+    result: &mut Value,
+) {
+    let Some(snapshot) = snapshot else {
         return;
     };
     let Some(items) = result.get_mut("items").and_then(Value::as_array_mut) else {
@@ -1977,6 +2022,7 @@ async fn correlate_sources(state: &crate::state::ServerState, result: &mut Value
                     "path":source_path,
                     "line":line,
                     "state_generation":snapshot.generation,
+                    "analysis":snapshot.identity(),
                 }),
             );
         }
@@ -2018,9 +2064,9 @@ fn valid_phase(phase: &str) -> bool {
 
 async fn owned_process_identities(
     state: &crate::state::ServerState,
-) -> Vec<crate::process_metrics::ProcessIdentity> {
+) -> Result<Vec<crate::process_metrics::ProcessIdentity>> {
     let (collector, wake_client_pid) = {
-        let capture = state.tracy_capture().await;
+        let capture = state.tracy_capture_checked().await?;
         (
             capture.collector.clone(),
             capture
@@ -2034,12 +2080,12 @@ async fn owned_process_identities(
         None => None,
     };
     let game_pid = state
-        .runtime()
-        .await
+        .runtime_checked()
+        .await?
         .game_process
         .as_ref()
         .and_then(|process| process.id());
-    [
+    Ok([
         (game_pid, crate::process_metrics::ProcessRole::DreamDaemon),
         (
             wake_client_pid,
@@ -2054,7 +2100,7 @@ async fn owned_process_identities(
     .filter_map(|(pid, role)| {
         pid.and_then(|pid| crate::process_metrics::process_identity(pid, role).ok())
     })
-    .collect()
+    .collect())
 }
 
 fn capture_memory_window(
@@ -2188,6 +2234,57 @@ fn git_workspace_root(path: &Path) -> Result<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn late_status_cannot_publish_collector_completion_into_a_replacement() {
+        let (root, collector) = crate::tracy_collector::tests::owned_fixture().await;
+        let _ = collector.stop(std::time::Duration::from_millis(100)).await;
+        assert!(collector.cleanup_confirmed());
+        let state = crate::state::ServerState::new();
+        let first = state.new_runtime_id().unwrap();
+        let second = state.new_runtime_id().unwrap();
+        state.runtime().await.runtime_id = Some(first.clone());
+        {
+            let mut capture = state.tracy_capture().await;
+            capture.runtime_id = Some(first);
+            capture.collector = Some(collector.clone());
+        }
+        let (reached, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        *state.tracy_status_test_gate.lock().unwrap() = Some(crate::state::TracyStatusTestGate {
+            reached,
+            release: released,
+        });
+        let reader = state.clone();
+        let status = tokio::spawn(async move { super::status(&reader).await });
+        tokio::time::timeout(std::time::Duration::from_secs(3), ready)
+            .await
+            .unwrap()
+            .unwrap();
+        state.runtime().await.runtime_id = Some(second.clone());
+        {
+            let mut capture = state.tracy_capture().await;
+            capture.runtime_id = Some(second.clone());
+            capture.collector = None;
+            capture.phase = Some(crate::tracy_collector::TracySessionPhase::HealthyIdle);
+            capture.last_status = Some(serde_json::json!({"replacement":true}));
+        }
+        release.send(()).unwrap();
+        let error = status.await.unwrap().unwrap_err();
+        assert!(error.is::<crate::identity::StaleIdentity>());
+        let capture = state.tracy_capture().await;
+        assert_eq!(capture.runtime_id.as_deref(), Some(second.as_str()));
+        assert_eq!(
+            capture.phase,
+            Some(crate::tracy_collector::TracySessionPhase::HealthyIdle)
+        );
+        assert_eq!(
+            capture.last_status,
+            Some(serde_json::json!({"replacement":true}))
+        );
+        drop(capture);
+        drop(collector);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::{launch, register_memory_identities, stop, topic_was_processed};
     use crate::process_metrics::{ProcessIdentity, ProcessRole, RoleMemorySeries};
     use crate::tools::ToolExecutionContext;

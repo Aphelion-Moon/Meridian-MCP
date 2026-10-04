@@ -100,6 +100,8 @@ pub(crate) async fn parse_environment_with_policy(
 ) -> Result<ToolResult> {
     let request_started = Instant::now();
     let dme_path = args.dme_path.as_str();
+    let scoped_state = state.for_parse(PathBuf::from(dme_path));
+    let state = &scoped_state;
     let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(DEFAULT_PARSE_TIMEOUT_MS));
     let deadline = tokio::time::Instant::from_std(request_started + timeout);
     let path = PathBuf::from(dme_path);
@@ -191,7 +193,7 @@ pub(crate) async fn parse_environment_with_policy(
             } = *parsed;
             let Some(snapshot) = state
                 .install_analysis_before_deadline(snapshot, deadline)
-                .await
+                .await?
             else {
                 return parse_timeout(state, timeout).await;
             };
@@ -246,7 +248,7 @@ pub(crate) async fn parse_environment_with_policy(
     if !reused {
         result["duration_ms"] = json!(total);
     }
-    Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+    crate::result::analysis_text(&snapshot, result)
 }
 
 async fn parse_timeout(state: &ServerState, timeout: Duration) -> Result<ToolResult> {
@@ -358,7 +360,8 @@ async fn parse_failure(
     recovery: Option<String>,
 ) -> Result<ToolResult> {
     let metadata = state.analysis_metadata();
-    Ok(structured_error(
+    let analysis = metadata.identity.clone();
+    let result = structured_error(
         code,
         error,
         recovery,
@@ -366,8 +369,14 @@ async fn parse_failure(
         "state_preserved": true,
         "active_environment": metadata.active_environment.as_deref().map(display_path),
         "state_generation": metadata.generation
+        ,"analysis": metadata.identity,
+        "requested_environment": state.requested_environment().map(display_path)
         }),
-    ))
+    );
+    Ok(match analysis {
+        Some(analysis) => result.with_analysis(analysis),
+        None => result,
+    })
 }
 
 /// Helper to get file path string from a location
@@ -437,7 +446,7 @@ pub async fn get_type(
                 )
             });
 
-            Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+            crate::result::analysis_text(&snapshot, result)
         }
         None => Ok(ToolResult::error(format!("Type not found: {type_path}"))),
     }
@@ -535,7 +544,7 @@ pub async fn get_proc(
         "resolution_diagnostics": resolution.diagnostics(),
         "state_generation": snapshot.generation,
     });
-    Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+    crate::result::analysis_text(&snapshot, result)
 }
 
 /// Get variable information
@@ -597,7 +606,7 @@ pub async fn get_var(
                     "state_generation": snapshot.generation,
                 });
 
-                Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+                crate::result::analysis_text(&snapshot, result)
             }
             None => Ok(ToolResult::error(format!(
                 "Variable not found: {type_path}/{var_name}"
@@ -619,12 +628,12 @@ pub async fn list_types(
 
     let max_depth = args.max_depth.map(|d| d as usize);
     let limit = args.limit.unwrap_or(DEFAULT_TYPE_LIMIT) as usize;
-    let cursor = args
-        .cursor
-        .as_deref()
-        .map(str::parse::<usize>)
-        .transpose()?
-        .unwrap_or(0);
+    let codec = crate::cursor::Cursor::new(
+        &snapshot,
+        "full",
+        json!(["list_types", "object_tree_order_v1", prefix, max_depth]),
+    );
+    let cursor = codec.decode(args.cursor.as_deref())?;
 
     let matching_types: Vec<_> = objtree
         .iter_types()
@@ -638,6 +647,10 @@ pub async fn list_types(
         })
         .collect();
     let total_count = matching_types.len();
+    anyhow::ensure!(
+        cursor <= total_count,
+        "Cursor offset exceeds the result count"
+    );
     let types: Vec<Value> = matching_types
         .into_iter()
         .skip(cursor)
@@ -652,7 +665,7 @@ pub async fn list_types(
         .collect();
     let next_offset = cursor.saturating_add(types.len());
     let has_more = next_offset < total_count;
-    let next_cursor = has_more.then(|| next_offset.to_string());
+    let next_cursor = has_more.then(|| codec.encode(next_offset));
 
     let result = json!({
         "count": types.len(),
@@ -665,7 +678,7 @@ pub async fn list_types(
             "has_more": has_more,
         }
     });
-    let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
+    let mut metadata = ToolMetadata::for_snapshot(&snapshot);
     metadata.truncated = has_more;
     if has_more {
         metadata
@@ -780,7 +793,7 @@ pub async fn search_symbols(
         "results": results
     });
 
-    Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+    crate::result::analysis_text(&snapshot, result)
 }
 
 #[cfg(test)]
@@ -993,6 +1006,7 @@ mod tests {
             assert!(state
                 .install_analysis_before_deadline(parsed.snapshot, deadline)
                 .await
+                .unwrap()
                 .is_none());
             parse_timeout(&state, timeout).await
         })

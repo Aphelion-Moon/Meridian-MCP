@@ -1,9 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
-use std::collections::hash_map::RandomState;
-use std::hash::BuildHasher;
-use std::sync::OnceLock;
 
 use crate::analysis_snapshot::AnalysisSnapshot;
 use crate::limits::ServerLimits;
@@ -13,14 +10,7 @@ pub(super) struct Page {
     offset: usize,
     limit: usize,
     compact: bool,
-    binding: u64,
-}
-
-fn cursor_hash() -> &'static RandomState {
-    // A process-local seed prevents reusing cursors after a server restart.
-    // Cursors provide consistency, not authorization; path policy still applies.
-    static HASHER: OnceLock<RandomState> = OnceLock::new();
-    HASHER.get_or_init(RandomState::new)
+    cursor: crate::cursor::Cursor,
 }
 
 impl Page {
@@ -37,31 +27,16 @@ impl Page {
             offset: 0,
             limit,
             compact,
-            binding: cursor_hash().hash_one((
-                snapshot.instance_id,
-                snapshot.generation,
-                query.to_string(),
-            )),
+            cursor: crate::cursor::Cursor::new(snapshot, detail, json!(["source_order_v1", query])),
         };
         if let Some(cursor) = cursor {
-            let offset = cursor
-                .split(':')
-                .nth(1)
-                .and_then(|value| value.parse::<usize>().ok())
-                .ok_or_else(|| anyhow!("Invalid language-query cursor"))?;
-            if cursor != page.cursor(offset) {
-                return Err(anyhow!("Cursor does not match this query or parsed snapshot; restart from the first page"));
-            }
-            page.offset = offset;
+            page.offset = page.cursor.decode(Some(cursor))?;
         }
         Ok(page)
     }
 
     fn cursor(&self, offset: usize) -> String {
-        format!(
-            "v1:{offset}:{:016x}",
-            cursor_hash().hash_one((self.binding, offset))
-        )
+        self.cursor.encode(offset)
     }
 
     pub(super) fn respond<T: Serialize>(
@@ -135,7 +110,7 @@ impl Page {
                 "next_cursor":has_more.then(|| self.cursor(end)),
             }),
         );
-        let mut metadata = ToolMetadata::complete(Some(snapshot.generation));
+        let mut metadata = ToolMetadata::for_snapshot(snapshot);
         metadata.truncated = has_more;
         if has_more {
             metadata.truncation_reasons.push(

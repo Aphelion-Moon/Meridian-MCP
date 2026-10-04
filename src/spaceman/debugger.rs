@@ -413,6 +413,8 @@ pub enum DebuggerLifecycle {
 }
 
 pub struct DebuggerSession {
+    pub runtime_id: String,
+    pub analysis: Option<crate::identity::AnalysisIdentity>,
     pub lifecycle: DebuggerLifecycle,
     pub process: Child,
     pub connection: AuxConnection,

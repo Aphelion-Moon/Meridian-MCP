@@ -33,6 +33,13 @@ pub async fn launch(
     }
     let dmb_path = args.dmb_path.as_str();
     let dmb_path = std::path::PathBuf::from(dmb_path);
+    let runtime_id = state.new_runtime_id()?;
+    let analysis = state
+        .active_snapshot()
+        .await
+        .filter(|snapshot| snapshot.environment_path.with_extension("dmb") == dmb_path)
+        .map(|snapshot| snapshot.identity());
+    let generation = analysis.as_ref().map_or(0, |identity| identity.generation);
     let require_verified = args.require_verified_provenance.unwrap_or(false);
     let mut lease = match context
         .execution_lease(
@@ -56,7 +63,7 @@ pub async fn launch(
     let installation = context
         .debugger()
         .ok_or_else(|| anyhow!("auxtools debugger is unavailable"))?;
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     if slot.is_some() {
         return Err(anyhow!("a debugger session is already active"));
     }
@@ -162,8 +169,9 @@ pub async fn launch(
         };
         crate::native_memory::parse_response(&response.value)?;
     }
-    let generation = state.state_generation().await;
     *slot = Some(DebuggerSession {
+        runtime_id: runtime_id.clone(),
+        analysis: analysis.clone(),
         lifecycle: DebuggerLifecycle::Running,
         process,
         connection,
@@ -182,7 +190,7 @@ pub async fn launch(
         execution_lease: startup.lease.take(),
     });
     Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
+        session_metadata(generation, Some(runtime_id), analysis),
         json!({"lifecycle":"running","host_mode":host_mode,"port":port,"dmb_path":dmb_path,"dll_sha256":dll_sha256,"memory_profile":memory_profile,"launch_provenance":launch_provenance}),
     ))
 }
@@ -242,16 +250,16 @@ pub async fn stop(state: &ServerState) -> Result<ToolResult> {
 }
 
 pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResult> {
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
-    let generation = session.state_generation;
     let launch_provenance = session.launch_provenance.clone();
+    let metadata = debugger_metadata(session);
     session.stop().await?;
     *slot = None;
     Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
+        metadata,
         json!({"lifecycle":"stopped","launch_provenance":launch_provenance}),
     ))
 }
@@ -271,13 +279,31 @@ impl Drop for DebuggerStartup {
     }
 }
 
-async fn request(state: &ServerState, request: AuxRequest) -> Result<(u64, AuxResponse)> {
-    let mut slot = state.debugger().await;
+fn session_metadata(
+    generation: u64,
+    runtime_id: Option<String>,
+    analysis: Option<crate::identity::AnalysisIdentity>,
+) -> ToolMetadata {
+    let mut metadata = ToolMetadata::complete(Some(generation));
+    metadata.runtime_id = runtime_id;
+    metadata.analysis = analysis;
+    metadata
+}
+fn debugger_metadata(session: &DebuggerSession) -> ToolMetadata {
+    session_metadata(
+        session.state_generation,
+        Some(session.runtime_id.clone()),
+        session.analysis.clone(),
+    )
+}
+
+async fn request(state: &ServerState, request: AuxRequest) -> Result<(ToolMetadata, AuxResponse)> {
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     let response = session.connection.request(request).await?;
-    Ok((session.state_generation, response))
+    Ok((debugger_metadata(session), response))
 }
 
 pub async fn threads(state: &ServerState) -> Result<ToolResult> {
@@ -285,10 +311,7 @@ pub async fn threads(state: &ServerState) -> Result<ToolResult> {
     let AuxResponse::Stacks { stacks } = response else {
         return Err(anyhow!("unexpected stacks response"));
     };
-    Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
-        json!({"threads":stacks}),
-    ))
+    Ok(json_success(generation, json!({"threads":stacks})))
 }
 
 pub async fn stack_trace(
@@ -317,7 +340,7 @@ pub async fn stack_trace(
     else {
         return Err(anyhow!("unexpected stack frames response"));
     };
-    let mut metadata = ToolMetadata::complete(Some(generation));
+    let mut metadata = generation;
     metadata.truncated = frames.len() < total_count as usize;
     if metadata.truncated {
         metadata.truncation_reasons.push("debug_frame_limit".into());
@@ -348,7 +371,7 @@ pub async fn scopes(
         return Err(anyhow!("unexpected scopes response"));
     };
     Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
+        generation,
         json!({"arguments":arguments,"locals":locals,"globals":globals}),
     ))
 }
@@ -371,7 +394,7 @@ pub async fn variables(
     let limit = ServerLimits::default().max_debug_variables;
     let truncated = vars.len() > limit;
     vars.truncate(limit);
-    let mut metadata = ToolMetadata::complete(Some(generation));
+    let mut metadata = generation;
     metadata.truncated = truncated;
     if truncated {
         metadata
@@ -410,10 +433,7 @@ pub async fn evaluate(
     let AuxResponse::Eval(result) = response else {
         return Err(anyhow!("unexpected evaluation response"));
     };
-    Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
-        json!({"result":result}),
-    ))
+    Ok(json_success(generation, json!({"result":result})))
 }
 
 fn validate_expression(expression: &str) -> Result<()> {
@@ -428,7 +448,7 @@ pub async fn memory(
     args: crate::native_memory::MemoryControl,
 ) -> Result<ToolResult> {
     let control = args;
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("No debugger session is active"))?;
@@ -447,7 +467,7 @@ pub async fn memory(
         return Err(anyhow!("Unexpected native memory response"));
     };
     let evidence = crate::native_memory::parse_response(&response.value)?;
-    let mut metadata = ToolMetadata::complete(Some(session.state_generation));
+    let mut metadata = debugger_metadata(session);
     for (key, reason) in [
         ("rows_truncated", "native_memory_row_limit"),
         ("capacity_exceeded", "native_memory_record_limit"),
@@ -473,11 +493,11 @@ pub async fn set_exception_breakpoints(
     args: crate::parameters::DebugSetExceptionBreakpointsParams,
 ) -> Result<ToolResult> {
     let enabled = args.break_on_runtimes;
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
-    let generation = session.state_generation;
+    let generation = debugger_metadata(session);
     session
         .connection
         .send(AuxRequest::CatchRuntimes {
@@ -485,7 +505,7 @@ pub async fn set_exception_breakpoints(
         })
         .await?;
     Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
+        generation,
         json!({"break_on_runtimes":enabled}),
     ))
 }
@@ -522,10 +542,7 @@ pub async fn control(
     if !matches!(response, AuxResponse::Ack) {
         return Err(anyhow!("debugger control was not acknowledged"));
     }
-    Ok(json_success(
-        ToolMetadata::complete(Some(generation)),
-        json!({"action":action}),
-    ))
+    Ok(json_success(generation, json!({"action":action})))
 }
 
 pub async fn set_function_breakpoints(
@@ -567,11 +584,16 @@ pub async fn set_breakpoints(
     if breakpoints.len() > 10_000 {
         return Err(anyhow!("breakpoint limit exceeded"));
     }
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
-    if session.state_generation != snapshot.generation {
+    if session
+        .analysis
+        .as_ref()
+        .map(|identity| identity.snapshot_id.as_str())
+        != Some(snapshot.snapshot_id.as_str())
+    {
         return Err(anyhow!("debugger session uses a stale analysis generation"));
     }
     let mut desired = Vec::new();
@@ -618,10 +640,28 @@ async fn replace_breakpoints(
     state: &ServerState,
     desired: Vec<(InstructionRef, Option<String>)>,
 ) -> Result<ToolResult> {
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
+    if let Some(snapshot) = state.admitted_analysis() {
+        if session
+            .analysis
+            .as_ref()
+            .map(|identity| identity.snapshot_id.as_str())
+            != Some(snapshot.snapshot_id.as_str())
+        {
+            return Err(crate::identity::StaleIdentity {
+                field: "expected_snapshot",
+                expected: snapshot.snapshot_id.clone(),
+                current: session
+                    .analysis
+                    .as_ref()
+                    .map(|identity| identity.snapshot_id.clone()),
+            }
+            .into());
+        }
+    }
     replace_breakpoints_in_session(session, desired).await
 }
 
@@ -670,18 +710,18 @@ async fn replace_breakpoints_in_session(
     }
     session.active_breakpoints = installed;
     Ok(json_success(
-        ToolMetadata::complete(Some(session.state_generation)),
+        debugger_metadata(session),
         json!({"breakpoints":results}),
     ))
 }
 
 pub async fn exception_info(state: &ServerState) -> Result<ToolResult> {
-    let slot = state.debugger().await;
+    let slot = state.debugger_checked().await?;
     let session = slot
         .as_ref()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     Ok(json_success(
-        ToolMetadata::complete(Some(session.state_generation)),
+        debugger_metadata(session),
         json!({"message":session.last_exception,"sequence":session.event_sequence}),
     ))
 }
@@ -693,7 +733,7 @@ pub async fn source(
     if args.source_reference != 1 {
         return Err(anyhow!("unknown debugger source reference"));
     }
-    let slot = state.debugger().await;
+    let slot = state.debugger_checked().await?;
     let session = slot
         .as_ref()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
@@ -702,8 +742,8 @@ pub async fn source(
         return Err(anyhow!("debugger source exceeds output limit"));
     }
     Ok(json_success(
-        ToolMetadata::complete(Some(session.state_generation)),
-        json!({"source_reference":1,"name":"stddef.dm","content":source}),
+        debugger_metadata(session),
+        json!({"source_reference":1,"name":"stddef.dm","content":source,"source_origin":"native_debugger_stddef"}),
     ))
 }
 
@@ -724,7 +764,7 @@ pub async fn wait_for_event(
                 .collect::<HashSet<_>>()
         })
         .unwrap_or_default();
-    let mut slot = state.debugger().await;
+    let mut slot = state.debugger_checked().await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
@@ -801,7 +841,7 @@ fn event_result(
     timed_out: bool,
 ) -> Result<ToolResult> {
     Ok(json_success(
-        ToolMetadata::complete(Some(session.state_generation)),
+        debugger_metadata(session),
         json!({"event":event,"timed_out":timed_out,"dropped_events":session.dropped_events.saturating_add(session.connection.dropped_events())}),
     ))
 }
@@ -809,6 +849,127 @@ fn event_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_expectation_stays_out_of_the_native_memory_command() {
+        let request: crate::parameters::DebugMemoryParams = crate::parameters::decode(
+            json!({"action":"status","expected_runtime":format!("r1:{}", "a".repeat(64))}),
+        )
+        .unwrap();
+        let command = request.into_control().command().unwrap();
+        assert!(!command.contains("expected_runtime"));
+        let native: serde_json::Value =
+            serde_json::from_str(command.strip_prefix("#meridian_memory_v1 ").unwrap()).unwrap();
+        assert_eq!(native["action"], "status");
+        assert_eq!(native["duration_ms"], 10000);
+        assert_eq!(native["max_records"], 20000);
+        assert_eq!(native["row_limit"], 100);
+    }
+
+    #[tokio::test]
+    async fn stale_debugger_control_cannot_reach_the_replacement_connection() {
+        use tokio::io::AsyncReadExt;
+        let (root, collector) = crate::tracy_collector::tests::owned_fixture().await;
+        let _ = collector.stop(Duration::from_millis(100)).await;
+        assert!(collector.cleanup_confirmed());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let length = stream.read_u32_le().await.unwrap();
+            let mut bytes = vec![0; length as usize];
+            stream.read_exact(&mut bytes).await.unwrap();
+            let request: AuxRequest = bincode::deserialize(&bytes).unwrap();
+            assert!(
+                matches!(request, AuxRequest::Disconnect),
+                "a stale control reached the replacement"
+            );
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut command =
+            Command::new(root.join(format!("collector{}", std::env::consts::EXE_SUFFIX)));
+        command
+            .env("COLLECTOR_MODE", "blocked")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let (process, containment) = crate::process::spawn_runtime_process(&mut command).unwrap();
+        let state = ServerState::new();
+        let first = state.new_runtime_id().unwrap();
+        let second = state.new_runtime_id().unwrap();
+        *state.debugger().await = Some(DebuggerSession {
+            runtime_id: second.clone(),
+            analysis: None,
+            lifecycle: DebuggerLifecycle::Running,
+            process,
+            containment,
+            connection: AuxConnection::new(stream, 8192, Duration::from_secs(1)),
+            port: address.port(),
+            dmb_path: root.join("fixture.dmb"),
+            stddef_source: None,
+            state_generation: 0,
+            event_sequence: 0,
+            last_exception: None,
+            active_breakpoints: HashSet::new(),
+            events: VecDeque::new(),
+            dropped_events: 0,
+            launch_provenance: crate::LaunchProvenance {
+                status: crate::ProvenanceStatus::Unverified,
+                build_record_id: None,
+                dmb_sha256: "00".repeat(32),
+                warnings: vec![],
+            },
+            memory_helper_sha256: None,
+            execution_lease: None,
+        });
+        let context = ToolExecutionContext::with_features(
+            crate::CapabilityMode::Development,
+            crate::PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+            crate::RiftBuildAccess::Disabled,
+            None,
+            Some(debugger_installation_fixture()),
+            None,
+        );
+        let stale = crate::tools::call_tool(
+            &context,
+            &state,
+            "dm_debug_control",
+            json!({"action":"pause","expected_runtime":first}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(stale.is_error, Some(true));
+        let source = root.join("fixture.dme");
+        std::fs::write(&source, "/datum/stale_control\n").unwrap();
+        crate::tools::call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path":source}),
+        )
+        .await
+        .unwrap();
+        let snapshot = state.snapshot().await.unwrap();
+        let stale = crate::tools::call_tool(&context, &state, "dm_debug_set_breakpoints", json!({"source_path":source,"breakpoints":[],"expected_snapshot":snapshot.snapshot_id,"expected_runtime":first})).await.unwrap();
+        assert_eq!(stale.is_error, Some(true));
+        assert_eq!(stale.meta.unwrap().analysis, snapshot.identity());
+        let bound = state.for_request(None, Some(Some(first)));
+        assert!(control(
+            &bound,
+            crate::parameters::decode(json!({"action":"pause"})).unwrap()
+        )
+        .await
+        .unwrap_err()
+        .is::<crate::identity::StaleIdentity>());
+        assert_eq!(state.debugger().await.as_ref().unwrap().runtime_id, second);
+        stop(&state).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), peer)
+            .await
+            .unwrap()
+            .unwrap();
+        drop(collector);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn expression_evaluation_cannot_bypass_explicit_memory_controls() {

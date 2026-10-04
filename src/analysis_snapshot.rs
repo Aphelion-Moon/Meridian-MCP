@@ -224,6 +224,7 @@ impl AnalysisBuild {
 }
 
 pub struct AnalysisSnapshot {
+    pub snapshot_id: String,
     /// Distinguishes snapshots even across separate ServerState instances.
     pub(crate) instance_id: u64,
     pub environment_path: PathBuf,
@@ -249,6 +250,7 @@ impl AnalysisSnapshot {
         static NEXT_INSTANCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let total_types = build.objtree.iter_types().count();
         Self {
+            snapshot_id: String::new(),
             instance_id: NEXT_INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             environment_path: build.environment_path,
             context: Arc::new(build.context),
@@ -271,6 +273,20 @@ impl AnalysisSnapshot {
 
     pub fn proc_resolver(&self) -> &ProcResolver {
         &self.proc_resolver
+    }
+
+    pub fn identity(&self) -> crate::identity::AnalysisIdentity {
+        crate::identity::AnalysisIdentity {
+            snapshot_id: self.snapshot_id.clone(),
+            generation: self.generation,
+            state_generation: self.generation,
+            environment: self.environment_path.clone(),
+            source: "cached_snapshot",
+            completeness: "complete",
+            disk_state: "unknown",
+            recomputed: false,
+            refresh_with: "dm_parse_environment",
+        }
     }
 
     pub fn source_inputs(&self) -> &[PathBuf] {

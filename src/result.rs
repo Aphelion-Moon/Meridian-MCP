@@ -10,6 +10,10 @@ pub struct ToolMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_generation: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<crate::identity::AnalysisIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_generation: Option<u64>,
     pub truncated: bool,
     pub truncation_reasons: Vec<String>,
@@ -22,11 +26,30 @@ impl ToolMetadata {
             meridian_mcp_build: crate::build_identity::current().clone(),
             spacemandmm_revision: SPACEMANDMM_REVISION,
             state_generation,
+            analysis: None,
+            runtime_id: None,
             asset_generation: None,
             truncated: false,
             truncation_reasons: Vec::new(),
         }
     }
+
+    pub fn for_snapshot(snapshot: &crate::analysis_snapshot::AnalysisSnapshot) -> Self {
+        let mut metadata = Self::complete(Some(snapshot.generation));
+        metadata.analysis = Some(snapshot.identity());
+        metadata
+    }
+}
+
+pub(crate) fn analysis_text(
+    snapshot: &crate::analysis_snapshot::AnalysisSnapshot,
+    mut payload: Value,
+) -> anyhow::Result<ToolResult> {
+    payload["analysis"] = serde_json::to_value(snapshot.identity())?;
+    Ok(
+        ToolResult::text(serde_json::to_string_pretty(&payload)?)
+            .with_analysis(snapshot.identity()),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -55,9 +78,31 @@ pub enum ToolErrorCode {
 
 #[derive(Debug, Serialize)]
 pub struct DomainToolResult {
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Box<ToolResultMetadata>>,
     pub content: Vec<DomainContent>,
     #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ToolResultMetadata {
+    pub analysis: crate::identity::AnalysisIdentity,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{error}")]
+pub(crate) struct SemanticCallError {
+    pub error: anyhow::Error,
+    pub analysis: crate::identity::AnalysisIdentity,
+}
+pub(crate) fn tool_error(error: anyhow::Error) -> ToolResult {
+    match error.downcast_ref::<SemanticCallError>() {
+        Some(semantic) => {
+            ToolResult::error(semantic.error.to_string()).with_analysis(semantic.analysis.clone())
+        }
+        None => ToolResult::error(error.to_string()),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -70,6 +115,7 @@ pub enum DomainContent {
 impl DomainToolResult {
     pub fn text(text: impl Into<String>) -> Self {
         Self {
+            meta: None,
             content: vec![DomainContent::Text { text: text.into() }],
             is_error: None,
         }
@@ -77,6 +123,7 @@ impl DomainToolResult {
 
     pub fn error(message: impl Into<String>) -> Self {
         Self {
+            meta: None,
             content: vec![DomainContent::Text {
                 text: message.into(),
             }],
@@ -96,6 +143,10 @@ impl DomainToolResult {
             Map::new(),
         )
     }
+    pub fn with_analysis(mut self, analysis: crate::identity::AnalysisIdentity) -> Self {
+        self.meta = Some(Box::new(ToolResultMetadata { analysis }));
+        self
+    }
 }
 
 pub fn json_success<T: Serialize>(metadata: ToolMetadata, data: T) -> ToolResult {
@@ -107,6 +158,7 @@ pub fn json_success_compact<T: Serialize>(metadata: ToolMetadata, data: T) -> To
 }
 
 fn encoded_success<T: Serialize>(metadata: ToolMetadata, data: T, pretty: bool) -> ToolResult {
+    let analysis = metadata.analysis.clone();
     let value = match serde_json::to_value(data) {
         Ok(value) => value,
         Err(error) => {
@@ -135,14 +187,18 @@ fn encoded_success<T: Serialize>(metadata: ToolMetadata, data: T, pretty: bool) 
         payload.insert(key, value);
     }
     let payload = Value::Object(payload);
-    ToolResult::text(
+    let result = ToolResult::text(
         if pretty {
             serde_json::to_string_pretty(&payload)
         } else {
             serde_json::to_string(&payload)
         }
         .expect("JSON value serialization cannot fail"),
-    )
+    );
+    match analysis {
+        Some(analysis) => result.with_analysis(analysis),
+        None => result,
+    }
 }
 
 pub fn structured_error(

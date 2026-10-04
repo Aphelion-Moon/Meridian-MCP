@@ -375,23 +375,101 @@ pub async fn call_tool(
         }
     };
     if let Err(error) = contain_arguments(&context.policy, &mut args) {
-        return Ok(policy_error(
+        let mut details = json!({
+            "path": error.path().display().to_string(),
+            "policy_code": error.code(),
+            "containment_mode": error.context().containment_mode,
+            "policy_source": error.context().policy_source,
+            "effective_roots": error.context().effective_roots,
+        });
+        let retained_analysis =
+            if let crate::parameters::ToolRequest::ParseEnvironment(request) = &args {
+                let metadata = state.analysis_metadata();
+                details["state_preserved"] = json!(true);
+                details["requested_environment"] = json!(request.dme_path);
+                details["state_generation"] = json!(metadata.generation);
+                details["active_environment"] = json!(metadata.active_environment);
+                details["analysis"] = json!(metadata.identity);
+                metadata.identity
+            } else {
+                None
+            };
+        let result = policy_error(
             error.code(),
             error.to_string(),
             Some(error.path()),
             "Use a contained path and only startup-allowlisted executables.",
-            json!({
-                "path": error.path().display().to_string(),
-                "policy_code": error.code(),
-                "containment_mode": error.context().containment_mode,
-                "policy_source": error.context().policy_source,
-                "effective_roots": error.context().effective_roots,
-            }),
-        ));
+            details,
+        );
+        return Ok(match retained_analysis {
+            Some(analysis) => result.with_analysis(analysis),
+            None => result,
+        });
     }
     if let Err(error) = args.validate_canonical_paths() {
         return Ok(error.result());
     }
+    // Freeze admission only after strict decoding and path authorization. All
+    // downstream snapshot reads on this request view clone the same Arc.
+    let snapshot = if let Some(expected) = args.snapshot_expectation() {
+        let snapshot = match state.snapshot().await {
+            Ok(snapshot) => snapshot,
+            Err(_) => {
+                return Ok(ToolResult::structured_error(
+                    "parse_required",
+                    "No environment loaded.",
+                    "Call dm_parse_environment first.",
+                ))
+            }
+        };
+        if let Some(expected) = expected {
+            if expected != snapshot.snapshot_id {
+                return Ok(crate::identity::StaleIdentity {
+                    field: "expected_snapshot",
+                    expected: expected.to_owned(),
+                    current: Some(snapshot.snapshot_id.clone()),
+                }
+                .result()
+                .with_analysis(snapshot.identity()));
+            }
+        }
+        Some(snapshot)
+    } else {
+        None
+    };
+    let runtime = if let Some((debugger, expected)) = args.runtime_expectation() {
+        let current = if debugger {
+            state
+                .debugger()
+                .await
+                .as_ref()
+                .map(|session| session.runtime_id.clone())
+        } else {
+            state.runtime().await.runtime_id.clone()
+        };
+        if let Some(expected) = expected {
+            if Some(expected) != current.as_deref() {
+                let result = crate::identity::StaleIdentity {
+                    field: "expected_runtime",
+                    expected: expected.to_owned(),
+                    current,
+                }
+                .result();
+                return Ok(match snapshot.as_ref() {
+                    Some(snapshot) => result.with_analysis(snapshot.identity()),
+                    None => result,
+                });
+            }
+        }
+        Some(current)
+    } else {
+        None
+    };
+    let mut admitted = state.for_request(snapshot, runtime);
+    if args.uses_optional_analysis() && admitted.admitted_analysis().is_none() {
+        admitted.freeze_optional_analysis(state.active_snapshot().await);
+    }
+    let state = &admitted;
     if matches!(
         name,
         "dm_compile" | "rift_compile" | "dm_run" | "dm_debug_launch" | "dm_tracy_launch"
@@ -453,7 +531,26 @@ pub async fn call_tool(
         }
         return result;
     }
-    dispatch_tool(context, state, name, args).await
+    let result = match dispatch_tool(context, state, name, args).await {
+        Err(error) if error.is::<crate::identity::StaleIdentity>() => Ok(error
+            .downcast_ref::<crate::identity::StaleIdentity>()
+            .expect("checked error type")
+            .result()),
+        result => result,
+    };
+    result
+        .map_err(|error| match state.admitted_analysis() {
+            Some(snapshot) => crate::result::SemanticCallError {
+                error,
+                analysis: snapshot.identity(),
+            }
+            .into(),
+            None => error,
+        })
+        .map(|result| match state.admitted_analysis() {
+            Some(snapshot) => result.with_analysis(snapshot.identity()),
+            None => result,
+        })
 }
 
 struct RequestOwnership {
@@ -579,7 +676,7 @@ async fn dispatch_tool(
         ToolRequest::DebugScopes(args) => debugger::scopes(state, args).await,
         ToolRequest::DebugVariables(args) => debugger::variables(state, args).await,
         ToolRequest::DebugEvaluate(args) => debugger::evaluate(state, args).await,
-        ToolRequest::DebugMemory(args) => debugger::memory(state, args).await,
+        ToolRequest::DebugMemory(args) => debugger::memory(state, args.into_control()).await,
         ToolRequest::DebugExceptionInfo(_args) => debugger::exception_info(state).await,
         ToolRequest::DebugSource(args) => debugger::source(state, args).await,
         ToolRequest::DebugWaitForEvent(args) => debugger::wait_for_event(state, args).await,
@@ -822,6 +919,83 @@ fn policy_error(
 mod tests {
     use super::get_tool_definitions;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn admitted_snapshot_answers_and_metadata_survive_concurrent_reparse() {
+        struct OwnedRoot(std::path::PathBuf);
+        impl Drop for OwnedRoot {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let path = std::env::temp_dir().join(format!(
+            "meridian-admission-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let root = OwnedRoot(path);
+        let first = root.0.join("first.dme");
+        let second = root.0.join("second.dme");
+        std::fs::write(&first, "/datum/admitted_first\n").unwrap();
+        std::fs::write(&second, "/datum/admitted_second\n").unwrap();
+        let context = super::ToolExecutionContext::new(
+            crate::CapabilityMode::Analysis,
+            crate::PathPolicy::new(vec![root.0.clone()], vec![]).unwrap(),
+        );
+        let state = crate::state::ServerState::new();
+        super::call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path":first}),
+        )
+        .await
+        .unwrap();
+        let captured = state.snapshot().await.unwrap();
+        let identity = captured.identity();
+        let admitted = state.for_request(Some(captured), None);
+        let (reached, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let read_context = context.clone();
+        let expected = identity.snapshot_id.clone();
+        let reader = tokio::spawn(async move {
+            reached.send(()).unwrap();
+            released.await.unwrap();
+            super::call_tool(
+                &read_context,
+                &admitted,
+                "dm_get_type",
+                json!({"type_path":"/datum/admitted_first", "expected_snapshot":expected}),
+            )
+            .await
+            .unwrap()
+        });
+        ready.await.unwrap();
+        super::call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path":second}),
+        )
+        .await
+        .unwrap();
+        release.send(()).unwrap();
+        let result = reader.await.unwrap();
+        assert_eq!(result.is_error, None);
+        assert_eq!(result.meta.as_ref().unwrap().analysis, identity);
+        let crate::result::ToolContent::Text { text } = &result.content[0];
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(body["analysis"]["snapshot_id"], identity.snapshot_id);
+        assert_eq!(body["path"], "/datum/admitted_first");
+        assert_ne!(
+            state.snapshot().await.unwrap().snapshot_id,
+            identity.snapshot_id
+        );
+    }
 
     #[test]
     fn tool_definitions_use_supported_name_prefixes() {

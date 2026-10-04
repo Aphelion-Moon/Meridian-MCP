@@ -81,6 +81,8 @@ Use text search for literal names, file discovery and questions spanning DM and 
 
 An unchanged environment reuses its snapshot. Reuse checks file paths, sizes and modification times, not content hashes; use `force: true` when you need a full reparse. Responses report timings and the active generation. Performance depends on the project and machine.
 
+Semantic responses identify the captured snapshot in `analysis` and MCP `_meta.analysis`; legacy plain-text errors retain their text and carry the identity in `_meta.analysis`. The block includes `snapshot_id`, generation, environment, cached source and completeness. `disk_state: "unknown"` makes no claim that current files still match. Optional `expected_snapshot` rejects stale handles before semantic work; each accepted call uses one captured snapshot even if another parse finishes meanwhile. Reuse keeps the ID, a successful replacement changes it, and a server restart invalidates prior IDs. Failed parses retain the active identity and report `details.requested_environment` separately.
+
 Search uses lexical BM25 ranking; embeddings and vector search are not configured. For a known symbol, use exact lookup. Procedure results distinguish the **implementation owner** (executable body) from the **declaration owner** (declaration metadata).
 
 To reduce response size, set `include_source: false` on `dm_get_proc` or `dm_search_context`. Otherwise, `max_source_lines` accepts 1–200 lines (defaults: 80 for inspection, 40 for search). Excerpts report their snapshot boundaries and truncation; see the [source-excerpt audit](docs/audits/2026-09-06-source-excerpts/README.md).
@@ -89,13 +91,15 @@ Implementation listings cover the requested type and its semantic descendants. U
 
 Diagnostics come from the last successful parse. Filter by file, severity, component or rule, and follow `pagination.next_cursor` for more results. `truncated: true` with `diagnostic_page_limit` means another page is available.
 
-Reference, implementation and document-symbol listings default to 100 rows and also stop at a response byte budget. Follow `pagination.next_cursor` with the same query to retrieve the complete `total_count`; a reparse or server restart invalidates these cursors. Use `detail: "compact"` for shorter responses: fields under `shared` apply to every row, and each row supplies its remaining fields. `detail: "full"` is the default. Reference `include_declaration: true` adds a row labeled `declaration`; `skipped_dynamic` counts unresolved expressions across the whole environment.
+Reference, implementation and document-symbol listings default to 100 rows and also stop at a response byte budget. Follow `pagination.next_cursor` with the same query, filters and detail to retrieve the complete `total_count`; page size may change. Type and diagnostic listings use the same volatile v2 cursor contract. Numeric cursors and v1 language cursors are intentionally rejected; start a new first page. A reparse or server restart invalidates all cursors. Use `detail: "compact"` for shorter responses: fields under `shared` apply to every row, and each row supplies its remaining fields. `detail: "full"` is the default. Reference `include_declaration: true` adds a row labeled `declaration`; `skipped_dynamic` counts unresolved expressions across the whole environment.
 
 ### Compile and exercise a world
 
 `dm_compile` runs DreamMaker directly. For Meridian-Rift's full build, `rift_compile` runs the separate `RIFT_BUILD.cmd`; it does not replace the human `BUILD.cmd` workflow.
 
 After building, use `dm_run` → `dm_wait_for_output` → `dm_topic` / `dm_status` → `dm_stop`. Topic requests need a test handler supplied by the project. See [build provenance and runtime integrity](#operational-details) for stale-artifact checks.
+
+Standard, debugger and Tracy launches issue a `runtime_id`. Follow-up controls accept optional `expected_runtime`; a stale expectation fails before reaching a replacement session. Retained runtime output keeps its original ID after process exit, and pending waits remain attached to that output. Runtime analysis metadata describes the matching snapshot captured at launch. Native debugger `stddef.dm` content is labeled separately as `native_debugger_stddef`.
 
 Launch options and readiness regexes are validated before starting a process. Invalid options return `invalid_input`; flags such as `require_verified_provenance` must be JSON booleans. Output waits accept `timeout_ms: 0` for an immediate check and cap longer waits at five minutes.
 
@@ -105,7 +109,7 @@ Both build tools return bounded log tails and diagnostic details. Use `include_o
 
 DreamDaemon binds to `127.0.0.1`. Set `working_directory` to resolve a relative DMB and run the game from that directory; otherwise it runs from the DMB's directory. Additional `daemon_args` cannot override the DMB, port, directory or bind address. World parameters passed with `-params` remain supported.
 
-`dm_topic` uses one timeout for the complete request, from 1 to 60,000 ms (default 5,000). Status and stop remain available while it waits; stopping its runtime cancels the pending request.
+`dm_topic` uses one timeout for connection, delivery and response, from 1 to 60,000 ms (default 5,000). Replacement is excluded through packet delivery. Status and stop remain available while it waits for the response; stopping its runtime cancels the pending request.
 
 ### Inspect icons and maps
 

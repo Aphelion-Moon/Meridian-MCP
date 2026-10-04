@@ -126,6 +126,7 @@ struct AnalysisState {
 pub(crate) struct AnalysisMetadata {
     pub(crate) active_environment: Option<std::path::PathBuf>,
     pub(crate) generation: u64,
+    pub(crate) identity: Option<crate::identity::AnalysisIdentity>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -135,6 +136,8 @@ pub enum StateError {
 }
 
 pub struct RuntimeState {
+    pub(crate) runtime_id: Option<String>,
+    pub(crate) analysis_identity: Option<crate::identity::AnalysisIdentity>,
     pub(crate) game_process: Option<Child>,
     pub(crate) containment: Option<Arc<crate::process::ProcessContainment>>,
     pub(crate) execution_lease: Option<crate::execution_lease::ExecutionLease>,
@@ -154,6 +157,8 @@ pub struct RuntimeState {
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct RuntimeStatus {
+    pub runtime_id: Option<String>,
+    pub analysis: Option<crate::identity::AnalysisIdentity>,
     pub running: bool,
     pub kind: Option<RuntimeKind>,
     pub game_port: Option<u16>,
@@ -167,6 +172,8 @@ pub struct RuntimeStatus {
 impl RuntimeState {
     fn new() -> Self {
         Self {
+            runtime_id: None,
+            analysis_identity: None,
             game_process: None,
             containment: None,
             execution_lease: None,
@@ -331,6 +338,8 @@ impl RuntimeState {
     pub(crate) fn status_summary(&mut self) -> RuntimeStatus {
         let running = self.is_game_running();
         RuntimeStatus {
+            runtime_id: self.runtime_id.clone(),
+            analysis: self.analysis_identity.clone(),
             running,
             kind: self.kind,
             game_port: self.game_port,
@@ -405,6 +414,7 @@ impl Drop for RuntimeState {
 
 #[derive(Default)]
 pub struct TracyCaptureState {
+    pub(crate) runtime_id: Option<String>,
     pub(crate) active: bool,
     pub(crate) output_path: Option<std::path::PathBuf>,
     pub(crate) last_error: Option<String>,
@@ -487,6 +497,13 @@ impl Default for RuntimeState {
 
 #[derive(Clone)]
 pub struct ServerState {
+    epoch: Arc<StdMutex<Option<[u8; 16]>>>,
+    next_runtime: Arc<std::sync::atomic::AtomicU64>,
+    /// A request-local view freezes admission without extending the live state history.
+    admitted_snapshot: Option<Arc<AnalysisSnapshot>>,
+    analysis_frozen: bool,
+    admitted_runtime: Option<Option<String>>,
+    requested_environment: Option<std::path::PathBuf>,
     analysis: Arc<RwLock<AnalysisState>>,
     /// Published metadata has its own short, synchronous lock so deadline
     /// reporting never queues behind analysis readers or writers.
@@ -503,6 +520,10 @@ pub struct ServerState {
     parse: Arc<Mutex<()>>,
     #[cfg(test)]
     pub(crate) parse_worker_test: Arc<ParseWorkerTestControl>,
+    #[cfg(test)]
+    pub(crate) tracy_status_test_gate: Arc<StdMutex<Option<TracyStatusTestGate>>>,
+    #[cfg(test)]
+    pub(crate) identity_entropy_failure: Arc<std::sync::atomic::AtomicBool>,
     tracy_capture: Arc<Mutex<TracyCaptureState>>,
     tracy_publication: Arc<Mutex<()>>,
 }
@@ -514,6 +535,12 @@ impl ServerState {
 
     pub fn with_limits(limits: crate::limits::ServerLimits) -> Self {
         Self {
+            epoch: Arc::default(),
+            next_runtime: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            admitted_snapshot: None,
+            analysis_frozen: false,
+            admitted_runtime: None,
+            requested_environment: None,
             analysis: Arc::new(RwLock::new(AnalysisState::default())),
             analysis_metadata: Arc::new(StdMutex::new(AnalysisMetadata::default())),
             runtime: Arc::new(Mutex::new(RuntimeState::new())),
@@ -525,12 +552,22 @@ impl ServerState {
             parse: Arc::new(Mutex::new(())),
             #[cfg(test)]
             parse_worker_test: Arc::default(),
+            #[cfg(test)]
+            tracy_status_test_gate: Arc::default(),
+            #[cfg(test)]
+            identity_entropy_failure: Arc::default(),
             tracy_capture: Arc::new(Mutex::new(TracyCaptureState::default())),
             tracy_publication: Arc::new(Mutex::new(())),
         }
     }
 
     pub async fn snapshot(&self) -> Result<Arc<AnalysisSnapshot>, StateError> {
+        if let Some(snapshot) = &self.admitted_snapshot {
+            return Ok(Arc::clone(snapshot));
+        }
+        if self.analysis_frozen {
+            return Err(StateError::ParseRequired);
+        }
         self.analysis
             .read()
             .await
@@ -549,6 +586,12 @@ impl ServerState {
     }
 
     pub async fn active_snapshot(&self) -> Option<Arc<AnalysisSnapshot>> {
+        if let Some(snapshot) = &self.admitted_snapshot {
+            return Some(Arc::clone(snapshot));
+        }
+        if self.analysis_frozen {
+            return None;
+        }
         self.analysis.read().await.active.clone()
     }
 
@@ -559,38 +602,47 @@ impl ServerState {
         }
     }
 
-    pub async fn install_analysis(&self, build: AnalysisBuild) -> Arc<AnalysisSnapshot> {
+    pub async fn install_analysis(&self, build: AnalysisBuild) -> Result<Arc<AnalysisSnapshot>> {
+        let epoch = self.epoch()?;
         let snapshot = AnalysisSnapshot::from_build(build, 0);
         let mut state = self.analysis.write().await;
-        let (snapshot, previous) = self.publish_analysis(&mut state, snapshot);
+        let (snapshot, previous) = self.publish_analysis(&mut state, snapshot, &epoch);
         drop(state);
         drop(previous);
-        snapshot
+        Ok(snapshot)
     }
 
     pub(crate) async fn install_analysis_before_deadline(
         &self,
         snapshot: AnalysisSnapshot,
         deadline: tokio::time::Instant,
-    ) -> Option<Arc<AnalysisSnapshot>> {
-        let mut state = tokio::time::timeout_at(deadline, self.analysis.write())
-            .await
-            .ok()?;
+    ) -> Result<Option<Arc<AnalysisSnapshot>>> {
+        let epoch = self.epoch()?;
+        let Ok(mut state) = tokio::time::timeout_at(deadline, self.analysis.write()).await else {
+            return Ok(None);
+        };
         if tokio::time::Instant::now() >= deadline {
-            return None;
+            return Ok(None);
         }
-        let (snapshot, previous) = self.publish_analysis(&mut state, snapshot);
+        let (snapshot, previous) = self.publish_analysis(&mut state, snapshot, &epoch);
         drop(state);
         drop(previous);
-        Some(snapshot)
+        Ok(Some(snapshot))
     }
 
     fn publish_analysis(
         &self,
         state: &mut AnalysisState,
         mut snapshot: AnalysisSnapshot,
+        epoch: &[u8; 16],
     ) -> (Arc<AnalysisSnapshot>, Option<Arc<AnalysisSnapshot>>) {
         snapshot.generation = state.generation.saturating_add(1);
+        snapshot.snapshot_id = crate::identity::snapshot(
+            epoch,
+            &snapshot.environment_path,
+            snapshot.generation,
+            snapshot.instance_id,
+        );
         let snapshot = Arc::new(snapshot);
         let mut metadata = self
             .analysis_metadata
@@ -601,6 +653,7 @@ impl ServerState {
         *metadata = AnalysisMetadata {
             active_environment: Some(snapshot.environment_path.clone()),
             generation: snapshot.generation,
+            identity: Some(snapshot.identity()),
         };
         (snapshot, previous)
     }
@@ -613,22 +666,127 @@ impl ServerState {
     }
 
     pub async fn state_generation(&self) -> u64 {
+        if let Some(snapshot) = &self.admitted_snapshot {
+            return snapshot.generation;
+        }
         self.analysis.read().await.generation
     }
 
     pub async fn clear_analysis(&self) {
         let mut state = self.analysis.write().await;
         let previous = state.active.take();
-        self.analysis_metadata
+        let mut metadata = self
+            .analysis_metadata
             .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .active_environment = None;
+            .unwrap_or_else(|error| error.into_inner());
+        metadata.active_environment = None;
+        metadata.identity = None;
+        drop(metadata);
         drop(state);
         drop(previous);
     }
 
     pub(crate) async fn runtime(&self) -> MutexGuard<'_, RuntimeState> {
         self.runtime.lock().await
+    }
+
+    fn epoch(&self) -> Result<[u8; 16]> {
+        let mut epoch = self.epoch.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(epoch) = *epoch {
+            return Ok(epoch);
+        }
+        #[cfg(test)]
+        anyhow::ensure!(
+            !self
+                .identity_entropy_failure
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "identity entropy unavailable: injected failure"
+        );
+        let mut bytes = [0; 16];
+        getrandom::fill(&mut bytes)
+            .map_err(|error| anyhow::anyhow!("identity entropy unavailable: {error}"))?;
+        *epoch = Some(bytes);
+        Ok(bytes)
+    }
+
+    pub(crate) fn new_runtime_id(&self) -> Result<String> {
+        let epoch = self.epoch()?;
+        let sequence = self
+            .next_runtime
+            .fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |value| value.checked_add(1),
+            )
+            .map_err(|_| anyhow::anyhow!("runtime identity sequence exhausted"))?;
+        Ok(crate::identity::runtime(&epoch, sequence))
+    }
+
+    pub(crate) fn for_request(
+        &self,
+        snapshot: Option<Arc<AnalysisSnapshot>>,
+        runtime: Option<Option<String>>,
+    ) -> Self {
+        let mut state = self.clone();
+        state.analysis_frozen = snapshot.is_some();
+        state.admitted_snapshot = snapshot;
+        state.admitted_runtime = runtime;
+        state
+    }
+    pub(crate) fn freeze_optional_analysis(&mut self, snapshot: Option<Arc<AnalysisSnapshot>>) {
+        self.admitted_snapshot = snapshot;
+        self.analysis_frozen = true;
+    }
+    pub(crate) fn for_parse(&self, path: std::path::PathBuf) -> Self {
+        let mut state = self.clone();
+        state.requested_environment = Some(path);
+        state
+    }
+    pub(crate) fn requested_environment(&self) -> Option<&std::path::Path> {
+        self.requested_environment.as_deref()
+    }
+    pub(crate) fn admitted_analysis(&self) -> Option<&Arc<AnalysisSnapshot>> {
+        self.admitted_snapshot.as_ref()
+    }
+
+    pub(crate) fn check_runtime_id(&self, current: Option<&str>) -> Result<()> {
+        if let Some(expected) = &self.admitted_runtime {
+            if expected.as_deref() != current {
+                return Err(crate::identity::StaleIdentity {
+                    field: "expected_runtime",
+                    expected: expected
+                        .clone()
+                        .unwrap_or_else(|| "no runtime at admission".into()),
+                    current: current.map(str::to_owned),
+                }
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn runtime_checked(&self) -> Result<MutexGuard<'_, RuntimeState>> {
+        let runtime = self.runtime().await;
+        self.check_runtime_id(runtime.runtime_id.as_deref())?;
+        Ok(runtime)
+    }
+    pub(crate) async fn bind_current_runtime(&self) -> Result<Self> {
+        let runtime = self.runtime_checked().await?;
+        let mut state = self.clone();
+        state.admitted_runtime = Some(runtime.runtime_id.clone());
+        Ok(state)
+    }
+
+    pub(crate) async fn debugger_checked(&self) -> Result<MutexGuard<'_, Option<DebuggerSession>>> {
+        let debugger = self.debugger().await;
+        self.check_runtime_id(debugger.as_ref().map(|session| session.runtime_id.as_str()))?;
+        Ok(debugger)
+    }
+
+    pub(crate) async fn tracy_capture_checked(&self) -> Result<MutexGuard<'_, TracyCaptureState>> {
+        let capture = self.tracy_capture().await;
+        self.check_runtime_id(capture.runtime_id.as_deref())?;
+        Ok(capture)
     }
 
     pub(crate) fn observe_runtime(&self, runtime: &mut RuntimeState) {
@@ -745,6 +903,12 @@ pub(crate) struct AnalysisWriteTestGuard<'a> {
 }
 
 #[cfg(test)]
+pub(crate) struct TracyStatusTestGate {
+    pub reached: tokio::sync::oneshot::Sender<()>,
+    pub release: tokio::sync::oneshot::Receiver<()>,
+}
+
+#[cfg(test)]
 impl ParseWorkerTestControl {
     pub(crate) fn pause(&self) {
         *self.paused.lock().unwrap() = true;
@@ -786,6 +950,36 @@ impl Drop for ParseWorkerTestGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn identity_entropy_failure_leaves_analysis_and_runtime_unpublished() {
+        let state = ServerState::new();
+        state
+            .identity_entropy_failure
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(state.new_runtime_id().is_err());
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/language/fixture.dme");
+        let context = crate::tools::ToolExecutionContext::new(
+            crate::CapabilityMode::Analysis,
+            crate::PathPolicy::new(vec![fixture.parent().unwrap().to_owned()], vec![]).unwrap(),
+        );
+        let result = crate::tools::call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            serde_json::json!({"dme_path":fixture}),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(state.active_snapshot().await.is_none());
+        assert_eq!(state.state_generation().await, 0);
+        assert!(state.runtime().await.runtime_id.is_none());
+        state
+            .identity_entropy_failure
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(state.new_runtime_id().is_ok());
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn asset_admission_stays_with_cancelled_workers() {

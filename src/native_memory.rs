@@ -33,13 +33,13 @@ pub struct MemoryControl {
     #[schemars(range(min = 1, max = MAX_ROW_LIMIT))]
     pub row_limit: usize,
 }
-fn default_duration() -> u64 {
+pub(crate) fn default_duration() -> u64 {
     10_000
 }
-fn default_records() -> usize {
+pub(crate) fn default_records() -> usize {
     20_000
 }
-fn default_rows() -> usize {
+pub(crate) fn default_rows() -> usize {
     100
 }
 impl MemoryControl {

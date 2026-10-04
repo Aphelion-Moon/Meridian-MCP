@@ -289,6 +289,11 @@ fn payload(result: meridian_mcp::result::ToolResult) -> Value {
 #[tokio::test]
 async fn supervised_reuse_preserves_generation_and_timing_contract() {
     let (root, one, _) = fixture();
+    std::fs::write(
+        &one,
+        "/datum/snapshot_one\n\tvar/value = 1\n\tproc/check()\n\t\treturn value\n",
+    )
+    .unwrap();
     settle_file(&one);
     let context = ToolExecutionContext::new(
         CapabilityMode::Analysis,
@@ -316,6 +321,10 @@ async fn supervised_reuse_preserves_generation_and_timing_contract() {
         .unwrap(),
     );
     assert_eq!(reused["reused"], true);
+    let snapshot_id = first["analysis"]["snapshot_id"]
+        .as_str()
+        .expect("a published parse must identify its snapshot");
+    assert_eq!(reused["analysis"]["snapshot_id"], snapshot_id);
     assert_eq!(reused["state_generation"], first["state_generation"]);
     assert_eq!(reused["timings_ms"].as_object().unwrap().len(), 3);
     for stage in ["queue_wait", "reuse_validation", "total"] {
@@ -333,6 +342,88 @@ async fn supervised_reuse_preserves_generation_and_timing_contract() {
     );
     assert_eq!(forced["reused"], false);
     assert_eq!(forced["state_generation"], 2);
+    assert_ne!(forced["analysis"]["snapshot_id"], snapshot_id);
+    let known = call_tool(&context, &state, "dm_get_type", json!({"type_path":"/datum/snapshot_one", "expected_snapshot":forced["analysis"]["snapshot_id"]})).await.unwrap();
+    assert_eq!(
+        known.meta.as_ref().unwrap().analysis.snapshot_id,
+        forced["analysis"]["snapshot_id"].as_str().unwrap()
+    );
+    assert_eq!(payload(known)["analysis"], forced["analysis"]);
+    for (tool, args) in [
+        (
+            "dm_get_proc",
+            json!({"type_path":"/datum/snapshot_one","proc_name":"check"}),
+        ),
+        (
+            "dm_get_var",
+            json!({"type_path":"/datum/snapshot_one","var_name":"value"}),
+        ),
+        ("dm_list_types", json!({"prefix":"/datum/snapshot_one"})),
+        ("dm_search_symbols", json!({"query":"snapshot_one"})),
+        ("dm_search_context", json!({"query":"snapshot_one"})),
+        ("dm_check_errors", json!({})),
+        (
+            "dm_get_definition",
+            json!({"type_path":"/datum/snapshot_one"}),
+        ),
+        ("dm_document_symbols", json!({"file_path":one})),
+        (
+            "dm_find_references",
+            json!({"type_path":"/datum/snapshot_one","member_name":"value"}),
+        ),
+        (
+            "dm_find_implementations",
+            json!({"type_path":"/datum/snapshot_one"}),
+        ),
+    ] {
+        let result = call_tool(&context, &state, tool, args).await.unwrap();
+        assert_eq!(
+            result.meta.as_ref().unwrap().analysis.snapshot_id,
+            forced["analysis"]["snapshot_id"].as_str().unwrap(),
+            "{tool}"
+        );
+        assert_eq!(payload(result)["analysis"], forced["analysis"], "{tool}");
+    }
+    let missing = call_tool(
+        &context,
+        &state,
+        "dm_get_type",
+        json!({"type_path":"/datum/absent"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(missing.is_error, Some(true));
+    let ToolContent::Text { text } = &missing.content[0];
+    assert_eq!(text, "Type not found: /datum/absent");
+    assert_eq!(
+        missing.meta.unwrap().analysis.snapshot_id,
+        forced["analysis"]["snapshot_id"].as_str().unwrap()
+    );
+    let stale = payload(
+        call_tool(
+            &context,
+            &state,
+            "dm_get_type",
+            json!({
+                "type_path":"/datum/snapshot_one", "expected_snapshot":snapshot_id
+            }),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(stale["code"], "stale_generation");
+    let restarted = ServerState::new();
+    let restart = payload(
+        call_tool(
+            &context,
+            &restarted,
+            "dm_parse_environment",
+            json!({"dme_path":one}),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_ne!(restart["analysis"]["snapshot_id"], snapshot_id);
     for stage in [
         "queue_wait",
         "preprocess_parse",
@@ -420,8 +511,112 @@ async fn failed_parse_preserves_the_complete_active_generation() {
 
     assert_eq!(failed["details"]["state_preserved"], true);
     assert_eq!(failed["details"]["state_generation"], 1);
+    assert_eq!(
+        failed["details"]["analysis"]["snapshot_id"],
+        before.snapshot_id
+    );
+    assert!(failed["details"]["requested_environment"]
+        .as_str()
+        .unwrap()
+        .ends_with("broken.dme"));
     assert_eq!(before.generation, after.generation);
     assert_eq!(before.environment_path, after.environment_path);
+    let missing = call_tool(
+        &context,
+        &state,
+        "dm_parse_environment",
+        json!({"dme_path":root.join("absent.dme")}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        missing.meta.as_ref().unwrap().analysis.snapshot_id,
+        before.snapshot_id
+    );
+    let missing = payload(missing);
+    assert_eq!(missing["details"]["state_preserved"], true);
+    assert!(missing["details"]["requested_environment"]
+        .as_str()
+        .unwrap()
+        .ends_with("absent.dme"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn type_and_diagnostic_cursors_reject_foreign_queries_and_restarts() {
+    let (root, one, _) = fixture();
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![root.clone()], vec![]).unwrap(),
+    );
+    let state = ServerState::new();
+    call_tool(
+        &context,
+        &state,
+        "dm_parse_environment",
+        json!({"dme_path":one}),
+    )
+    .await
+    .unwrap();
+    let first = payload(
+        call_tool(&context, &state, "dm_list_types", json!({"limit":1}))
+            .await
+            .unwrap(),
+    );
+    let cursor = first["pagination"]["next_cursor"].as_str().unwrap();
+    assert!(cursor.starts_with("v2:"));
+    let continued = payload(
+        call_tool(
+            &context,
+            &state,
+            "dm_list_types",
+            json!({"limit":2,"cursor":cursor}),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(continued["pagination"]["cursor"], "1");
+    assert!(call_tool(
+        &context,
+        &state,
+        "dm_list_types",
+        json!({"prefix":"/datum","cursor":cursor})
+    )
+    .await
+    .is_err());
+    assert!(call_tool(
+        &context,
+        &state,
+        "dm_check_errors",
+        json!({"cursor":cursor})
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        payload(
+            call_tool(&context, &state, "dm_list_types", json!({"cursor":"1"}))
+                .await
+                .unwrap()
+        )["code"],
+        "invalid_input"
+    );
+    let restarted = ServerState::new();
+    call_tool(
+        &context,
+        &restarted,
+        "dm_parse_environment",
+        json!({"dme_path":one}),
+    )
+    .await
+    .unwrap();
+    assert!(call_tool(
+        &context,
+        &restarted,
+        "dm_list_types",
+        json!({"cursor":cursor})
+    )
+    .await
+    .is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
 

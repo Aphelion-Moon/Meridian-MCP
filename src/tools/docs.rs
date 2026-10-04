@@ -146,7 +146,7 @@ pub async fn generate(
         result["staging_cleanup_error"] = json!(error);
     }
     result.as_object_mut().unwrap().extend(
-        serde_json::to_value(ToolMetadata::complete(Some(snapshot.generation)))?
+        serde_json::to_value(ToolMetadata::for_snapshot(&snapshot))?
             .as_object()
             .unwrap()
             .clone(),
