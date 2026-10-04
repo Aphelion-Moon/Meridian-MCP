@@ -73,6 +73,38 @@ fn controlled_compiler() -> &'static std::path::PathBuf {
     })
 }
 
+fn output_compiler() -> &'static std::path::PathBuf {
+    // Executable hashing is part of the compile deadline. Use a small fixture
+    // instead of spending that budget on this integration-test harness.
+    initialize_owner();
+    static COMPILER: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    COMPILER.get_or_init(|| {
+        let path = std::env::temp_dir().join(format!(
+            "meridian-output-compiler-{}{}",
+            std::process::id(),
+            std::env::consts::EXE_SUFFIX
+        ));
+        let result = std::process::Command::new("rustup")
+            .args([
+                "run",
+                "1.95.0",
+                "rustc",
+                "--edition=2021",
+                "tests/fixtures/compiler_output.rs",
+                "-o",
+            ])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        path
+    })
+}
+
 async fn provenance_case(case: &str) -> (Value, std::path::PathBuf) {
     let (root, dme) = compiler_fixture(case);
     let private_path = root.with_extension("private");
@@ -551,7 +583,7 @@ async fn omitted_compiler_rejects_an_empty_startup_allowlist_before_process_star
 #[tokio::test]
 async fn omitted_compiler_uses_the_sole_startup_allowlisted_executable() {
     let (root, dme) = compiler_fixture("sole-allowlisted");
-    let compiler = std::env::current_exe().unwrap();
+    let compiler = output_compiler().clone();
     let canonical_compiler = compiler.canonicalize().unwrap();
     let context = writer_context(
         &root,
@@ -580,7 +612,7 @@ async fn omitted_compiler_uses_the_sole_startup_allowlisted_executable() {
 async fn omitted_compiler_does_not_probe_a_different_conventional_installation() {
     let (root, dme) = compiler_fixture("configured-over-conventional");
     let configured = root.join("configured-compiler.exe");
-    std::fs::copy(std::env::current_exe().unwrap(), &configured).unwrap();
+    std::fs::copy(output_compiler(), &configured).unwrap();
     let canonical_configured = configured.canonicalize().unwrap();
     let context = writer_context(
         &root,
@@ -679,7 +711,7 @@ async fn direct_compile_reports_bounded_output_artifacts_and_optional_audit() {
     let dmb = root.join("fixture.dmb");
     std::fs::write(&dme, "// fixture").unwrap();
     std::fs::write(&dmb, "pre-existing artifact").unwrap();
-    let compiler = std::env::current_exe().unwrap();
+    let compiler = output_compiler().clone();
     let policy = PathPolicy::new(vec![root.clone()], vec![compiler.clone()]).unwrap();
     let context = writer_context(&root, policy);
 
