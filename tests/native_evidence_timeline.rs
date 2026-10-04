@@ -23,7 +23,10 @@ fn phases_are_half_open_and_protected_text_is_redacted() {
         timeline::assign(&record, &phases).unwrap().as_deref(),
         Some("game_start")
     );
-    let (text, count) = redaction::sanitize_text("ckey=example_player failure");
-    assert_eq!(count, 1);
+    let (text, count) = redaction::sanitize_text("ckey=example_player Discord-ID=private-discord PLAYER-ID=private-player my_player-id=visible monkey=visible");
+    assert_eq!(count, 3);
     assert!(!text.contains("example_player"));
+    assert!(!text.contains("private-discord"));
+    assert!(!text.contains("private-player"));
+    assert!(text.contains("my_player-id=visible monkey=visible"));
 }

@@ -3,6 +3,7 @@ use crate::native_evidence::model::{ArtifactDescriptor, ArtifactIdentity};
 use crate::PathPolicy;
 use anyhow::{bail, Result};
 use sha2::{Digest, Sha256};
+use std::io::Read;
 
 pub struct ReadArtifact {
     pub identity: ArtifactIdentity,
@@ -14,21 +15,26 @@ pub fn read_artifact(
     descriptor: &ArtifactDescriptor,
     total: &mut u64,
 ) -> Result<ReadArtifact> {
+    let remaining = MAX_EVIDENCE_TOTAL_BYTES
+        .checked_sub(*total)
+        .ok_or_else(|| anyhow::anyhow!("evidence request exceeds fixed total byte limit"))?;
     let path = policy.read_path(&descriptor.path)?;
     let metadata = std::fs::metadata(&path)?;
+    if !metadata.is_file() {
+        bail!("evidence must be a regular file");
+    }
+    let file = std::fs::File::open(&path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        bail!("evidence must be a regular file");
+    }
     if metadata.len() > MAX_EVIDENCE_FILE_BYTES {
         bail!("evidence file exceeds fixed byte limit");
     }
-    *total = total
-        .checked_add(metadata.len())
-        .ok_or_else(|| anyhow::anyhow!("evidence byte total overflow"))?;
-    if *total > MAX_EVIDENCE_TOTAL_BYTES {
+    if metadata.len() > remaining {
         bail!("evidence request exceeds fixed total byte limit");
     }
-    let bytes = std::fs::read(&path)?;
-    if bytes.len() as u64 > MAX_EVIDENCE_FILE_BYTES {
-        bail!("evidence file grew beyond fixed byte limit");
-    }
+    let bytes = read_bounded_bytes(file, MAX_EVIDENCE_FILE_BYTES.min(remaining))?;
     let root = policy
         .effective_roots()
         .iter()
@@ -39,6 +45,9 @@ pub fn read_artifact(
         .strip_prefix(&root.path)?
         .to_string_lossy()
         .replace('\\', "/");
+    // Metadata may be stale or report zero for a readable regular file. Charge
+    // exactly the bytes whose hash and content are returned to the parser.
+    *total += bytes.len() as u64;
     Ok(ReadArtifact {
         identity: ArtifactIdentity {
             relative_path,
@@ -48,6 +57,15 @@ pub fn read_artifact(
         },
         bytes,
     })
+}
+
+fn read_bounded_bytes(reader: impl Read, limit: u64) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        bail!("evidence read exceeds its {limit}-byte budget");
+    }
+    Ok(bytes)
 }
 
 pub fn validate_json_depth(value: &serde_json::Value, depth: usize) -> Result<()> {
@@ -87,6 +105,10 @@ pub fn scalar_record(
     let mut world_deciseconds = None;
     if let Some(object) = value.as_object() {
         for (name, value) in object {
+            if crate::native_evidence::redaction::protected(name) {
+                *redacted += 1;
+                continue;
+            }
             if options.and_then(|item| item.wall_time_field.as_deref()) == Some(name) {
                 wall_unix_ms = parse_wall(value);
                 continue;
@@ -104,10 +126,6 @@ pub fn scalar_record(
                     metrics.insert(name.clone(), number);
                 }
             } else if let Some(text) = value.as_str() {
-                if crate::native_evidence::redaction::protected(name) {
-                    *redacted += 1;
-                    continue;
-                }
                 if options.is_some_and(|item| item.group_fields.iter().any(|field| field == name)) {
                     let (text, count) = crate::native_evidence::redaction::sanitize_text(text);
                     *redacted += count;
@@ -135,4 +153,22 @@ fn parse_wall(value: &serde_json::Value) -> Option<i128> {
     time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
         .ok()
         .map(|time| time.unix_timestamp_nanos() / 1_000_000)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn evidence_reader_stops_after_one_overflow_byte() {
+        let mut reader = Cursor::new(b"evidence-that-keeps-growing");
+        assert!(read_bounded_bytes(&mut reader, 8).is_err());
+        assert_eq!(reader.position(), 9);
+        assert_eq!(
+            read_bounded_bytes(&b"evidence"[..], 8).unwrap(),
+            b"evidence"
+        );
+        assert!(read_bounded_bytes(&b"x"[..], 0).is_err());
+    }
 }

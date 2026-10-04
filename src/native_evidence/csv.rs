@@ -39,7 +39,9 @@ pub fn parse(
                 *redacted += 1;
                 continue;
             }
-            if let Ok(number) = cell.parse::<f64>() {
+            if let Ok(number) = cell.parse::<i64>() {
+                object.insert(header.to_owned(), serde_json::json!(number));
+            } else if let Ok(number) = cell.parse::<f64>() {
                 object.insert(header.to_owned(), serde_json::json!(number));
             } else {
                 object.insert(header.to_owned(), serde_json::json!(cell));

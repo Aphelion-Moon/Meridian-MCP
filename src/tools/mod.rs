@@ -1098,10 +1098,10 @@ pub async fn call_tool(
             parse::parse_environment_with_policy(state, args, context.policy()).await
         }
         "dm_check_fixture_sync" => fixture::check_sync(context, state, args).await,
-        "dm_memory_summary" => memory::run(context, args, false).await,
-        "dm_memory_compare" => memory::run(context, args, true).await,
-        "dm_native_evidence_summary" => native_evidence::summary(context, args).await,
-        "dm_native_evidence_compare" => native_evidence::compare(context, args).await,
+        "dm_memory_summary" => memory::run(context, state, args, false).await,
+        "dm_memory_compare" => memory::run(context, state, args, true).await,
+        "dm_native_evidence_summary" => native_evidence::summary(context, state, args).await,
+        "dm_native_evidence_compare" => native_evidence::compare(context, state, args).await,
         "dm_get_type" => parse::get_type(state, args).await,
         "dm_get_proc" => parse::get_proc(state, args).await,
         "dm_get_var" => parse::get_var(state, args).await,

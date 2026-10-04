@@ -22,27 +22,32 @@ pub fn sanitize_text(text: &str) -> (String, u64) {
     let mut result = text.to_owned();
     let mut count = 0;
     for field in PROTECTED_FIELDS {
-        let marker = format!("{field}=");
-        let mut cursor = 0;
-        while let Some(offset) = result[cursor..].to_ascii_lowercase().find(&marker) {
-            let start = cursor + offset;
-            if start > 0
-                && (result.as_bytes()[start - 1].is_ascii_alphanumeric()
-                    || result.as_bytes()[start - 1] == b'_')
-            {
-                cursor = start + 1;
-                continue;
+        for marker in std::iter::once(format!("{field}=")).chain(
+            field
+                .contains('_')
+                .then(|| format!("{}=", field.replace('_', "-"))),
+        ) {
+            let mut cursor = 0;
+            while let Some(offset) = result[cursor..].to_ascii_lowercase().find(&marker) {
+                let start = cursor + offset;
+                if start > 0
+                    && (result.as_bytes()[start - 1].is_ascii_alphanumeric()
+                        || result.as_bytes()[start - 1] == b'_')
+                {
+                    cursor = start + 1;
+                    continue;
+                }
+                let value_start = start + marker.len();
+                let end = result[value_start..]
+                    .find(|character: char| {
+                        character.is_whitespace() || character == ',' || character == ';'
+                    })
+                    .map(|offset| value_start + offset)
+                    .unwrap_or(result.len());
+                result.replace_range(value_start..end, "<redacted>");
+                count += 1;
+                cursor = value_start + "<redacted>".len();
             }
-            let value_start = start + marker.len();
-            let end = result[value_start..]
-                .find(|character: char| {
-                    character.is_whitespace() || character == ',' || character == ';'
-                })
-                .map(|offset| value_start + offset)
-                .unwrap_or(result.len());
-            result.replace_range(value_start..end, "<redacted>");
-            count += 1;
-            cursor = value_start + "<redacted>".len();
         }
     }
     (result, count)
