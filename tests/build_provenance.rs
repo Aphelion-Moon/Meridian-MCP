@@ -1,7 +1,6 @@
 use meridian_mcp::{
-    BuildAttempt, BuildAttemptOutcome, BuildInputIdentity, BuildProvenanceStore, BuildRecord,
-    EffectiveRoot, FileIdentity, PathPolicy, PrivateStateStore, ProvenanceStatus,
-    RepositoryIdentity, RootSource,
+    BuildAttemptOutcome, BuildInputIdentity, BuildProvenanceStore, BuildRecord, EffectiveRoot,
+    FileIdentity, PathPolicy, PrivateStateStore, ProvenanceStatus, RepositoryIdentity, RootSource,
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -88,6 +87,53 @@ impl ProvenanceFixture {
             created_at_unix_ms: 1,
         }
     }
+
+    fn write_legacy(&self, mut record: BuildRecord) -> BuildRecord {
+        use sha2::{Digest, Sha256};
+        let store = PrivateStateStore::open(&self.state, &[self.root("repo-a")]).unwrap();
+        let relative = record
+            .dmb
+            .path
+            .strip_prefix(&record.project.root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        record.artifact_key = format!(
+            "{:x}",
+            Sha256::digest(
+                format!("{}\n{relative}", record.project.repository_identity).as_bytes()
+            )
+        );
+        let path = record
+            .dmb
+            .path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let path = if cfg!(windows) {
+            path.to_ascii_lowercase()
+        } else {
+            path
+        };
+        let location = format!("{:x}", Sha256::digest(path.as_bytes()));
+        store
+            .write_json_atomic(&format!("builds/{}.json", record.artifact_key), &record)
+            .unwrap();
+        store
+            .write_json_atomic(
+                &format!("locations/{location}.json"),
+                &serde_json::json!({"schema": 1, "artifact_key": record.artifact_key}),
+            )
+            .unwrap();
+        record
+    }
+}
+
+fn record_success(store: &BuildProvenanceStore, record: &BuildRecord) -> anyhow::Result<()> {
+    let mut attempt = store.begin_attempt(&record.dmb.path, record.inputs.clone())?;
+    attempt.outcome = BuildAttemptOutcome::Succeeded;
+    store.finish_attempt(&attempt, Some(record))
 }
 
 impl Drop for ProvenanceFixture {
@@ -101,20 +147,14 @@ fn failed_attempt_makes_last_success_stale_across_reopen() {
     let fixture = ProvenanceFixture::new("failed");
     let store = fixture.store("repo-a");
     let success = fixture.success(&store);
-    store.record_success(&success).unwrap();
-    store
-        .record_attempt(&BuildAttempt {
-            schema: 1,
-            attempt_id: "attempt-failed".to_owned(),
-            artifact_key: success.artifact_key.clone(),
-            outcome: BuildAttemptOutcome::Failed {
-                code: "compiler_failed".to_owned(),
-            },
-            observed_inputs: success.inputs.clone(),
-            retained_dmb_sha256: Some(success.dmb.sha256.clone()),
-            created_at_unix_ms: 2,
-        })
-        .unwrap();
+    record_success(&store, &success).unwrap();
+    let mut attempt = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    attempt.outcome = BuildAttemptOutcome::Failed {
+        code: "compiler_failed".to_owned(),
+    };
+    // Wall-clock rollback cannot make a newer explicit attempt disappear.
+    attempt.created_at_unix_ms = 0;
+    store.finish_attempt(&attempt, None).unwrap();
     drop(store);
 
     let reopened = fixture.store("repo-a");
@@ -136,7 +176,7 @@ fn changed_inputs_outputs_and_repository_identity_are_stale() {
     ] {
         let fixture = ProvenanceFixture::new(name);
         let store = fixture.store("repo-a");
-        store.record_success(&fixture.success(&store)).unwrap();
+        record_success(&store, &fixture.success(&store)).unwrap();
         match change {
             "input" => std::fs::write(&fixture.input, "source-v2").unwrap(),
             "dmb" => std::fs::write(&fixture.dmb, "dmb-v2").unwrap(),
@@ -153,7 +193,7 @@ fn changed_inputs_outputs_and_repository_identity_are_stale() {
 
     let fixture = ProvenanceFixture::new("repository");
     let store = fixture.store("repo-a");
-    store.record_success(&fixture.success(&store)).unwrap();
+    record_success(&store, &fixture.success(&store)).unwrap();
     drop(store);
     let changed_repository = fixture.store("repo-b");
     let decision = changed_repository
@@ -182,7 +222,7 @@ fn a_location_record_cannot_verify_another_artifact() {
     let fixture = ProvenanceFixture::new("misdirected-location");
     let store = fixture.store("repo-a");
     let first = fixture.success(&store);
-    store.record_success(&first).unwrap();
+    fixture.write_legacy(first);
     let original_location = std::fs::read_dir(fixture.state.join("locations"))
         .unwrap()
         .next()
@@ -194,7 +234,7 @@ fn a_location_record_cannot_verify_another_artifact() {
     let mut second = fixture.success(&store);
     second.artifact_key = store.artifact_key(&other).unwrap();
     second.dmb = FileIdentity::capture(&other).unwrap();
-    store.record_success(&second).unwrap();
+    let second = fixture.write_legacy(second);
     std::fs::write(
         &original_location,
         serde_json::to_vec(&serde_json::json!({
@@ -217,13 +257,13 @@ fn a_location_record_cannot_verify_another_artifact() {
 fn case_distinct_artifacts_keep_separate_provenance() {
     let fixture = ProvenanceFixture::new("case-distinct");
     let store = fixture.store("repo-a");
-    store.record_success(&fixture.success(&store)).unwrap();
+    record_success(&store, &fixture.success(&store)).unwrap();
     let other = fixture.workspace.join("Fixture.dmb");
     std::fs::write(&other, b"uppercase artifact").unwrap();
     let mut second = fixture.success(&store);
     second.artifact_key = store.artifact_key(&other).unwrap();
     second.dmb = FileIdentity::capture(&other).unwrap();
-    store.record_success(&second).unwrap();
+    record_success(&store, &second).unwrap();
     std::fs::write(&fixture.dmb, b"changed lowercase artifact").unwrap();
     let changed = store.evaluate_launch(&fixture.dmb, false).unwrap();
     assert_eq!(changed.status, ProvenanceStatus::Stale);
@@ -240,7 +280,7 @@ fn legacy_location_keys_retain_stale_checks() {
     use sha2::{Digest, Sha256};
     let fixture = ProvenanceFixture::new("Legacy-Location");
     let store = fixture.store("repo-a");
-    store.record_success(&fixture.success(&store)).unwrap();
+    fixture.write_legacy(fixture.success(&store));
     let current_location = std::fs::read_dir(fixture.state.join("locations"))
         .unwrap()
         .next()
@@ -292,7 +332,7 @@ fn legacy_records_remain_readable_unverified_and_stale_checks_still_apply() {
     let mut record = fixture.success(&store);
     record.schema = 1;
     record.verification = None;
-    store.record_success(&record).unwrap();
+    fixture.write_legacy(record);
     let decision = store.evaluate_launch(&fixture.dmb, true).unwrap();
     assert_eq!(decision.status, ProvenanceStatus::Unverified);
     assert!(!decision.allowed);
@@ -315,7 +355,7 @@ fn appearing_configuration_input_invalidates_a_verified_record() {
         .unwrap()
         .absent_inputs
         .push(optional.clone());
-    store.record_success(&record).unwrap();
+    record_success(&store, &record).unwrap();
     assert_eq!(
         store.evaluate_launch(&fixture.dmb, true).unwrap().status,
         ProvenanceStatus::Verified
@@ -327,4 +367,213 @@ fn appearing_configuration_input_invalidates_a_verified_record() {
         .reasons
         .iter()
         .any(|reason| reason.code == "input_appeared"));
+}
+
+#[test]
+fn linked_worktrees_with_a_shared_store_keep_independent_builds_and_attempts() {
+    let fixture = ProvenanceFixture::new("linked-worktrees");
+    let git = |directory: &std::path::Path, args: &[&std::ffi::OsStr]| {
+        let output = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+            ])
+            .args(args)
+            .current_dir(directory)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&fixture.workspace, &["init".as_ref()]);
+    git(&fixture.workspace, &["add".as_ref(), ".".as_ref()]);
+    git(
+        &fixture.workspace,
+        &["commit".as_ref(), "-m".as_ref(), "fixture".as_ref()],
+    );
+    let linked = fixture.base.join("linked");
+    git(
+        &fixture.workspace,
+        &[
+            "worktree".as_ref(),
+            "add".as_ref(),
+            "--detach".as_ref(),
+            linked.as_os_str(),
+        ],
+    );
+    let roots = meridian_mcp::repository_roots::expand_effective_roots(
+        &[],
+        std::slice::from_ref(&fixture.workspace),
+    )
+    .unwrap();
+    let private = Arc::new(PrivateStateStore::open(&fixture.state, &roots).unwrap());
+    let policy = PathPolicy::from_effective_roots(roots, Vec::new()).unwrap();
+    let store = BuildProvenanceStore::new(private, policy);
+    let first = fixture.success(&store);
+    record_success(&store, &first).unwrap();
+    let mut second = first.clone();
+    second.record_id = "linked-success".to_owned();
+    second.dmb = FileIdentity::capture(&linked.join("fixture.dmb")).unwrap();
+    second.rsc = Some(FileIdentity::capture(&linked.join("fixture.rsc")).unwrap());
+    second.artifact_key = store.artifact_key(&second.dmb.path).unwrap();
+    second.project = store.project_identity(&second.dmb.path).unwrap();
+    second.inputs =
+        vec![BuildInputIdentity::capture(&linked, &linked.join("fixture.dm"), "source").unwrap()];
+    record_success(&store, &second).unwrap();
+    assert_eq!(
+        store.evaluate_launch(&fixture.dmb, true).unwrap().status,
+        ProvenanceStatus::Verified
+    );
+    assert_eq!(
+        store
+            .evaluate_launch(&second.dmb.path, true)
+            .unwrap()
+            .status,
+        ProvenanceStatus::Verified
+    );
+    assert_ne!(first.artifact_key, second.artifact_key);
+    let mut attempt = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    attempt.outcome = BuildAttemptOutcome::Failed {
+        code: "compiler_failed".to_owned(),
+    };
+    // Wall-clock rollback cannot make a newer explicit attempt disappear.
+    attempt.created_at_unix_ms = 0;
+    store.finish_attempt(&attempt, None).unwrap();
+    assert!(!store.evaluate_launch(&fixture.dmb, false).unwrap().allowed);
+    assert_eq!(
+        store
+            .evaluate_launch(&second.dmb.path, true)
+            .unwrap()
+            .status,
+        ProvenanceStatus::Verified
+    );
+}
+
+#[test]
+fn a_failed_first_managed_attempt_cannot_fall_back_to_unmanaged_launch() {
+    let fixture = ProvenanceFixture::new("first-failed-attempt");
+    let store = fixture.store("repo-a");
+    let mut attempt = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    attempt.outcome = BuildAttemptOutcome::Failed {
+        code: "compiler_failed".to_owned(),
+    };
+    // Wall-clock rollback cannot make a newer explicit attempt disappear.
+    attempt.created_at_unix_ms = 0;
+    store.finish_attempt(&attempt, None).unwrap();
+    drop(store);
+    let decision = fixture
+        .store("repo-a")
+        .evaluate_launch(&fixture.dmb, false)
+        .unwrap();
+    assert_eq!(decision.status, ProvenanceStatus::Stale);
+    assert!(!decision.allowed);
+}
+
+#[test]
+fn interrupted_attempt_survives_reopen_and_only_current_completion_can_publish() {
+    let fixture = ProvenanceFixture::new("interrupted-attempt");
+    let store = fixture.store("repo-a");
+    record_success(&store, &fixture.success(&store)).unwrap();
+    let mut abandoned = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    drop(store);
+    let reopened = fixture.store("repo-a");
+    let decision = reopened.evaluate_launch(&fixture.dmb, false).unwrap();
+    assert!(!decision.allowed);
+    assert!(decision
+        .reasons
+        .iter()
+        .any(|reason| reason.code == "build_in_progress_or_interrupted"));
+    let mut current = reopened.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    abandoned.outcome = BuildAttemptOutcome::Succeeded;
+    assert!(reopened
+        .finish_attempt(&abandoned, Some(&fixture.success(&reopened)))
+        .is_err());
+    assert!(
+        !reopened
+            .evaluate_launch(&fixture.dmb, false)
+            .unwrap()
+            .allowed
+    );
+    current.outcome = BuildAttemptOutcome::Succeeded;
+    reopened
+        .finish_attempt(&current, Some(&fixture.success(&reopened)))
+        .unwrap();
+    assert_eq!(
+        reopened.evaluate_launch(&fixture.dmb, true).unwrap().status,
+        ProvenanceStatus::Verified
+    );
+    assert!(reopened
+        .finish_attempt(&current, Some(&fixture.success(&reopened)))
+        .is_err());
+}
+
+#[test]
+fn incomplete_legacy_state_requires_recovery_even_without_verified_requirement() {
+    for missing in ["builds", "locations"] {
+        let fixture = ProvenanceFixture::new(missing);
+        let store = fixture.store("repo-a");
+        fixture.write_legacy(fixture.success(&store));
+        std::fs::remove_dir_all(fixture.state.join(missing)).unwrap();
+        let decision = store.evaluate_launch(&fixture.dmb, false).unwrap();
+        assert!(!decision.allowed, "missing {missing}");
+        assert_eq!(decision.status, ProvenanceStatus::Stale);
+        assert!(decision
+            .reasons
+            .iter()
+            .any(|reason| reason.code == "build_recovery_required"));
+    }
+}
+
+#[test]
+fn failed_completion_does_not_erase_legacy_evidence_or_earlier_success() {
+    let fixture = ProvenanceFixture::new("legacy-preserved");
+    let store = fixture.store("repo-a");
+    let legacy = fixture.write_legacy(fixture.success(&store));
+    let path = fixture
+        .state
+        .join(format!("builds/{}.json", legacy.artifact_key));
+    let bytes = std::fs::read(&path).unwrap();
+    let mut attempt = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    attempt.outcome = BuildAttemptOutcome::Failed {
+        code: "compiler_failed".to_owned(),
+    };
+    store.finish_attempt(&attempt, None).unwrap();
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    let decision = store.evaluate_launch(&fixture.dmb, false).unwrap();
+    assert!(!decision.allowed);
+    assert_eq!(decision.record_id.as_deref(), Some("record-success"));
+}
+
+#[test]
+fn supported_aliases_share_location_but_hard_linked_outputs_are_rejected() {
+    let fixture = ProvenanceFixture::new("aliases");
+    let store = fixture.store("repo-a");
+    let alias = fixture.workspace.join(".").join("fixture.dmb");
+    assert_eq!(
+        store.artifact_key(&fixture.dmb).unwrap(),
+        store.artifact_key(&alias).unwrap()
+    );
+    let hardlink = fixture.workspace.join("linked.dmb");
+    std::fs::hard_link(&fixture.dmb, hardlink).unwrap();
+    assert!(store.artifact_key(&fixture.dmb).is_err());
+}
+
+#[test]
+fn missing_v2_publication_never_resurrects_a_legacy_success() {
+    let fixture = ProvenanceFixture::new("missing-v2-publication");
+    let store = fixture.store("repo-a");
+    fixture.write_legacy(fixture.success(&store));
+    let attempt = store.begin_attempt(&fixture.dmb, Vec::new()).unwrap();
+    let record = fixture
+        .state
+        .join(format!("artifacts-v2/{}/state.json", attempt.artifact_key));
+    std::fs::remove_file(record).unwrap();
+    let decision = store.evaluate_launch(&fixture.dmb, false).unwrap();
+    assert!(!decision.allowed);
+    assert_eq!(decision.status, ProvenanceStatus::Stale);
 }

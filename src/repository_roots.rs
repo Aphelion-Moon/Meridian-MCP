@@ -93,16 +93,7 @@ fn effective_root(
     let common_directory = git_common_directory(&path).ok();
     let repository_identity =
         known_identity.or_else(|| common_directory.as_deref().map(repository_identity));
-    let head_revision = run_git(&path, &["rev-parse", "HEAD"])
-        .ok()
-        .and_then(successful_stdout);
-    let dirty = run_git(
-        &path,
-        &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
-    )
-    .ok()
-    .filter(|output| output.status.success())
-    .map(|output| !output.stdout.is_empty());
+    let (head_revision, dirty) = git_observation(&path);
 
     EffectiveRoot {
         path,
@@ -111,6 +102,21 @@ fn effective_root(
         head_revision,
         dirty,
     }
+}
+
+pub(crate) fn git_observation(path: &Path) -> (Option<String>, Option<bool>) {
+    let head_revision = run_git(path, &["rev-parse", "HEAD"])
+        .ok()
+        .and_then(successful_stdout);
+    let dirty = run_git(
+        path,
+        &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+    )
+    .ok()
+    .filter(|output| output.status.success())
+    .map(|output| !output.stdout.is_empty());
+
+    (head_revision, dirty)
 }
 
 fn git_common_directory(repository: &Path) -> Result<PathBuf> {

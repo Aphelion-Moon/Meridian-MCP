@@ -20,7 +20,7 @@ struct OperationLock {
     _file: File,
 }
 
-pub(crate) struct PrivateStateReadTransaction<'a> {
+pub(crate) struct PrivateStateTransaction<'a> {
     store: &'a PrivateStateStore,
     _operation: OperationLock,
 }
@@ -77,6 +77,10 @@ impl PrivateStateStore {
 
     pub fn write_json_atomic<T: Serialize>(&self, relative: &str, value: &T) -> Result<PathBuf> {
         let _operation = self.lock_operation()?;
+        self.write_json_unlocked(relative, value)
+    }
+
+    fn write_json_unlocked<T: Serialize>(&self, relative: &str, value: &T) -> Result<PathBuf> {
         let output = self.resolve_record(relative, true)?;
         let bytes = serde_json::to_vec_pretty(value)?;
         if bytes.len() > MAX_RECORD_BYTES {
@@ -103,7 +107,7 @@ impl PrivateStateStore {
     }
 
     pub fn read_json<T: DeserializeOwned>(&self, relative: &str) -> Result<T> {
-        self.read_transaction()?.read_json(relative)
+        self.transaction()?.read_json(relative)
     }
 
     fn read_json_unlocked<T: DeserializeOwned>(&self, relative: &str) -> Result<T> {
@@ -171,8 +175,8 @@ impl PrivateStateStore {
         Ok(records)
     }
 
-    pub(crate) fn read_transaction(&self) -> Result<PrivateStateReadTransaction<'_>> {
-        Ok(PrivateStateReadTransaction {
+    pub(crate) fn transaction(&self) -> Result<PrivateStateTransaction<'_>> {
+        Ok(PrivateStateTransaction {
             store: self,
             _operation: self.lock_operation()?,
         })
@@ -308,7 +312,26 @@ impl PrivateStateStore {
     }
 }
 
-impl PrivateStateReadTransaction<'_> {
+impl PrivateStateTransaction<'_> {
+    pub(crate) fn namespace_exists(&self, relative: &str) -> Result<bool> {
+        let path = self.store.resolve_record(relative, false)?;
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => Ok(true),
+            Ok(_) => bail!("private state namespace must be a regular directory"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    // Read/modify/publish one record while retaining the same operation lock.
+    pub(crate) fn write_json_atomic<T: Serialize>(
+        &self,
+        relative: &str,
+        value: &T,
+    ) -> Result<PathBuf> {
+        self.store.write_json_unlocked(relative, value)
+    }
+
     pub(crate) fn read_json<T: DeserializeOwned>(&self, relative: &str) -> Result<T> {
         self.store.read_json_unlocked(relative)
     }
@@ -336,26 +359,32 @@ fn create_private_file(parent: &Path) -> Result<(PathBuf, File)> {
 }
 
 fn install_temporary(temporary: &Path, output: &Path) -> Result<()> {
-    let parent = output.parent().expect("validated record path has a parent");
-    let backup = if output.exists() {
-        let mut random = [0_u8; 16];
-        getrandom::fill(&mut random).map_err(|error| anyhow!(error.to_string()))?;
-        let backup = parent.join(format!(".meridian-backup-{}", hex(&random)));
-        std::fs::rename(output, &backup)?;
-        Some(backup)
-    } else {
-        None
-    };
-    if let Err(install_error) = std::fs::rename(temporary, output) {
-        if let Some(backup) = &backup {
-            let _ = std::fs::rename(backup, output);
+    // Never remove the old name before the replacement: a crash must expose
+    // either complete record, not a gap that looks like an unmanaged artifact.
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let source: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+        let destination: Vec<u16> = output.as_os_str().encode_wide().chain(Some(0)).collect();
+        if unsafe {
+            MoveFileExW(
+                source.as_ptr(),
+                destination.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error().into());
         }
-        return Err(install_error.into());
     }
-    if let Some(backup) = backup {
-        std::fs::remove_file(backup)?;
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(temporary, output)?;
+        File::open(output.parent().expect("validated record parent"))?.sync_all()?;
     }
-    OpenOptions::new().write(true).open(output)?.sync_all()?;
     Ok(())
 }
 

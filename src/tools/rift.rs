@@ -269,6 +269,10 @@ pub async fn compile(
         )?);
     }
     let mut output = output::BuildOutput::new(response.diagnostic_limit());
+    let attempt = context
+        .build_provenance()
+        .map(|store| store.begin_attempt(&project.dmb, prepared.inputs.clone()))
+        .transpose()?;
     let outcome = match run_contained_process_observed(
         ProcessSpec {
             program: command_processor,
@@ -328,6 +332,7 @@ pub async fn compile(
     classify_result(
         context,
         &prepared,
+        attempt,
         &profile,
         &project,
         generation,
@@ -537,6 +542,7 @@ fn command_path(path: &Path) -> PathBuf {
 fn classify_result(
     context: &ToolExecutionContext,
     prepared: &PreparedBuild,
+    attempt: Option<BuildAttempt>,
     profile: &ProjectProfile,
     project: &ValidatedProject,
     generation: u64,
@@ -600,8 +606,15 @@ fn classify_result(
     };
 
     let recovery = failure_code.map(recovery_for).unwrap_or("");
-    let provenance =
-        record_rift_provenance(context, prepared, project, &after, &evidence, failure_code)?;
+    let provenance = record_rift_provenance(
+        context,
+        prepared,
+        attempt,
+        project,
+        &after,
+        &evidence,
+        failure_code,
+    )?;
     let result = json!({
         "success": failure_code.is_none(),
         "code": failure_code,
@@ -649,6 +662,7 @@ fn classify_result(
         "build_record_id": provenance["record_id"],
         "provenance_reasons": provenance["reasons"],
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
+        "attempt_id": provenance["attempt_id"],
     });
     let text = response::format_rift(result, response)?;
     if failure_code.is_some() {
@@ -661,6 +675,7 @@ fn classify_result(
 fn record_rift_provenance(
     context: &ToolExecutionContext,
     prepared: &PreparedBuild,
+    attempt: Option<BuildAttempt>,
     project: &ValidatedProject,
     after: &ArtifactPair,
     evidence: &BuildEvidence,
@@ -674,9 +689,9 @@ fn record_rift_provenance(
             "retained_dmb_sha256": after.dmb.sha256,
         }));
     };
-    let inputs = prepared.inputs.clone();
-    let artifact_key = store.artifact_key(&project.dmb)?;
-    let created_at_unix_ms = rift_unix_ms();
+    let mut attempt = attempt.ok_or_else(|| anyhow!("managed build has no durable attempt"))?;
+    attempt.observed_inputs = prepared.inputs.clone();
+    attempt.retained_dmb_sha256 = after.dmb.sha256.clone();
 
     if matches!(
         evidence,
@@ -685,57 +700,32 @@ fn record_rift_provenance(
         let code = prepared
             .finish_reason()
             .unwrap_or("rift_compiler_closure_not_proved");
-        store.record_attempt(&BuildAttempt {
-            schema: 1,
-            attempt_id: rift_random_id()?,
-            artifact_key,
-            outcome: BuildAttemptOutcome::Unverified {
-                code: code.to_owned(),
-            },
-            observed_inputs: inputs,
-            retained_dmb_sha256: after.dmb.sha256.clone(),
-            created_at_unix_ms,
-        })?;
+        attempt.outcome = BuildAttemptOutcome::Unverified {
+            code: code.to_owned(),
+        };
+        store.finish_attempt(&attempt, None)?;
         let decision = store.evaluate_launch(&project.dmb, false)?;
         return Ok(json!({
             "status": decision.status,
             "record_id": decision.record_id,
+            "attempt_id": attempt.attempt_id,
             "reasons": [{"code": code}],
             "retained_dmb_sha256": after.dmb.sha256,
         }));
     }
 
-    store.record_attempt(&BuildAttempt {
-        schema: 1,
-        attempt_id: rift_random_id()?,
-        artifact_key,
-        outcome: BuildAttemptOutcome::Failed {
-            code: failure_code.unwrap_or("insufficient_evidence").to_owned(),
-        },
-        observed_inputs: inputs,
-        retained_dmb_sha256: after.dmb.sha256.clone(),
-        created_at_unix_ms,
-    })?;
+    attempt.outcome = BuildAttemptOutcome::Failed {
+        code: failure_code.unwrap_or("insufficient_evidence").to_owned(),
+    };
+    store.finish_attempt(&attempt, None)?;
     let decision = store.evaluate_launch(&project.dmb, false)?;
     Ok(json!({
         "status": decision.status,
         "record_id": decision.record_id,
+        "attempt_id": attempt.attempt_id,
         "reasons": decision.reasons,
         "retained_dmb_sha256": after.dmb.sha256,
     }))
-}
-
-fn rift_random_id() -> Result<String> {
-    let mut bytes = [0_u8; 16];
-    getrandom::fill(&mut bytes).map_err(|error| anyhow!(error.to_string()))?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
-}
-
-fn rift_unix_ms() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }
 
 fn valid_artifact(snapshot: &ArtifactSnapshot) -> bool {

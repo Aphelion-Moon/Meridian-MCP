@@ -1,4 +1,5 @@
 use crate::artifact::FileIdentity;
+use crate::artifact_location::{canonical_location, legacy_folded_location_key, location_key};
 use crate::build_identity::BuildIdentity;
 use crate::{PathPolicy, PrivateStateStore};
 use anyhow::{anyhow, bail, Context, Result};
@@ -94,6 +95,8 @@ pub struct BuildRecord {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum BuildAttemptOutcome {
+    InProgress,
+    Interrupted { code: String },
     Succeeded,
     Failed { code: String },
     Unverified { code: String },
@@ -148,6 +151,16 @@ struct ArtifactLocation {
     artifact_key: String,
 }
 
+// A single replacement publishes the managed marker, attempt, and last build.
+// Legacy location/build/attempt records remain read-only during a quiesced upgrade.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ArtifactState {
+    schema: u32,
+    artifact_key: String,
+    record: Option<BuildRecord>,
+    attempt: BuildAttempt,
+}
+
 pub struct BuildProvenanceStore {
     state: Arc<PrivateStateStore>,
     policy: PathPolicy,
@@ -159,19 +172,18 @@ impl BuildProvenanceStore {
     }
 
     pub fn artifact_key(&self, dmb_path: &Path) -> Result<String> {
-        let (project, relative) = self.project_and_relative(dmb_path)?;
-        Ok(format!(
-            "{:x}",
-            Sha256::digest(format!("{}\n{}", project.repository_identity, relative).as_bytes())
-        ))
+        self.authorized_location(dmb_path)
+            .and_then(|path| location_key(&path))
     }
 
     pub fn project_identity(&self, artifact_path: &Path) -> Result<ProjectBuildIdentity> {
-        self.project_and_relative(artifact_path)
-            .map(|(project, _)| project)
+        let (mut project, _) = self.project_and_relative(artifact_path)?;
+        (project.head_revision, project.dirty) =
+            crate::repository_roots::git_observation(&project.root);
+        Ok(project)
     }
 
-    pub fn record_success(&self, record: &BuildRecord) -> Result<()> {
+    fn validate_record(&self, record: &BuildRecord) -> Result<()> {
         if !matches!(record.schema, 1 | 2)
             || record.record_id.is_empty()
             || record.artifact_key.len() != 64
@@ -182,26 +194,213 @@ impl BuildProvenanceStore {
         if current_key != record.artifact_key {
             bail!("build record artifact key does not match the current project identity");
         }
-        self.state
-            .write_json_atomic(&format!("builds/{}.json", record.artifact_key), record)?;
-        self.state.write_json_atomic(
-            &format!("locations/{}.json", location_key(&record.dmb.path)?),
-            &ArtifactLocation {
-                schema: 1,
-                artifact_key: record.artifact_key.clone(),
-            },
-        )?;
         Ok(())
     }
 
-    pub fn record_attempt(&self, attempt: &BuildAttempt) -> Result<()> {
+    /// Persist before spawning a writer. Dropping the caller leaves a durable
+    /// non-success state; a completion must name this exact attempt.
+    pub fn begin_attempt(
+        &self,
+        dmb_path: &Path,
+        inputs: Vec<BuildInputIdentity>,
+    ) -> Result<BuildAttempt> {
+        let dmb_path = self.authorized_location(dmb_path)?;
+        let key = location_key(&dmb_path)?;
+        let transaction = self.state.transaction()?;
+        let previous = self.load_state(&transaction, &dmb_path, &key)?;
+        let attempt = BuildAttempt {
+            schema: 1,
+            attempt_id: random_id()?,
+            artifact_key: key.clone(),
+            outcome: BuildAttemptOutcome::InProgress,
+            observed_inputs: inputs,
+            retained_dmb_sha256: None,
+            created_at_unix_ms: unix_ms(),
+        };
+        transaction.write_json_atomic(
+            &state_path(&key),
+            &ArtifactState {
+                schema: 2,
+                artifact_key: key,
+                record: previous.and_then(|state| state.record),
+                attempt: attempt.clone(),
+            },
+        )?;
+        Ok(attempt)
+    }
+
+    pub fn finish_attempt(
+        &self,
+        attempt: &BuildAttempt,
+        record: Option<&BuildRecord>,
+    ) -> Result<()> {
         if attempt.schema != 1 || attempt.attempt_id.is_empty() || attempt.artifact_key.len() != 64
         {
             bail!("build attempt is invalid");
         }
-        self.state
-            .write_json_atomic(&format!("attempts/{}.json", attempt.artifact_key), attempt)?;
+        if matches!(attempt.outcome, BuildAttemptOutcome::InProgress) {
+            bail!("attempt completion must have a terminal outcome");
+        }
+        if let Some(record) = record {
+            self.validate_record(record)?;
+            if record.artifact_key != attempt.artifact_key
+                || !matches!(attempt.outcome, BuildAttemptOutcome::Succeeded)
+            {
+                bail!("build completion does not match its attempt");
+            }
+        } else if matches!(attempt.outcome, BuildAttemptOutcome::Succeeded) {
+            bail!("verified completion requires a build record");
+        }
+        let transaction = self.state.transaction()?;
+        let path = state_path(&attempt.artifact_key);
+        let mut current: ArtifactState = transaction.read_json(&path)?;
+        if current.schema != 2
+            || current.artifact_key != attempt.artifact_key
+            || current.attempt.attempt_id != attempt.attempt_id
+            || !matches!(current.attempt.outcome, BuildAttemptOutcome::InProgress)
+        {
+            bail!("build attempt is no longer the current in-progress attempt");
+        }
+        if let Some(record) = record {
+            current.record = Some(record.clone());
+        }
+        current.attempt = attempt.clone();
+        transaction.write_json_atomic(&path, &current)?;
         Ok(())
+    }
+
+    fn authorized_location(&self, path: &Path) -> Result<PathBuf> {
+        let location = canonical_location(path)?;
+        if location.exists() {
+            Ok(self.policy.read_path(location)?)
+        } else {
+            self.policy.read_path(
+                location
+                    .parent()
+                    .ok_or_else(|| anyhow!("artifact has no parent"))?,
+            )?;
+            Ok(location)
+        }
+    }
+
+    fn load_state(
+        &self,
+        transaction: &crate::private_state::PrivateStateTransaction<'_>,
+        dmb_path: &Path,
+        key: &str,
+    ) -> Result<Option<ArtifactState>> {
+        if let Some(state) = transaction.read_json_optional::<ArtifactState>(&state_path(key))? {
+            if state.schema != 2
+                || state.artifact_key != key
+                || state.attempt.artifact_key != key
+                || state.attempt.schema != 1
+                || state.attempt.attempt_id.is_empty()
+            {
+                bail!("managed artifact state is invalid; recovery or rebuild is required");
+            }
+            return Ok(Some(state));
+        }
+        if transaction.namespace_exists(&format!("artifacts-v2/{key}"))? {
+            return Ok(Some(ArtifactState {
+                schema: 2,
+                artifact_key: key.to_owned(),
+                record: None,
+                attempt: BuildAttempt {
+                    schema: 1,
+                    attempt_id: "missing-state".to_owned(),
+                    artifact_key: key.to_owned(),
+                    outcome: BuildAttemptOutcome::Interrupted {
+                        code: "managed_state_missing".to_owned(),
+                    },
+                    observed_inputs: Vec::new(),
+                    retained_dmb_sha256: None,
+                    created_at_unix_ms: unix_ms(),
+                },
+            }));
+        }
+        let mut location: Option<ArtifactLocation> =
+            transaction.read_json_optional(&format!("locations/{key}.json"))?;
+        if location.is_none() {
+            let legacy_key = legacy_folded_location_key(dmb_path)?;
+            if legacy_key != key {
+                location =
+                    transaction.read_json_optional(&format!("locations/{legacy_key}.json"))?;
+            }
+        }
+        let (project, relative) = self.project_and_relative(dmb_path)?;
+        let old_key = format!(
+            "{:x}",
+            Sha256::digest(format!("{}\n{}", project.repository_identity, relative).as_bytes())
+        );
+        let legacy_key = match &location {
+            Some(location) if location.schema == 1 && location.artifact_key.len() == 64 => {
+                &location.artifact_key
+            }
+            Some(_) => bail!(
+                "managed artifact location record is invalid; recovery or rebuild is required"
+            ),
+            None => &old_key,
+        };
+        let mut record: Option<BuildRecord> =
+            transaction.read_json_optional(&format!("builds/{legacy_key}.json"))?;
+        if record.as_ref().is_some_and(|record| {
+            !matches!(record.schema, 1 | 2)
+                || record.record_id.is_empty()
+                || record.artifact_key != *legacy_key
+        }) {
+            bail!("legacy build record is invalid; recovery or rebuild is required");
+        }
+        let mut attempt: Option<BuildAttempt> =
+            transaction.read_json_optional(&format!("attempts/{legacy_key}.json"))?;
+        if location.is_none() && record.is_none() && attempt.is_none() {
+            return Ok(None);
+        }
+        if location.is_none() || record.is_none() {
+            // An incomplete legacy publication is evidence of management, never
+            // permission to use the unmanaged launch path.
+            attempt = Some(BuildAttempt {
+                schema: 1,
+                attempt_id: "legacy-recovery-required".to_owned(),
+                artifact_key: key.to_owned(),
+                outcome: BuildAttemptOutcome::Interrupted {
+                    code: "legacy_state_incomplete".to_owned(),
+                },
+                observed_inputs: Vec::new(),
+                retained_dmb_sha256: None,
+                created_at_unix_ms: unix_ms(),
+            });
+        }
+        if let Some(record) = &mut record {
+            record.artifact_key = key.to_owned();
+        }
+        let mut attempt = attempt.unwrap_or_else(|| BuildAttempt {
+            schema: 1,
+            attempt_id: "legacy-success".to_owned(),
+            artifact_key: key.to_owned(),
+            outcome: BuildAttemptOutcome::Succeeded,
+            observed_inputs: Vec::new(),
+            retained_dmb_sha256: None,
+            created_at_unix_ms: record
+                .as_ref()
+                .map_or(0, |record| record.created_at_unix_ms),
+        });
+        if attempt.schema != 1 || attempt.attempt_id.is_empty() {
+            bail!("legacy attempt is invalid; recovery is required");
+        }
+        if record
+            .as_ref()
+            .is_some_and(|record| attempt.created_at_unix_ms < record.created_at_unix_ms)
+            && !matches!(attempt.outcome, BuildAttemptOutcome::Interrupted { .. })
+        {
+            attempt.outcome = BuildAttemptOutcome::Succeeded;
+        }
+        attempt.artifact_key = key.to_owned();
+        Ok(Some(ArtifactState {
+            schema: 2,
+            artifact_key: key.to_owned(),
+            record,
+            attempt,
+        }))
     }
 
     pub fn evaluate_launch(
@@ -209,44 +408,27 @@ impl BuildProvenanceStore {
         dmb_path: &Path,
         require_verified: bool,
     ) -> Result<LaunchDecision> {
-        let dmb_path = if dmb_path.exists() {
-            self.policy.read_path(dmb_path)?
-        } else {
-            let parent = dmb_path
-                .parent()
-                .ok_or_else(|| anyhow!("artifact path has no parent"))?;
-            self.policy.read_path(parent)?.join(
-                dmb_path
-                    .file_name()
-                    .ok_or_else(|| anyhow!("artifact path has no file name"))?,
-            )
-        };
+        let dmb_path = self.authorized_location(dmb_path)?;
         let requested_location = location_key(&dmb_path)?;
-        let location_path = format!("locations/{requested_location}.json");
-        let transaction = self.state.read_transaction()?;
-        let mut location: Option<ArtifactLocation> =
-            transaction.read_json_optional(&location_path)?;
-        // Older Unix records folded case too. Retain their stale checks during
-        // upgrade, but bind every recovered record to the requested artifact.
-        if location.is_none() && !cfg!(windows) {
-            let legacy_key = location_key_with_case(&dmb_path, true)?;
-            if legacy_key != requested_location {
-                location =
-                    transaction.read_json_optional(&format!("locations/{legacy_key}.json"))?;
-            }
-        }
-        let Some(location) = location else {
+        let transaction = self.state.transaction()?;
+        let Some(state) = self.load_state(&transaction, &dmb_path, &requested_location)? else {
             return Ok(unverified(require_verified));
         };
-        if location.schema != 1 || location.artifact_key.len() != 64 {
-            bail!("managed artifact location record is invalid");
-        }
-        let record: BuildRecord =
-            transaction.read_json(&format!("builds/{}.json", location.artifact_key))?;
-        let attempt: Option<BuildAttempt> =
-            transaction.read_json_optional(&format!("attempts/{}.json", record.artifact_key))?;
         drop(transaction);
-
+        let attempt = state.attempt;
+        let Some(record) = state.record else {
+            let unverified = matches!(attempt.outcome, BuildAttemptOutcome::Unverified { .. });
+            return Ok(LaunchDecision {
+                status: if unverified {
+                    ProvenanceStatus::Unverified
+                } else {
+                    ProvenanceStatus::Stale
+                },
+                allowed: unverified && !require_verified,
+                record_id: None,
+                reasons: vec![attempt_reason(&attempt, &dmb_path)],
+            });
+        };
         let mut reasons = Vec::new();
         if location_key(&record.dmb.path)? != requested_location {
             return Ok(LaunchDecision {
@@ -261,8 +443,10 @@ impl BuildProvenanceStore {
                 )],
             });
         }
-        let current_project = self.project_identity(&dmb_path)?;
-        if current_project != record.project {
+        let (current_project, _) = self.project_and_relative(&dmb_path)?;
+        if current_project.root != record.project.root
+            || current_project.repository_identity != record.project.repository_identity
+        {
             reasons.push(reason(
                 "repository_identity_changed",
                 "the current project identity differs from the recorded successful build",
@@ -315,20 +499,9 @@ impl BuildProvenanceStore {
             compare_output(rsc, "rsc_changed", "the managed RSC changed", &mut reasons);
         }
 
-        if let Some(attempt) = attempt {
-            if attempt.created_at_unix_ms >= record.created_at_unix_ms
-                && !matches!(attempt.outcome, BuildAttemptOutcome::Succeeded)
-            {
-                reasons.push(reason(
-                    if matches!(attempt.outcome, BuildAttemptOutcome::Failed { .. }) {
-                        "later_compile_failed"
-                    } else {
-                        "later_compile_unverified"
-                    },
-                    "a later compile attempt did not establish verified provenance",
-                    None,
-                    Some(dmb_path.clone()),
-                ));
+        {
+            if !matches!(attempt.outcome, BuildAttemptOutcome::Succeeded) {
+                reasons.push(attempt_reason(&attempt, &dmb_path));
             }
         }
 
@@ -452,30 +625,35 @@ fn reason(
     }
 }
 
-fn location_key(path: &Path) -> Result<String> {
-    location_key_with_case(path, cfg!(windows))
+fn state_path(key: &str) -> String {
+    format!("artifacts-v2/{key}/state.json")
 }
 
-fn location_key_with_case(path: &Path, fold_case: bool) -> Result<String> {
-    let path = if path.exists() {
-        path.canonicalize()?
-    } else {
-        let parent = path
-            .parent()
-            .ok_or_else(|| anyhow!("artifact path has no parent"))?
-            .canonicalize()?;
-        parent.join(
-            path.file_name()
-                .ok_or_else(|| anyhow!("artifact path has no file name"))?,
-        )
-    };
-    let path = path.to_string_lossy();
-    let identity = if fold_case {
-        path.to_ascii_lowercase()
-    } else {
-        path.into_owned()
-    };
-    Ok(format!("{:x}", Sha256::digest(identity.as_bytes())))
+fn attempt_reason(attempt: &BuildAttempt, path: &Path) -> ProvenanceReason {
+    reason(
+        match attempt.outcome {
+            BuildAttemptOutcome::InProgress => "build_in_progress_or_interrupted",
+            BuildAttemptOutcome::Interrupted { .. } => "build_recovery_required",
+            BuildAttemptOutcome::Failed { .. } => "later_compile_failed",
+            _ => "later_compile_unverified",
+        },
+        "the latest managed attempt did not establish verified completion",
+        None,
+        Some(path.to_owned()),
+    )
+}
+
+fn random_id() -> Result<String> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes).map_err(|error| anyhow!(error.to_string()))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn unix_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 fn normalize_relative(path: &Path) -> String {

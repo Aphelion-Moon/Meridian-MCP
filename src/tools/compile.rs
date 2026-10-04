@@ -373,6 +373,10 @@ pub async fn compile(
         compiler_working_directory.to_owned(),
     )?;
     let mut diagnostics = diagnostics::CompilerDiagnostics::new(response.diagnostic_limit());
+    let attempt = context
+        .build_provenance()
+        .map(|store| store.begin_attempt(&dmb_path, prepared.inputs.clone()))
+        .transpose()?;
     let execution = run_contained_process_observed(
         ProcessSpec {
             program: compiler.clone(),
@@ -414,6 +418,7 @@ pub async fn compile(
     let idle = execution.termination == TerminationReason::IdleTimeout;
     let provenance = record_compile_provenance(
         context,
+        attempt,
         &prepared,
         fixture.as_ref(),
         &path,
@@ -466,6 +471,7 @@ pub async fn compile(
         "network_audit": execution.network_audit,
         "provenance_status": provenance["status"],
         "build_record_id": provenance["record_id"],
+        "attempt_id": provenance["attempt_id"],
         "provenance_reasons": provenance["reasons"],
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
     });
@@ -481,6 +487,7 @@ pub async fn compile(
 #[allow(clippy::too_many_arguments)]
 fn record_compile_provenance(
     context: &ToolExecutionContext,
+    attempt: Option<BuildAttempt>,
     prepared: &PreparedBuild,
     fixture: Option<&VerifiedFixtureManifest>,
     dme_path: &Path,
@@ -498,6 +505,7 @@ fn record_compile_provenance(
             "retained_dmb_sha256": artifact_after.sha256,
         }));
     };
+    let mut attempt = attempt.ok_or_else(|| anyhow!("managed build has no durable attempt"))?;
     let mut inputs = prepared.inputs.clone();
     let rsc_path = fixture
         .and_then(|fixture| fixture.rsc_path.clone())
@@ -533,18 +541,13 @@ fn record_compile_provenance(
             fixture_manifest_sha256: fixture.map(|fixture| fixture.identity_sha256.clone()),
             created_at_unix_ms,
         };
-        store.record_success(&record)?;
-        store.record_attempt(&BuildAttempt {
-            schema: 1,
-            attempt_id: random_id()?,
-            artifact_key,
-            outcome: BuildAttemptOutcome::Succeeded,
-            observed_inputs: inputs,
-            retained_dmb_sha256: artifact_after.sha256.clone(),
-            created_at_unix_ms,
-        })?;
+        attempt.outcome = BuildAttemptOutcome::Succeeded;
+        attempt.observed_inputs = inputs;
+        attempt.retained_dmb_sha256 = artifact_after.sha256.clone();
+        store.finish_attempt(&attempt, Some(&record))?;
         return Ok(json!({
             "status": "verified",
+            "attempt_id": attempt.attempt_id,
             "record_id": record_id,
             "reasons": [],
             "retained_dmb_sha256": artifact_after.sha256,
@@ -557,23 +560,18 @@ fn record_compile_provenance(
         } else {
             failure_code
         };
-        store.record_attempt(&BuildAttempt {
-            schema: 1,
-            attempt_id: random_id()?,
-            artifact_key,
-            outcome: if success {
-                BuildAttemptOutcome::Unverified {
-                    code: code.to_owned(),
-                }
-            } else {
-                BuildAttemptOutcome::Failed {
-                    code: code.to_owned(),
-                }
-            },
-            observed_inputs: inputs,
-            retained_dmb_sha256: artifact_after.sha256.clone(),
-            created_at_unix_ms,
-        })?;
+        attempt.outcome = if success {
+            BuildAttemptOutcome::Unverified {
+                code: code.to_owned(),
+            }
+        } else {
+            BuildAttemptOutcome::Failed {
+                code: code.to_owned(),
+            }
+        };
+        attempt.observed_inputs = inputs;
+        attempt.retained_dmb_sha256 = artifact_after.sha256.clone();
+        store.finish_attempt(&attempt, None)?;
         let mut decision = store.evaluate_launch(dmb_path, false)?;
         decision
             .reasons
@@ -591,6 +589,7 @@ fn record_compile_provenance(
                 ProvenanceStatus::Stale => "stale",
             },
             "record_id": decision.record_id,
+            "attempt_id": attempt.attempt_id,
             "reasons": decision.reasons,
             "retained_dmb_sha256": artifact_after.sha256,
         }));

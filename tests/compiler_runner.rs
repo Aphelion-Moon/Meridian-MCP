@@ -102,6 +102,17 @@ async fn provenance_case(case: &str) -> (Value, std::path::PathBuf) {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut started = [0; 7];
         stream.read_exact(&mut started).await.unwrap();
+        let in_progress = store
+            .evaluate_launch(&dme.with_extension("dmb"), false)
+            .unwrap();
+        assert!(
+            !in_progress.allowed,
+            "a writer must publish its managed attempt before starting"
+        );
+        assert!(in_progress
+            .reasons
+            .iter()
+            .any(|reason| reason.code == "build_in_progress_or_interrupted"));
         if case == "during-compile" {
             std::fs::write(root.join("source.dm"), "/world\n\tfps = 99\n").unwrap();
         }
