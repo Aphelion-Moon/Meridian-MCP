@@ -534,6 +534,15 @@ impl ServerState {
             .ok_or(StateError::ParseRequired)
     }
 
+    /// Build a private snapshot without bypassing this server's parser admission.
+    /// The parser moves the shared permit into its worker, retaining it even if
+    /// the caller is cancelled before the worker finishes.
+    pub(crate) fn isolated_analysis_state(&self) -> Self {
+        let mut isolated = Self::with_limits(self.asset_limits.clone());
+        isolated.parse = Arc::clone(&self.parse);
+        isolated
+    }
+
     pub async fn active_snapshot(&self) -> Option<Arc<AnalysisSnapshot>> {
         self.analysis.read().await.active.clone()
     }

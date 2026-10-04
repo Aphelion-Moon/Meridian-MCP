@@ -17,7 +17,7 @@ use crate::artifact::{ArtifactSnapshot, FileIdentity};
 use crate::build_provenance::{
     BuildAttempt, BuildAttemptOutcome, BuildRecord, PreparedBuild, ProvenanceStatus,
 };
-use crate::fixture_manifest::{FixtureManifest, VerifiedFixtureManifest};
+use crate::fixture_manifest::VerifiedFixtureManifest;
 use crate::mcp::ToolResult;
 use crate::process::{run_contained_process_observed, ProcessSpec, TerminationReason};
 use crate::state::ServerState;
@@ -272,10 +272,10 @@ pub async fn compile(
     }
     let path = path.canonicalize()?;
     let snapshot = state.active_snapshot().await;
-    let fixture = fixture_manifest_path
-        .as_deref()
-        .map(|path| FixtureManifest::load(context.policy(), path))
-        .transpose()?;
+    let fixture = match fixture_manifest_path.as_deref() {
+        Some(path) => Some(super::fixture::load_manifest(context, state, path).await?),
+        None => None,
+    };
     if let Some(fixture) = &fixture {
         if fixture.dme_path != path || fixture.dmb_path != path.with_extension("dmb") {
             return Ok(ToolResult::structured_error(

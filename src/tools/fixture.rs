@@ -1,6 +1,6 @@
 use crate::analysis_snapshot::AnalysisSnapshot;
 use crate::build_provenance::ProvenanceStatus;
-use crate::fixture_manifest::{FixtureInputRole, FixtureManifest, RequiredProcDocument};
+use crate::fixture_manifest::{FixtureManifest, RequiredProcDocument, VerifiedFixtureManifest};
 use crate::mcp::ToolResult;
 use crate::parameters::FixtureSyncParams;
 use crate::state::ServerState;
@@ -133,7 +133,7 @@ pub async fn check_sync(
     let params: FixtureSyncParams = serde_json::from_value(args)
         .map_err(|error| anyhow!("invalid fixture sync arguments: {error}"))?;
     let mut issues = Issues::new(issue_limit);
-    let fixture = match FixtureManifest::load(context.policy(), &params.fixture_manifest_path) {
+    let fixture = match load_manifest(context, state, &params.fixture_manifest_path).await {
         Ok(fixture) => fixture,
         Err(error) => {
             let message = error.to_string();
@@ -156,7 +156,24 @@ pub async fn check_sync(
     for required in &fixture.required_procs {
         check_required_proc(&snapshot, required, &mut issues);
     }
-    let present = required_tokens_present(&fixture.inputs, &fixture.required_tokens)?;
+    drop(snapshot);
+    let policy = context.policy().clone();
+    let limits = state.asset_limits().clone();
+    let provenance_store = context.build_provenance_arc();
+    let (fixture, present, provenance) = state
+        .run_asset_job(move || {
+            let present = required_tokens_present(
+                &policy,
+                &limits,
+                &fixture.inputs,
+                &fixture.required_tokens,
+            )?;
+            let provenance = provenance_store
+                .map(|store| store.evaluate_launch(&fixture.dmb_path, false))
+                .transpose()?;
+            Ok((fixture, present, provenance))
+        })
+        .await?;
     for (token, present) in fixture.required_tokens.iter().zip(present) {
         if !present {
             issues.push(FixtureIssue {
@@ -167,10 +184,6 @@ pub async fn check_sync(
         }
     }
 
-    let provenance = context
-        .build_provenance()
-        .map(|store| store.evaluate_launch(&fixture.dmb_path, false))
-        .transpose()?;
     let classification = if issues.total != 0 {
         "invalid"
     } else if provenance
@@ -195,6 +208,19 @@ pub async fn check_sync(
     }))
 }
 
+pub(super) async fn load_manifest(
+    context: &ToolExecutionContext,
+    state: &ServerState,
+    path: &Path,
+) -> Result<VerifiedFixtureManifest> {
+    let policy = context.policy().clone();
+    let path = path.to_owned();
+    let limits = state.asset_limits().clone();
+    state
+        .run_asset_job(move || Ok(FixtureManifest::load_with_limits(&policy, &path, &limits)?))
+        .await
+}
+
 async fn matching_or_fixture_snapshot(
     context: &ToolExecutionContext,
     state: &ServerState,
@@ -205,15 +231,14 @@ async fn matching_or_fixture_snapshot(
         // Match the parser's freshness rules, including DME/configuration and
         // parsed inputs absent from the fixture manifest. Filesystem checks
         // belong on the blocking pool, just as they do for an explicit parse.
-        let reusable = tokio::task::spawn_blocking(move || {
-            super::parse::reusable_snapshot(Some(snapshot), &path)
-        })
-        .await?;
+        let reusable = state
+            .run_asset_job(move || Ok(super::parse::reusable_snapshot(Some(snapshot), &path)))
+            .await?;
         if let Some(snapshot) = reusable {
             return Ok(snapshot);
         }
     }
-    let temporary = ServerState::new();
+    let temporary = state.isolated_analysis_state();
     let parsed = super::parse::parse_environment_with_policy(
         &temporary,
         json!({"dme_path": dme_path.display().to_string()}),
@@ -272,6 +297,8 @@ fn split_proc_path(path: &str) -> Option<(&str, &str)> {
 }
 
 fn required_tokens_present(
+    policy: &crate::PathPolicy,
+    limits: &crate::limits::ServerLimits,
     inputs: &[crate::fixture_manifest::VerifiedFixtureInput],
     tokens: &[String],
 ) -> Result<Vec<bool>> {
@@ -283,20 +310,13 @@ fn required_tokens_present(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
-    for input in inputs.iter().filter(|input| {
-        matches!(
-            input.role,
-            FixtureInputRole::Source
-                | FixtureInputRole::GeneratedBinding
-                | FixtureInputRole::Configuration
-        )
-    }) {
+    for input in inputs.iter().filter(|input| input.role.is_text()) {
         if unmatched.is_empty() {
             break;
         }
         // Keep one file's decoded text at a time. Read errors still abort the
         // check: unreadable input is not evidence that a token is missing.
-        let bytes = std::fs::read(&input.canonical_path)?;
+        let bytes = input.read_verified_bytes(policy, limits)?;
         let text = crate::source::normalize_source_text(&bytes);
         unmatched.retain(|token| !text.contains(*token));
     }
@@ -304,4 +324,132 @@ fn required_tokens_present(
         .iter()
         .map(|token| !unmatched.contains(token.as_str()))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixture_manifest::{FixtureInputRole, VerifiedFixtureInput};
+    use crate::limits::ServerLimits;
+    use crate::{CapabilityMode, PathPolicy};
+    use sha2::{Digest, Sha256};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn fixture_io_waits_for_blocking_job_admission() {
+        let state = Arc::new(ServerState::with_limits(ServerLimits {
+            max_blocking_jobs: 1,
+            ..Default::default()
+        }));
+        let worker_state = Arc::clone(&state);
+        let (started, entered) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let worker = tokio::spawn(async move {
+            worker_state
+                .run_asset_job(move || {
+                    let _ = started.send(());
+                    let _ = released.recv();
+                    Ok(())
+                })
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered)
+            .await
+            .unwrap()
+            .unwrap();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let context = ToolExecutionContext::new(
+            CapabilityMode::Analysis,
+            PathPolicy::new(vec![root.to_owned()], Vec::new()).unwrap(),
+        );
+        let args = json!({"fixture_manifest_path": root.join("Cargo.toml")});
+        let premature = tokio::time::timeout(
+            Duration::from_millis(50),
+            check_sync(&context, &state, args.clone()),
+        )
+        .await;
+        drop(release);
+        worker.await.unwrap().unwrap();
+        assert!(
+            premature.is_err(),
+            "fixture manifest I/O bypassed the occupied blocking-job pool"
+        );
+        let result = check_sync(&context, &state, args).await.unwrap();
+        let crate::result::ToolContent::Text { text } = &result.content[0];
+        assert_eq!(
+            serde_json::from_str::<Value>(text).unwrap()["classification"],
+            "invalid"
+        );
+    }
+
+    #[test]
+    fn fixture_token_scan_rejects_input_changed_since_hashing() {
+        let root = std::env::temp_dir().join(format!(
+            "meridian-fixture-token-identity-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("input.dm");
+        std::fs::write(&path, b"same").unwrap();
+        let input = VerifiedFixtureInput {
+            relative_path: "input.dm".into(),
+            canonical_path: path.canonicalize().unwrap(),
+            role: FixtureInputRole::Source,
+            size: 4,
+            sha256: format!("{:x}", Sha256::digest(b"same")),
+        };
+        let policy = PathPolicy::new(vec![root.clone()], Vec::new()).unwrap();
+        let limits = ServerLimits::default();
+        let mut outcomes = Vec::new();
+        for contents in ["DIFF", "same-and-more", ""] {
+            std::fs::write(&path, contents).unwrap();
+            outcomes.push(required_tokens_present(
+                &policy,
+                &limits,
+                std::slice::from_ref(&input),
+                &["DIFF".into()],
+            ));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+        for outcome in outcomes {
+            assert!(
+                outcome.is_err(),
+                "token validation accepted bytes different from the recorded input identity"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fixture_parse_uses_shared_admission_without_installing_its_snapshot() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/provenance");
+        let context = ToolExecutionContext::new(
+            CapabilityMode::Analysis,
+            PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+        );
+        let state = ServerState::new();
+        let permit = state.parse_permit().await;
+        let dme = root.join("fixture.dme");
+        let premature = tokio::time::timeout(
+            Duration::from_millis(200),
+            matching_or_fixture_snapshot(&context, &state, &dme),
+        )
+        .await;
+        drop(permit);
+        assert!(
+            premature.is_err(),
+            "fixture parsing bypassed the occupied server parse admission"
+        );
+        let snapshot = matching_or_fixture_snapshot(&context, &state, &dme)
+            .await
+            .unwrap();
+        assert_eq!(
+            snapshot.environment_path.canonicalize().unwrap(),
+            dme.canonicalize().unwrap()
+        );
+        assert!(state.active_snapshot().await.is_none());
+    }
 }

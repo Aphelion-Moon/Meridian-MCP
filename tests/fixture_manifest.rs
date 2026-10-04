@@ -69,6 +69,105 @@ fn valid_manifest_is_contained_hashed_and_deterministic() {
 }
 
 #[test]
+fn fixture_input_limits_accept_exact_boundaries_and_reject_excess_bytes() {
+    use meridian_mcp::limits::ServerLimits;
+
+    let root = temporary_fixture("input-byte-limits");
+    std::fs::write(root.join("fixture.dm"), b"text").unwrap();
+    std::fs::write(root.join("native_module.bin"), b"binary!!").unwrap();
+    let policy = PathPolicy::new(vec![root.clone()], Vec::new()).unwrap();
+    let mut document = document();
+    document["inputs"] = json!([
+        {"path": "fixture.dm", "role": "source"},
+        {"path": "native_module.bin", "role": "native_module"},
+    ]);
+    let manifest = write_document(&root, &document);
+    let exact = ServerLimits {
+        max_fixture_text_file_bytes: 4,
+        max_fixture_binary_file_bytes: 8,
+        max_fixture_input_bytes: 12,
+        ..Default::default()
+    };
+    let bounded = FixtureManifest::load_with_limits(&policy, &manifest, &exact).unwrap();
+    let default = FixtureManifest::load(&policy, &manifest).unwrap();
+    assert_eq!(bounded.identity_sha256, default.identity_sha256);
+    assert_eq!(
+        bounded.inputs.iter().map(|input| input.size).sum::<u64>(),
+        12
+    );
+    for (limits, message) in [
+        (
+            ServerLimits {
+                max_fixture_text_file_bytes: 3,
+                ..exact.clone()
+            },
+            "source input exceeds",
+        ),
+        (
+            ServerLimits {
+                max_fixture_binary_file_bytes: 7,
+                ..exact.clone()
+            },
+            "native_module input exceeds",
+        ),
+        (
+            ServerLimits {
+                max_fixture_input_bytes: 11,
+                ..exact.clone()
+            },
+            "total byte limit",
+        ),
+    ] {
+        let error = FixtureManifest::load_with_limits(&policy, &manifest, &limits).unwrap_err();
+        assert!(error.to_string().contains(message), "{error}");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn fixture_sync_and_compile_enforce_server_input_limits() {
+    let root = checked_fixture();
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Development,
+        PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+    );
+    let state = ServerState::with_limits(meridian_mcp::limits::ServerLimits {
+        max_fixture_text_file_bytes: 1,
+        ..Default::default()
+    });
+    let checked = call_tool(
+        &context,
+        &state,
+        "dm_check_fixture_sync",
+        json!({"fixture_manifest_path": root.join("fixture-manifest.json")}),
+    )
+    .await
+    .unwrap();
+    let checked = payload(&checked);
+    assert_eq!(checked["classification"], "invalid");
+    assert_eq!(checked["validation_complete"], false);
+    assert_eq!(checked["issues"][0]["code"], "fixture_manifest_invalid");
+    assert!(checked["issues"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("1-byte limit"));
+    assert!(state.active_snapshot().await.is_none());
+
+    let error = call_tool(
+        &context,
+        &state,
+        "dm_compile",
+        json!({
+            "dme_path": root.join("fixture.dme"),
+            "fixture_manifest_path": root.join("fixture-manifest.json"),
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("1-byte limit"), "{error}");
+}
+
+#[test]
 fn invalid_paths_roles_fields_and_missing_files_fail_closed() {
     let cases = [
         ("traversal", json!("../escape"), None),

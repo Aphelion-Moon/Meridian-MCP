@@ -5,7 +5,6 @@ use crate::artifact::ArtifactSnapshot;
 use crate::build_provenance::{
     BuildAttempt, BuildAttemptOutcome, BuildInputIdentity, PreparedBuild,
 };
-use crate::fixture_manifest::FixtureManifest;
 use crate::mcp::ToolResult;
 use crate::parameters::{RiftCompileParams, RiftNetworkMode};
 use crate::process::{
@@ -172,12 +171,11 @@ pub async fn compile(
             ));
         }
     };
-    let fixture = match params
-        .fixture_manifest_path
-        .as_deref()
-        .map(|path| FixtureManifest::load(context.policy(), path))
-        .transpose()
-    {
+    let fixture = match params.fixture_manifest_path.as_deref() {
+        Some(path) => Some(super::fixture::load_manifest(context, state, path).await),
+        None => None,
+    };
+    let fixture = match fixture.transpose() {
         Ok(fixture) => fixture,
         Err(error) => {
             return Ok(ToolResult::structured_error(

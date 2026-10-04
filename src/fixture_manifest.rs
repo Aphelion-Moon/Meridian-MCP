@@ -1,8 +1,8 @@
-use crate::PathPolicy;
+use crate::{limits::ServerLimits, PathPolicy};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -48,6 +48,13 @@ pub enum FixtureInputRole {
 }
 
 impl FixtureInputRole {
+    pub(crate) fn is_text(self) -> bool {
+        matches!(
+            self,
+            Self::Source | Self::GeneratedBinding | Self::Configuration
+        )
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Source => "source",
@@ -73,6 +80,29 @@ pub struct VerifiedFixtureInput {
     pub role: FixtureInputRole,
     pub size: u64,
     pub sha256: String,
+}
+
+impl VerifiedFixtureInput {
+    pub(crate) fn read_verified_bytes(
+        &self,
+        policy: &PathPolicy,
+        limits: &ServerLimits,
+    ) -> Result<Vec<u8>, FixtureManifestError> {
+        check_input_size(self.role, self.size, limits)?;
+        let (path, mut file) = open_regular_file(policy, &self.canonical_path, "input")?;
+        let metadata = file.metadata()?;
+        if path != self.canonical_path || metadata.len() != self.size {
+            return Err(invalid("input changed since fixture hashing"));
+        }
+        let bytes = read_bounded_bytes(&mut file, self.size)?;
+        if bytes.len() as u64 != self.size
+            || metadata_changed(&metadata, &file.metadata()?)
+            || format!("{:x}", Sha256::digest(&bytes)) != self.sha256
+        {
+            return Err(invalid("input changed since fixture hashing"));
+        }
+        Ok(bytes)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -108,16 +138,25 @@ impl FixtureManifest {
         policy: &PathPolicy,
         path: &Path,
     ) -> Result<VerifiedFixtureManifest, FixtureManifestError> {
-        let metadata = std::fs::symlink_metadata(path)?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
-            return Err(invalid("manifest must be a regular non-symlink file"));
-        }
+        Self::load_with_limits(policy, path, &ServerLimits::default())
+    }
+
+    pub fn load_with_limits(
+        policy: &PathPolicy,
+        path: &Path,
+        limits: &ServerLimits,
+    ) -> Result<VerifiedFixtureManifest, FixtureManifestError> {
+        let (manifest_path, mut file) = open_regular_file(policy, path, "manifest")?;
+        let metadata = file.metadata()?;
         if metadata.len() > MAX_MANIFEST_BYTES {
             return Err(invalid("manifest exceeds the 4 MiB limit"));
         }
-        let manifest_path = policy.read_path(path)?;
-        let document: FixtureManifestDocument =
-            serde_json::from_reader(File::open(&manifest_path)?)?;
+        // A metadata check alone cannot bound a file that grows after opening.
+        let bytes = read_bounded_bytes(&mut file, MAX_MANIFEST_BYTES)?;
+        if bytes.len() as u64 != metadata.len() || metadata_changed(&metadata, &file.metadata()?) {
+            return Err(invalid("manifest changed while reading"));
+        }
+        let document: FixtureManifestDocument = serde_json::from_slice(&bytes)?;
         validate_document(&document)?;
 
         let fixture_root = manifest_path
@@ -135,32 +174,32 @@ impl FixtureManifest {
         let mut normalized_paths = BTreeSet::new();
         let mut canonical_paths = BTreeSet::new();
         let mut inputs = Vec::with_capacity(document.inputs.len());
+        let mut total_bytes = 0_u64;
         for input in &document.inputs {
             let normalized = validate_relative_path(&input.path)?;
             if !normalized_paths.insert(path_identity(&normalized)) {
                 return Err(invalid("input paths are duplicated after normalization"));
             }
             let requested = fixture_root.join(&normalized);
-            let metadata = std::fs::symlink_metadata(&requested)?;
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
-                return Err(invalid(format!(
-                    "input must be a regular non-symlink file: {}",
-                    input.path
-                )));
-            }
-            let canonical_path = policy.read_path(&requested)?;
+            let (canonical_path, file) = open_regular_file(policy, &requested, "input")?;
+            let metadata = file.metadata()?;
             let canonical_key = path_identity(&canonical_path.to_string_lossy());
             if !canonical_paths.insert(canonical_key) {
                 return Err(invalid(
                     "multiple inputs resolve to the same canonical file",
                 ));
             }
+            check_input_size(input.role, metadata.len(), limits)?;
+            total_bytes = total_bytes
+                .checked_add(metadata.len())
+                .filter(|total| *total <= limits.max_fixture_input_bytes)
+                .ok_or_else(|| invalid("fixture inputs exceed the total byte limit"))?;
             inputs.push(VerifiedFixtureInput {
                 relative_path: normalized,
-                canonical_path: canonical_path.clone(),
+                canonical_path,
                 role: input.role,
                 size: metadata.len(),
-                sha256: hash_file(&canonical_path)?,
+                sha256: hash_file(file, &metadata)?,
             });
         }
         inputs.sort_by(|left, right| {
@@ -274,16 +313,85 @@ fn resolve_output(root: &Path, relative: &str) -> Result<PathBuf, FixtureManifes
     Ok(root.join(normalized))
 }
 
-fn hash_file(path: &Path) -> Result<String, FixtureManifestError> {
-    let mut file = File::open(path)?;
+fn open_regular_file(
+    policy: &PathPolicy,
+    path: &Path,
+    kind: &str,
+) -> Result<(PathBuf, File), FixtureManifestError> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(invalid(format!(
+            "{kind} must be a regular non-symlink file"
+        )));
+    }
+    let canonical = policy.read_path(path)?;
+    let file = File::open(&canonical)?;
+    if !file.metadata()?.is_file() {
+        return Err(invalid(format!("{kind} must be a regular file")));
+    }
+    Ok((canonical, file))
+}
+
+fn check_input_size(
+    role: FixtureInputRole,
+    size: u64,
+    limits: &ServerLimits,
+) -> Result<(), FixtureManifestError> {
+    let limit = if role.is_text() {
+        limits.max_fixture_text_file_bytes
+    } else {
+        limits.max_fixture_binary_file_bytes
+    };
+    if size > limit {
+        return Err(invalid(format!(
+            "{} input exceeds the {limit}-byte limit",
+            role.as_str()
+        )));
+    }
+    Ok(())
+}
+
+fn read_bounded_bytes(reader: impl Read, limit: u64) -> Result<Vec<u8>, FixtureManifestError> {
+    let mut bytes = Vec::new();
+    reader
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        return Err(invalid(format!("file exceeds its {limit}-byte read limit")));
+    }
+    Ok(bytes)
+}
+
+fn metadata_changed(before: &Metadata, after: &Metadata) -> bool {
+    before.len() != after.len() || before.modified().ok() != after.modified().ok()
+}
+
+fn hash_file(mut file: File, metadata: &Metadata) -> Result<String, FixtureManifestError> {
+    let hash = hash_reader(&mut file, metadata.len())?;
+    if metadata_changed(metadata, &file.metadata()?) {
+        return Err(invalid("input changed while hashing"));
+    }
+    Ok(hash)
+}
+
+fn hash_reader(reader: impl Read, expected_size: u64) -> Result<String, FixtureManifestError> {
+    let mut reader = reader.take(expected_size.saturating_add(1));
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
+    let mut size = 0_u64;
     loop {
-        let count = file.read(&mut buffer)?;
+        let count = match reader.read(&mut buffer) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
         if count == 0 {
             break;
         }
+        size += count as u64;
         hasher.update(&buffer[..count]);
+    }
+    if size != expected_size {
+        return Err(invalid("input size changed while hashing"));
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
@@ -325,5 +433,33 @@ fn path_identity(path: &str) -> String {
         path.to_ascii_lowercase()
     } else {
         path.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn manifest_reader_bounds_trailing_whitespace_growth() {
+        let mut bytes = vec![b' '; MAX_MANIFEST_BYTES as usize + 512];
+        bytes[..2].copy_from_slice(b"{}");
+        let mut reader = Cursor::new(bytes);
+        assert!(read_bounded_bytes(&mut reader, MAX_MANIFEST_BYTES).is_err());
+        assert_eq!(reader.position(), MAX_MANIFEST_BYTES + 1);
+        assert_eq!(read_bounded_bytes(&b"{}  "[..], 4).unwrap(), b"{}  ");
+    }
+
+    #[test]
+    fn input_hash_rejects_size_changes_without_reading_unbounded_growth() {
+        let mut reader = Cursor::new(b"same-and-more");
+        assert!(hash_reader(&mut reader, 4).is_err());
+        assert_eq!(reader.position(), 5);
+        assert!(hash_reader(&b"sam"[..], 4).is_err());
+        assert_eq!(
+            hash_reader(&b"same"[..], 4).unwrap(),
+            format!("{:x}", Sha256::digest(b"same"))
+        );
     }
 }
