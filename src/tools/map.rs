@@ -12,7 +12,7 @@ use crate::limits::ServerLimits;
 use crate::mcp::{ToolContent, ToolResult};
 use crate::result::{json_success, ToolMetadata};
 use crate::spaceman::dmm::{
-    diff_maps as calculate_diff, load_map, profile_map, render_pass_inventory,
+    diff_maps as calculate_diff, key_counts, load_map, profile_loaded_map, render_pass_inventory,
 };
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
@@ -206,10 +206,10 @@ pub async fn map_info(args: Value) -> Result<ToolResult> {
     let mut type_counts: HashMap<String, usize> = HashMap::new();
     let mut area_counts: HashMap<String, usize> = HashMap::new();
 
-    for key in map.grid.iter() {
+    for (key, count) in key_counts(&map) {
         let prefabs = map
             .dictionary
-            .get(key)
+            .get(&key)
             .ok_or_else(|| anyhow!("Map grid references a missing dictionary key"))?;
         for prefab in prefabs {
             if let Some(base_type) = prefab
@@ -219,10 +219,10 @@ pub async fn map_info(args: Value) -> Result<ToolResult> {
                 .filter(|segment| !segment.is_empty())
                 .map(|segment| format!("/{segment}"))
             {
-                *type_counts.entry(base_type).or_default() += 1;
+                *type_counts.entry(base_type).or_default() += count;
             }
             if prefab.path == "/area" || prefab.path.starts_with("/area/") {
-                *area_counts.entry(prefab.path.clone()).or_default() += 1;
+                *area_counts.entry(prefab.path.clone()).or_default() += count;
             }
         }
     }
@@ -231,12 +231,10 @@ pub async fn map_info(args: Value) -> Result<ToolResult> {
     sorted_types.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     let mut sorted_areas: Vec<_> = area_counts.into_iter().collect();
     sorted_areas.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    let content = std::fs::read_to_string(&path)?;
-
-    let profile = profile_map(&path, 10_000)?;
+    let profile = profile_loaded_map(&path, &map, 10_000)?;
     Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
         "file": dmm_path,
-        "format": if content.contains("//MAP CONVERTED BY dmm2tgm.py") { "TGM" } else { "DMM" },
+        "format": profile.format,
         "dimensions": {"x": dim_x, "y": dim_y, "z": dim_z},
         "unique_tiles": map.dictionary.len(),
         "file_size_bytes": std::fs::metadata(&path)?.len(),

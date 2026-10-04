@@ -158,7 +158,7 @@ Analysis tools are read-only. Development mode adds compilation, file generation
 | `dm_find_dmi_duplicates` | Find exact and transformed duplicates across icons. |
 | `dm_audit_icons` | Check static icon references and report missing or unresolved states. |
 | `dm_map_info` | Show map dimensions, tile counts and common types. |
-| `dm_diff_maps` | Compare map contents by coordinate, independently of dictionary keys. |
+| `dm_diff_maps` | Compare map contents by coordinate, ignoring dictionary keys and variable ordering while preserving atom order. |
 | `dm_list_render_passes` | List available map render passes. |
 | `dm_find_on_map` | Find a type and its descendants on a map. |
 | `dm_native_evidence_summary` | Summarize local runtime artifacts with hashes, redaction and separate clock domains. |
