@@ -51,12 +51,12 @@ async fn load_with_budget(
             let checked = policy.read_path(&path)?;
             let input = read_dmi(&checked, &limits)?;
             control.checkpoint()?;
-            Ok(cache.blocking_lock().load_input_checked(
+            cache.blocking_lock().load_input_checked(
                 input,
                 &limits,
                 remaining_decoded_bytes,
                 || control.checkpoint(),
-            )?)
+            )
         })
         .await
 }

@@ -58,14 +58,14 @@ pub async fn generate(
                     .ok_or_else(|| anyhow!("output has no parent"))?,
             )?;
             anyhow::ensure!(
-                !helper.starts_with(&output)
+                !helper.starts_with(output)
                     && !snapshot
                         .source_inputs()
                         .iter()
-                        .any(|input| input.starts_with(&output)),
+                        .any(|input| input.starts_with(output)),
                 "documentation output must not contain parsed project inputs or the helper"
             );
-            let exists = validate_directory_target(&output)?;
+            let exists = validate_directory_target(output)?;
             anyhow::ensure!(
                 !exists || options.overwrite,
                 "output exists; set overwrite=true"
@@ -138,7 +138,7 @@ pub async fn generate(
             context.progress(crate::request::Stage::Evidence);
             let mut result = crate::outputs::DocsData {
                 output_directory: Some(output.clone()),
-                helper: Some(helper.into()),
+                helper: Some(helper),
                 source_revision: snapshot.spacemandmm_revision.into(),
                 cleanup_complete: true,
                 stdout: Some(String::new()),
