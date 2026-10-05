@@ -106,6 +106,8 @@ jobs:
           cargo build --locked --release
           ./scripts/fetch-auxtools.ps1 -DestinationRoot ./target/release
       - name: Run owned fixture and Meridian-Rift compatibility gates
+        id: meridian_gate
+        continue-on-error: true
         shell: pwsh
         run: |
           ./scripts/run-byond-integration.ps1 `
@@ -136,11 +138,13 @@ jobs:
         if: always()
         shell: pwsh
         env:
+          MERIDIAN_OUTCOME: ${{ steps.meridian_gate.outcome }}
           PROVENANCE_OUTCOME: ${{ steps.provenance_gate.outcome }}
           AUXTOOLS_OUTCOME: ${{ steps.auxtools_gate.outcome }}
           TRACY_OUTCOME: ${{ steps.tracy_gate.outcome }}
         run: |
           $failures = @()
+          if ($env:MERIDIAN_OUTCOME -eq 'failure') { $failures += 'owned fixture and Meridian-Rift' }
           if ($env:PROVENANCE_OUTCOME -eq 'failure') { $failures += 'managed provenance and integrity' }
           if ($env:AUXTOOLS_OUTCOME -eq 'failure') { $failures += 'auxtools debugger' }
           if ($env:TRACY_OUTCOME -eq 'failure') { $failures += 'Tracy profiler' }
