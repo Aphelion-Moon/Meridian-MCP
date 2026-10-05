@@ -1616,7 +1616,7 @@ mod tests {
         assert_eq!(types.input_schema["properties"]["limit"]["maximum"], 500);
         assert_eq!(
             types.input_schema["properties"]["cursor"]["pattern"],
-            "^[0-9]+$"
+            "^v2:[0-9]+:[0-9a-f]{16}$"
         );
         assert_eq!(symbols.input_schema["properties"]["limit"]["maximum"], 200);
     }

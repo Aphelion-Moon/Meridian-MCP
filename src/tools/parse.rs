@@ -1808,15 +1808,30 @@ mod tests {
 
         assert_eq!(first_payload["count"], 1);
         assert_eq!(first_payload["total_count"], 2);
-        assert_eq!(first_payload["pagination"]["next_cursor"], "1");
+        let next_cursor = first_payload["pagination"]["next_cursor"]
+            .as_str()
+            .expect("an incomplete page supplies an opaque cursor");
+        assert!(next_cursor.starts_with("v2:1:"));
         assert_eq!(first_payload["truncated"], true);
+
+        let repeated = list_types(
+            &state,
+            crate::parameters::decode(json!({"prefix": "/datum/meridian_fixture", "limit": 1}))
+                .expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result_json(&repeated)["pagination"]["next_cursor"],
+            next_cursor
+        );
 
         let second = list_types(
             &state,
             crate::parameters::decode(json!({
                 "prefix": "/datum/meridian_fixture",
                 "limit": 1,
-                "cursor": "1"
+                "cursor": next_cursor
             }))
             .expect("valid fixture request"),
         )
@@ -1825,6 +1840,7 @@ mod tests {
         let second_payload = result_json(&second);
 
         assert_eq!(second_payload["count"], 1);
+        assert_ne!(first_payload["types"][0], second_payload["types"][0]);
         assert_eq!(second_payload["pagination"]["has_more"], false);
         assert!(second_payload["pagination"]["next_cursor"].is_null());
         assert_eq!(second_payload["truncated"], false);
