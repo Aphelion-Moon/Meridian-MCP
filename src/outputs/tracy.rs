@@ -141,7 +141,7 @@ pub struct CollectorQueueHealth {
     pub last_producer_progress_raw: u64,
     pub hook_installed: bool,
     pub prologue_validated: bool,
-    pub byond_build: u32,
+    pub byond_build: String,
     pub offset_table_identity: String,
 }
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
