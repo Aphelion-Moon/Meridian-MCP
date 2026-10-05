@@ -99,9 +99,19 @@ pub async fn launch(
         .as_ref()
         .map_or(&installation.dll_sha256, |helper| &helper.sha256);
     let mut command = Command::new(debugger_host);
+    if host_mode == "headless" {
+        // DreamDaemon needs its server startup arguments; DreamSeeker's launch
+        // form can leave the headless host waiting before world initialization.
+        command.args(super::runtime::build_dreamdaemon_args(
+            &dmb_spawn_path,
+            &working_directory,
+            0,
+            &[],
+        ));
+    } else {
+        command.arg(dmb_spawn_path).arg("-trusted");
+    }
     command
-        .arg(dmb_spawn_path)
-        .arg("-trusted")
         .current_dir(working_directory)
         .env_clear()
         .envs(dreamseeker_environment())

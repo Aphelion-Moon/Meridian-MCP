@@ -92,7 +92,7 @@ pub(crate) fn find_dreamdaemon_for_compilers(compilers: &[PathBuf]) -> Option<Pa
     find_dreamdaemon()
 }
 
-fn build_dreamdaemon_args(
+pub(super) fn build_dreamdaemon_args(
     dmb_path: &Path,
     working_directory: &Path,
     port: u16,
