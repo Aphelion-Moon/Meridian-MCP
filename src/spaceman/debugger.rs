@@ -443,6 +443,13 @@ pub struct DebuggerEventRecord {
 
 impl DebuggerSession {
     pub async fn stop(&mut self) -> anyhow::Result<()> {
+        self.stop_with_pool(None).await
+    }
+
+    pub(crate) async fn stop_with_pool(
+        &mut self,
+        pool: Option<crate::request::BlockingPool>,
+    ) -> anyhow::Result<()> {
         let _ = self.connection.disconnect().await;
         self.containment.request_termination()?;
         let mut outcome = crate::result::MutationOutcome {
@@ -477,15 +484,27 @@ impl DebuggerSession {
                 outcome: outcome.clone(),
             })?;
         outcome.cleanup_complete = true;
-        if let Some(lease) = self.execution_lease.as_mut() {
-            lease
-                .finish()
-                .map_err(|error| crate::result::OutcomeError {
-                    error,
-                    outcome: outcome.clone(),
-                })?;
+        if let Some(mut lease) = self.execution_lease.take() {
+            let (result, lease) = if let Some(pool) = pool {
+                pool.run(move || Ok((lease.finish(), lease)))
+                    .await
+                    .map_err(|error| {
+                        let mut outcome = outcome.clone();
+                        outcome.cleanup_complete = false;
+                        outcome.recovery_required = true;
+                        crate::result::OutcomeError { error, outcome }
+                    })?
+            } else {
+                (lease.finish(), lease)
+            };
+            if result.is_err() {
+                self.execution_lease = Some(lease);
+            }
+            result.map_err(|error| crate::result::OutcomeError {
+                error,
+                outcome: outcome.clone(),
+            })?;
         }
-        self.execution_lease = None;
         Ok(())
     }
 }

@@ -119,6 +119,19 @@ impl RuntimeIntegritySession {
         let root = self.document.protected_root.clone();
         let current =
             tokio::task::spawn_blocking(move || WorkspaceSnapshot::capture(&root)).await??;
+        self.observe_snapshot(current, action)
+    }
+
+    fn observe_blocking(&mut self, action: &'static str) -> Result<RuntimeIntegritySummary> {
+        let current = WorkspaceSnapshot::capture(&self.document.protected_root)?;
+        self.observe_snapshot(current, action)
+    }
+
+    fn observe_snapshot(
+        &mut self,
+        current: WorkspaceSnapshot,
+        action: &'static str,
+    ) -> Result<RuntimeIntegritySummary> {
         let delta = compare_snapshots(&self.document.baseline, &current, &self.owned_paths)?;
         let offset_ms = self.started_at.elapsed().as_millis() as u64;
         let nearest_output = nearest_output_before(&self.output_log, offset_ms);
@@ -154,6 +167,10 @@ impl RuntimeIntegritySession {
 
     pub async fn finalize(&mut self, action: &'static str) -> Result<RuntimeIntegritySummary> {
         self.observe_now(action).await?;
+        self.finish_observation()
+    }
+
+    fn finish_observation(&mut self) -> Result<RuntimeIntegritySummary> {
         self.document.status = if self
             .document
             .events
@@ -198,9 +215,28 @@ fn source_integrity_warning_code() -> String {
     "source_integrity_warning".to_owned()
 }
 
-pub fn spawn_monitor(
+pub(crate) async fn observe_owned(
+    session: Arc<Mutex<RuntimeIntegritySession>>,
+    pool: crate::request::BlockingPool,
+    action: &'static str,
+    finalize: bool,
+) -> Result<RuntimeIntegritySummary> {
+    pool.run(move || {
+        let mut session = session.blocking_lock();
+        let summary = session.observe_blocking(action)?;
+        if finalize {
+            session.finish_observation()
+        } else {
+            Ok(summary)
+        }
+    })
+    .await
+}
+
+pub(crate) fn spawn_monitor(
     session: Arc<Mutex<RuntimeIntegritySession>>,
     mut stop: watch::Receiver<bool>,
+    pool: crate::request::BlockingPool,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
@@ -208,7 +244,7 @@ pub fn spawn_monitor(
         interval.tick().await;
         loop {
             tokio::select! {
-                _ = interval.tick() => { let _ = session.lock().await.observe_now("monitor").await; }
+                _ = interval.tick() => { let _ = observe_owned(session.clone(), pool.clone(), "monitor", false).await; }
                 changed = stop.changed() => {
                     if changed.is_err() || *stop.borrow() { break; }
                 }

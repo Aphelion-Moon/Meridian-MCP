@@ -97,17 +97,35 @@ enum ParseOutcome {
     Built(Box<ParsedEnvironment>),
 }
 
+#[cfg(test)]
 pub(crate) async fn parse_environment_with_policy(
     state: &ServerState,
     args: crate::parameters::ParseEnvironmentParams,
     policy: &PathPolicy,
 ) -> Result<ToolResult> {
-    let request_started = Instant::now();
+    let context = super::ToolExecutionContext::new(crate::CapabilityMode::Analysis, policy.clone());
+    parse_environment_controlled(&context, state, args).await
+}
+
+pub(crate) async fn parse_environment_controlled(
+    control: &super::ToolExecutionContext,
+    state: &ServerState,
+    args: crate::parameters::ParseEnvironmentParams,
+) -> Result<ToolResult> {
+    let request_started = control
+        .request_started
+        .unwrap_or_else(tokio::time::Instant::now)
+        .into_std();
     let dme_path = args.dme_path.as_str();
     let scoped_state = state.for_parse(PathBuf::from(dme_path));
     let state = &scoped_state;
     let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(DEFAULT_PARSE_TIMEOUT_MS));
-    let deadline = tokio::time::Instant::from_std(request_started + timeout);
+    let deadline = control.deadline(timeout.as_millis() as u64);
+    let policy = control.policy();
+    if control.finalization_reason(deadline).is_some() {
+        return parse_timeout(state, timeout).await;
+    }
+    control.progress(crate::request::Stage::Admission);
     let path = PathBuf::from(dme_path);
     let force = args.force.unwrap_or(false);
 
@@ -121,6 +139,9 @@ pub(crate) async fn parse_environment_with_policy(
         Ok(candidate) => candidate,
         Err(_) => return parse_timeout(state, timeout).await,
     };
+    if control.finalization_reason(deadline).is_some() {
+        return parse_timeout(state, timeout).await;
+    }
     let policy = policy.clone();
     // Reuse validation includes blocking-pool scheduling; full build stage
     // timings measure work inside the worker and exclude that scheduling delay.
@@ -130,43 +151,54 @@ pub(crate) async fn parse_environment_with_policy(
     // Capture admission before spawning. Dropping any caller future or join
     // handle cannot release it while this non-abortable job is queued/running.
     // Returning it with the result also covers the snapshot-installation await.
-    let handle = tokio::task::spawn_blocking(move || {
-        let outcome = (|| -> Result<ParseOutcome> {
-            #[cfg(test)]
-            let _worker_test = worker_test.enter();
-            anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
-                "parse deadline expired"
-            );
-            if !path.is_file() {
-                let reason = if path.is_dir() {
-                    format!(
-                        "Not a file (expected a .dme environment): {}",
-                        path.display()
-                    )
-                } else {
-                    format!("File not found: {}", path.display())
-                };
-                return Err(anyhow!(reason));
-            }
-            if !force {
-                if let Some(reused) = reusable_snapshot(candidate, &path) {
-                    return Ok(ParseOutcome::Reused(reused));
-                }
-            } else {
-                drop(candidate);
-            }
-            anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
-                "parse deadline expired"
-            );
-            info!("Parsing environment: {}", path.display());
-            build_environment(path, policy).map(|build| ParseOutcome::Built(Box::new(build)))
-        })();
-        (outcome, permit)
-    });
+    let worker_control = control.clone();
+    let work_state = state.clone();
+    let handle = async move {
+        work_state
+            .run_blocking_job(move || {
+                let outcome = (|| -> Result<ParseOutcome> {
+                    #[cfg(test)]
+                    let _worker_test = worker_test.enter();
+                    anyhow::ensure!(
+                        worker_control.finalization_reason(deadline).is_none(),
+                        "parse deadline expired"
+                    );
+                    if !path.is_file() {
+                        let reason = if path.is_dir() {
+                            format!(
+                                "Not a file (expected a .dme environment): {}",
+                                path.display()
+                            )
+                        } else {
+                            format!("File not found: {}", path.display())
+                        };
+                        return Err(anyhow!(reason));
+                    }
+                    if !force {
+                        if let Some(reused) = reusable_snapshot(candidate, &path) {
+                            anyhow::ensure!(
+                                worker_control.finalization_reason(deadline).is_none(),
+                                "parse request ended"
+                            );
+                            return Ok(ParseOutcome::Reused(reused));
+                        }
+                    } else {
+                        drop(candidate);
+                    }
+                    anyhow::ensure!(
+                        worker_control.finalization_reason(deadline).is_none(),
+                        "parse deadline expired"
+                    );
+                    info!("Parsing environment: {}", path.display());
+                    build_environment_checked(path, policy, &worker_control, deadline)
+                        .map(|build| ParseOutcome::Built(Box::new(build)))
+                })();
+                Ok((outcome, permit))
+            })
+            .await
+    };
     let (outcome, _permit) = match tokio::time::timeout_at(deadline, handle).await {
-        Ok(Ok(result)) if tokio::time::Instant::now() < deadline => result,
+        Ok(Ok(result)) if control.finalization_reason(deadline).is_none() => result,
         Ok(Err(error)) => {
             return parse_failure(
                 state,
@@ -199,7 +231,9 @@ pub(crate) async fn parse_environment_with_policy(
                 build_timings,
             } = *parsed;
             let Some(snapshot) = state
-                .install_analysis_before_deadline(snapshot, deadline)
+                .install_analysis_checked(snapshot, deadline, || {
+                    control.finalization_reason(deadline).is_none()
+                })
                 .await?
             else {
                 return parse_timeout(state, timeout).await;
@@ -231,6 +265,9 @@ pub(crate) async fn parse_environment_with_policy(
         }
     };
     let total = request_started.elapsed().as_millis() as u64;
+    if control.finalization_reason(deadline).is_some() {
+        return parse_timeout(state, timeout).await;
+    }
     timings.insert("total".into(), total);
     let (errors, warnings) = snapshot.diagnostic_counts();
     crate::result::analysis_text(
@@ -270,7 +307,28 @@ async fn parse_timeout(state: &ServerState, timeout: Duration) -> Result<ToolRes
         Some("Wait for the active parser worker to finish, then retry.".to_owned())).await
 }
 
+#[cfg(test)]
 fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEnvironment> {
+    let control = super::ToolExecutionContext::new(crate::CapabilityMode::Analysis, policy.clone());
+    build_environment_checked(
+        parse_path,
+        policy,
+        &control,
+        control.deadline(DEFAULT_PARSE_TIMEOUT_MS),
+    )
+}
+
+fn build_environment_checked(
+    parse_path: PathBuf,
+    policy: PathPolicy,
+    control: &super::ToolExecutionContext,
+    deadline: tokio::time::Instant,
+) -> Result<ParsedEnvironment> {
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Capture);
     let parse_started_at = SystemTime::now();
     let preprocess_started = Instant::now();
     let mut context = Context::default();
@@ -306,6 +364,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
         return Err(anyhow!("DreamMaker parser reported errors:\n{diagnostics}"));
     }
     let preprocess_parse = preprocess_started.elapsed().as_millis() as u64;
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Execution);
 
     // Always run DreamChecker so semantic diagnostics describe this parsed
     // snapshot. Its cost is reported separately in the parse response.
@@ -314,6 +377,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
     let configured_rules = configured_diagnostic_rules(&parse_path, &context);
     let diagnostics = collect_diagnostics(&context, &configured_rules);
     let dreamchecker = dreamchecker_started.elapsed().as_millis() as u64;
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Evidence);
     let search_documents_started = Instant::now();
     let search_documents = SearchDocuments::from_object_tree(&objtree, &context, &parse_path);
     let search_documents_ms = search_documents_started.elapsed().as_millis() as u64;
@@ -334,6 +402,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
         parse_started_at,
         policy,
     );
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Publication);
     Ok(ParsedEnvironment {
         snapshot: AnalysisSnapshot::from_build(build, 0),
         preprocess_parse,

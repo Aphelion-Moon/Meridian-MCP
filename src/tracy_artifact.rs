@@ -306,6 +306,15 @@ impl ReservedTraceSet {
     }
 
     pub fn promote<T: Serialize>(self, sidecar: &T) -> Result<PromotedTraceSet, TraceSetError> {
+        self.promote_checked(sidecar, || Ok(()))
+    }
+
+    pub(crate) fn promote_checked<T: Serialize>(
+        self,
+        sidecar: &T,
+        checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+    ) -> Result<PromotedTraceSet, TraceSetError> {
+        checkpoint()?;
         let bytes = serde_json::to_vec_pretty(sidecar)?;
         let mut output = std::fs::OpenOptions::new()
             .write(true)
@@ -316,8 +325,8 @@ impl ReservedTraceSet {
         output.flush()?;
         output.sync_all()?;
         drop(output);
-
-        let trace = self.trace.commit()?;
+        checkpoint()?;
+        let trace = self.trace.commit_checked(&checkpoint)?;
         match self.sidecar.commit() {
             Ok(sidecar) => Ok(PromotedTraceSet { trace, sidecar }),
             Err(error) => {
@@ -340,12 +349,34 @@ impl ReservedTraceSet {
         diagnostic_trace: &Path,
         sidecar: &T,
     ) -> Result<DiagnosticTraceSet, TraceSetError> {
+        self.promote_diagnostic_checked(policy, diagnostic_trace, sidecar, || Ok(()))
+    }
+
+    pub(crate) fn promote_diagnostic_checked<T: Serialize>(
+        self,
+        policy: &PathPolicy,
+        diagnostic_trace: &Path,
+        sidecar: &T,
+        checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+    ) -> Result<DiagnosticTraceSet, TraceSetError> {
+        checkpoint()?;
         let diagnostic = reserve_trace_set(policy, diagnostic_trace, false)?;
-        std::fs::copy(
-            self.temporary_trace_path(),
-            diagnostic.temporary_trace_path(),
-        )?;
-        let promoted = diagnostic.promote(sidecar)?;
+        let mut source = std::fs::File::open(self.temporary_trace_path())?;
+        let mut target = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(diagnostic.temporary_trace_path())?;
+        let mut buffer = [0; 64 * 1024];
+        loop {
+            checkpoint()?;
+            let count = std::io::Read::read(&mut source, &mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            target.write_all(&buffer[..count])?;
+        }
+        drop(target);
+        let promoted = diagnostic.promote_checked(sidecar, checkpoint)?;
         Ok(DiagnosticTraceSet {
             authoritative: false,
             trace: promoted.trace,
@@ -417,8 +448,56 @@ fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::has_required_memory_roles;
+    use super::*;
     use crate::process_metrics::ProcessRole;
+
+    #[test]
+    fn interrupted_preparation_does_not_publish_normal_or_diagnostic_trace_pairs() {
+        let root = std::env::temp_dir().join(format!(
+            "meridian-trace-interruption-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let policy = PathPolicy::new(vec![root.clone()], vec![]).unwrap();
+        for diagnostic in [false, true] {
+            let output = root.join("capture.tracy");
+            let reserved = reserve_trace_set(&policy, &output, false).unwrap();
+            std::fs::write(reserved.temporary_trace_path(), b"captured bytes").unwrap();
+            let checks = std::cell::Cell::new(0);
+            let checkpoint = || {
+                checks.set(checks.get() + 1);
+                // Interrupt after one copy/hash chunk, before promotion.
+                if checks.get() == if diagnostic { 3 } else { 4 } {
+                    return Err(AtomicOutputError::writer("request_cancelled"));
+                }
+                Ok(())
+            };
+            if diagnostic {
+                assert!(reserved
+                    .promote_diagnostic_checked(
+                        &policy,
+                        &output,
+                        &serde_json::json!({}),
+                        checkpoint
+                    )
+                    .is_err());
+            } else {
+                assert!(reserved
+                    .promote_checked(&serde_json::json!({}), checkpoint)
+                    .is_err());
+            }
+            assert_eq!(
+                std::fs::read_dir(&root).unwrap().count(),
+                0,
+                "interrupted trace publication left an output or staging file"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn required_memory_roles_allow_an_owned_wake_client() {

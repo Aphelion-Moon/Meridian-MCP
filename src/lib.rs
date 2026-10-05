@@ -29,6 +29,7 @@ pub mod process_environment;
 pub mod process_metrics;
 pub mod project;
 pub mod repository_roots;
+mod request;
 pub mod result;
 pub mod runtime_integrity;
 mod search;

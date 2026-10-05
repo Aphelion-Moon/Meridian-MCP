@@ -1,4 +1,5 @@
 use crate::outputs::*;
+use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
 use serde_json::json;
 #[cfg(test)]
@@ -25,6 +26,7 @@ mod topic_tests;
 
 const DEFAULT_OUTPUT_WAIT_TIMEOUT_MS: u64 = 30_000;
 const MAX_OUTPUT_WAIT_TIMEOUT_MS: u64 = 300_000;
+#[cfg(test)]
 const MAX_TOPIC_TIMEOUT_MS: u64 = 60_000;
 const OUTPUT_READ_CHUNK_BYTES: usize = 8 * 1024;
 const LOG_FILE_POLL_INTERVAL_MS: u64 = 50;
@@ -210,7 +212,7 @@ async fn run_internal(
             ));
         }
 
-        finalize_standard_integrity(&mut state, "natural_exit").await?;
+        finalize_standard_integrity(server_state, &mut state, "natural_exit").await?;
 
         let requested_path = PathBuf::from(&dmb_path);
         let path = if requested_path.is_absolute() {
@@ -245,6 +247,7 @@ async fn run_internal(
             drop(state);
             let lease = match context
                 .execution_lease(
+                    server_state,
                     &path,
                     &working_directory,
                     "standard",
@@ -265,11 +268,19 @@ async fn run_internal(
             extra_args.extend(["-params".to_owned(), "tracy".to_owned()]);
         }
 
-        let launch_provenance =
-            match super::require_launchable_artifact(context, &path, require_verified) {
-                Ok(provenance) => provenance,
-                Err(result) => return Ok(result),
-            };
+        drop(state);
+        let launch_provenance = match super::require_launchable_artifact_owned(
+            context,
+            server_state,
+            &path,
+            require_verified,
+        )
+        .await?
+        {
+            Ok(provenance) => provenance,
+            Err(result) => return Ok(result),
+        };
+        let mut state = server_state.runtime_checked().await?;
         let dreamdaemon = find_dreamdaemon_for_compilers(context.policy().compiler_allowlist())
             .ok_or_else(|| anyhow!("DreamDaemon not found. Please install BYOND."))?;
 
@@ -309,14 +320,34 @@ async fn run_internal(
                     .and_then(|snapshot| snapshot.environment_path.parent())
                     .unwrap_or(artifact_directory)
                     .to_owned();
-                let session = crate::runtime_integrity::RuntimeIntegritySession::create(
-                    store,
-                    &protected_root,
-                    launch_provenance.clone(),
-                    Arc::clone(&state.output_log),
-                    vec![log_path.clone()],
-                )?;
-                state.integrity = Some(Arc::new(tokio::sync::Mutex::new(session)));
+                if let Some(lease) = launch_lease.as_mut() {
+                    lease.mark_writer_started();
+                }
+                state.execution_lease = launch_lease.take();
+                let output = Arc::clone(&state.output_log);
+                let provenance = launch_provenance.clone();
+                let paths = vec![log_path.clone()];
+                let owned_state = server_state.clone();
+                let control = context.clone();
+                drop(state);
+                server_state
+                    .run_mutation_job(context, move || {
+                        control.checkpoint()?;
+                        let session = crate::runtime_integrity::RuntimeIntegritySession::create(
+                            store,
+                            &protected_root,
+                            provenance,
+                            output,
+                            paths,
+                        )?;
+                        // Registration is mandatory once the journal exists, including
+                        // when cancellation arrived during non-abortable capture.
+                        owned_state.runtime_blocking_checked()?.integrity =
+                            Some(Arc::new(tokio::sync::Mutex::new(session)));
+                        Ok(())
+                    })
+                    .await?;
+                state = server_state.runtime_checked().await?;
             }
         }
         let mut command = Command::new(&dreamdaemon);
@@ -336,11 +367,13 @@ async fn run_internal(
             .take()
             .or_else(|| state.execution_lease.take())
             .ok_or_else(|| anyhow!("runtime execution lease is missing"))?;
+        context.checkpoint()?;
+        context.progress(crate::request::Stage::Execution);
         lease.mark_writer_started();
         let (mut child, containment) = match crate::process::spawn_runtime_process(&mut command) {
             Ok(child) => child,
             Err(error) => {
-                let _ = finalize_standard_integrity(&mut state, "spawn_failed").await;
+                let _ = finalize_standard_integrity(server_state, &mut state, "spawn_failed").await;
                 return Err(error);
             }
         };
@@ -367,8 +400,11 @@ async fn run_internal(
                 session.lock().await.set_process_id(pid)?;
                 let (stop, receiver) = tokio::sync::watch::channel(false);
                 state.integrity_stop = Some(stop);
-                state.integrity_task =
-                    Some(crate::runtime_integrity::spawn_monitor(session, receiver));
+                state.integrity_task = Some(crate::runtime_integrity::spawn_monitor(
+                    session,
+                    receiver,
+                    server_state.blocking_pool(),
+                ));
             }
         }
 
@@ -412,7 +448,8 @@ async fn run_internal(
             ));
         }
         if !state.is_game_running() {
-            let integrity = finalize_standard_integrity(&mut state, "launch_failed").await?;
+            let integrity =
+                finalize_standard_integrity(server_state, &mut state, "launch_failed").await?;
             return Ok(crate::result::projection(
                 RuntimeFailureData {
                     message: "DreamDaemon process exited immediately. Check the DMB file.",
@@ -456,8 +493,13 @@ async fn run_internal(
         drop(state);
 
         if let Some(pattern) = &readiness {
-            let wait_result =
-                wait_for_output_value(&observation, pattern, startup_timeout_ms).await?;
+            let wait_result = context
+                .admit(wait_for_output_value(
+                    &observation,
+                    pattern,
+                    startup_timeout_ms,
+                ))
+                .await?;
             let matched = wait_result.matched;
             result.readiness = Some(wait_result);
             if !matched {
@@ -468,8 +510,10 @@ async fn run_internal(
                     state.stop_game_process().await?;
                     essential.process_stopped = true;
                     result.process_stopped = Some(true);
-                    result.integrity =
-                        Some(finalize_standard_integrity(&mut state, "launch_failed").await?);
+                    result.integrity = Some(
+                        finalize_standard_integrity(server_state, &mut state, "launch_failed")
+                            .await?,
+                    );
                 }
                 let stopped = result.process_stopped == Some(true);
                 return Ok(crate::result::projection(result, false, true).with_outcome(
@@ -490,8 +534,20 @@ async fn run_internal(
         if !Arc::ptr_eq(&observation, &state.output_log) || !state.is_game_running() {
             return Ok(ToolResult::error("Runtime session ended during launch."));
         }
-        if let Some(session) = &state.integrity {
-            let summary = session.lock().await.observe_now("launch_ready").await?;
+        if let Some(session) = state.integrity.clone() {
+            drop(state);
+            let summary = crate::runtime_integrity::observe_owned(
+                session,
+                server_state.blocking_pool(),
+                "launch_ready",
+                false,
+            )
+            .await?;
+            let mut state = server_state.runtime_checked().await?;
+            anyhow::ensure!(
+                Arc::ptr_eq(&observation, &state.output_log),
+                "runtime replaced during launch evidence"
+            );
             state.integrity_summary = Some(summary.clone());
             result.integrity = Some(Some(summary));
         }
@@ -533,6 +589,7 @@ async fn run_internal(
 }
 
 async fn finalize_standard_integrity(
+    server_state: &ServerState,
     state: &mut RuntimeState,
     action: &'static str,
 ) -> Result<Option<crate::runtime_integrity::RuntimeIntegritySummary>> {
@@ -553,7 +610,13 @@ async fn finalize_standard_integrity(
     let summary = if terminal_summary.is_some() {
         terminal_summary
     } else if let Some(session) = &state.integrity {
-        let summary = session.lock().await.finalize(action).await?;
+        let summary = crate::runtime_integrity::observe_owned(
+            session.clone(),
+            server_state.blocking_pool(),
+            action,
+            true,
+        )
+        .await?;
         state.integrity_summary = Some(summary.clone());
         Some(summary)
     } else {
@@ -564,12 +627,17 @@ async fn finalize_standard_integrity(
         .as_ref()
         .is_some_and(|lease| lease.kind() == "standard")
     {
-        state
+        let mut lease = state
             .execution_lease
-            .as_mut()
-            .expect("checked standard lease")
-            .finish()?;
-        state.execution_lease = None;
+            .take()
+            .expect("checked standard lease");
+        let (result, lease) = server_state
+            .run_blocking_job(move || Ok((lease.finish(), lease)))
+            .await?;
+        if result.is_err() {
+            state.execution_lease = Some(lease);
+        }
+        result?;
     }
     Ok(summary)
 }
@@ -820,13 +888,26 @@ pub async fn wait_for_output(
         ));
     }
     let integrity = if state.is_game_running() {
-        if let Some(session) = &state.integrity {
-            Some(session.lock().await.observe_now("wait_for_output").await?)
+        if let Some(session) = state.integrity.clone() {
+            drop(state);
+            let summary = crate::runtime_integrity::observe_owned(
+                session,
+                server_state.blocking_pool(),
+                "wait_for_output",
+                false,
+            )
+            .await?;
+            state = server_state.runtime_checked().await?;
+            anyhow::ensure!(
+                Arc::ptr_eq(&output, &state.output_log),
+                "runtime replaced during output evidence"
+            );
+            Some(summary)
         } else {
             None
         }
     } else {
-        finalize_standard_integrity(&mut state, "natural_exit").await?
+        finalize_standard_integrity(server_state, &mut state, "natural_exit").await?
     };
     Ok(crate::result::projection(
         WaitData {
@@ -1233,6 +1314,7 @@ pub async fn stop(state: &ServerState, _args: crate::parameters::StopParams) -> 
 }
 
 pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResult> {
+    let server_state = state;
     let mut state = state.runtime_checked().await?;
     let was_running = state.is_game_running();
     if !was_running
@@ -1249,7 +1331,7 @@ pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResul
     } else {
         false
     };
-    let integrity = finalize_standard_integrity(&mut state, "stopped")
+    let integrity = finalize_standard_integrity(server_state, &mut state, "stopped")
         .await
         .map_err(|error| crate::result::OutcomeError {
             error,
@@ -1295,16 +1377,35 @@ pub async fn status(
     state: &ServerState,
     _args: crate::parameters::StatusParams,
 ) -> Result<ToolResult> {
+    let server_state = state;
     let mut state = state.runtime_checked().await?;
     let running = state.is_game_running();
     let integrity = if running {
-        if let Some(session) = &state.integrity {
-            Some(session.lock().await.observe_now("status").await?)
+        if let Some(session) = state.integrity.clone() {
+            let observed = state.runtime_id.clone();
+            drop(state);
+            let summary = crate::runtime_integrity::observe_owned(
+                session,
+                server_state.blocking_pool(),
+                "status",
+                false,
+            )
+            .await?;
+            state = server_state.runtime_checked().await?;
+            if state.runtime_id != observed {
+                return Err(crate::identity::StaleIdentity {
+                    field: "expected_runtime",
+                    expected: observed.unwrap_or_default(),
+                    current: state.runtime_id.clone(),
+                }
+                .into());
+            }
+            Some(summary)
         } else {
             None
         }
     } else {
-        finalize_standard_integrity(&mut state, "natural_exit").await?
+        finalize_standard_integrity(server_state, &mut state, "natural_exit").await?
     };
     Ok(crate::result::projection(
         StatusData {
@@ -1329,7 +1430,20 @@ pub async fn status(
 }
 
 /// Send a Topic() call to the running game server
+#[cfg(test)]
 pub async fn topic(
+    state: &ServerState,
+    args: crate::parameters::TopicParams,
+) -> Result<ToolResult> {
+    let context = ToolExecutionContext::new(
+        crate::CapabilityMode::Analysis,
+        crate::PathPolicy::new(vec![std::env::current_dir()?], vec![])?,
+    );
+    topic_controlled(&context, state, args).await
+}
+
+pub(crate) async fn topic_controlled(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::TopicParams,
 ) -> Result<ToolResult> {
@@ -1343,8 +1457,10 @@ pub async fn topic(
         Ok(request) => request,
         Err(error) => return Ok(invalid_arguments(error)),
     };
-    let lifecycle = state.lifecycle().await;
-    let mut runtime = state.runtime_checked().await?;
+    let lifecycle = context
+        .admit(async { Ok::<_, anyhow::Error>(state.lifecycle().await) })
+        .await?;
+    let mut runtime = context.admit(state.runtime_checked()).await?;
     if !runtime.is_game_running() {
         return Ok(ToolResult::error("No game instance is currently running."));
     }
@@ -1356,17 +1472,21 @@ pub async fn topic(
     drop(runtime);
     info!("Sending Topic to port {port}");
     let address = format!("127.0.0.1:{port}");
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
+    let deadline = context.deadline(timeout_ms);
     // Keep replacement excluded through request delivery, then allow stop while
     // awaiting the response on this session's already connected socket.
-    let delivered = tokio::time::timeout_at(deadline, async {
-        let mut stream = TcpStream::connect(&address).await?;
-        stream.write_all(&packet).await?;
-        Ok::<_, anyhow::Error>(stream)
-    })
-    .await;
+    let mut delivered_to_runtime = false;
+    let delivered = context
+        .admit(tokio::time::timeout_at(deadline, async {
+            let mut stream = TcpStream::connect(&address).await?;
+            context.checkpoint()?;
+            stream.write_all(&packet).await?;
+            delivered_to_runtime = true;
+            Ok::<_, anyhow::Error>(stream)
+        }))
+        .await
+        .and_then(|result| result);
     drop(lifecycle);
-    let delivered_to_runtime = matches!(&delivered, Ok(Ok(_)));
     let outcome = crate::result::MutationOutcome {
         operation_ran: delivered_to_runtime,
         cleanup_complete: true,
@@ -1375,15 +1495,14 @@ pub async fn topic(
         ..Default::default()
     };
     let response = match delivered {
-        Ok(Ok(mut stream)) => tokio::select! {
+        Ok(mut stream) => tokio::select! {
             biased;
             () = runtime_session_ended(&output) => {
                 return Ok(ToolResult::error("Runtime session ended during Topic request.").with_outcome(outcome));
             }
-            response = tokio::time::timeout_at(deadline, read_topic_response(&mut stream)) => response.map_err(anyhow::Error::from).and_then(|response| response),
+            response = context.admit(tokio::time::timeout_at(deadline, read_topic_response(&mut stream))) => response.and_then(|response| response),
         },
-        Ok(Err(error)) => Err(error),
-        Err(error) => Err(error.into()),
+        Err(error) => Err(error),
     };
     match response {
         Ok(response) => Ok(crate::result::projection(
@@ -1441,12 +1560,35 @@ async fn runtime_session_ended(output: &OutputLog) {
 }
 
 /// Send a BYOND Topic packet and get response
+#[cfg(test)]
 pub(crate) async fn send_topic(address: &str, topic: &str, timeout_ms: u64) -> Result<String> {
     let topic_clean = topic.strip_prefix('?').unwrap_or(topic);
     let packet = build_topic_packet(topic_clean)?;
     send_topic_packet(address, &packet, timeout_ms).await
 }
 
+pub(crate) async fn send_topic_controlled(
+    context: &ToolExecutionContext,
+    address: &str,
+    topic: &str,
+    timeout_ms: u64,
+) -> Result<String> {
+    let packet = build_topic_packet(topic.strip_prefix('?').unwrap_or(topic))?;
+    context
+        .admit(async {
+            let mut stream = TcpStream::connect(address).await?;
+            context.checkpoint()?;
+            stream.write_all(&packet).await?;
+            tokio::time::timeout_at(
+                context.deadline(timeout_ms),
+                read_topic_response(&mut stream),
+            )
+            .await?
+        })
+        .await
+}
+
+#[cfg(test)]
 async fn send_topic_packet(address: &str, packet: &[u8], timeout_ms: u64) -> Result<String> {
     use anyhow::Context;
     anyhow::ensure!(

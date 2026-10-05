@@ -15,10 +15,14 @@ fn main() -> Result<()> {
         }
         meridian_mcp::process::initialize_runtime_owner_with_executable(&std::env::current_exe()?)?;
     }
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(run())
+        .build()?;
+    let result = runtime.block_on(run());
+    // This bounds host waiting; it does not turn unfinished blocking work into
+    // cleanup proof or clear durable execution quarantine.
+    runtime.shutdown_timeout(std::time::Duration::from_millis(250));
+    result
 }
 
 async fn run() -> Result<()> {

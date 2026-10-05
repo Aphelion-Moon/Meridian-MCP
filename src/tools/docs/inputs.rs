@@ -11,7 +11,13 @@ type Inventory = BTreeMap<PathBuf, (PathBuf, u64, SystemTime)>;
 // dmdoc reads live source and Markdown, not just the active analysis snapshot.
 // Re-discover before installation so changed configuration or new inputs cannot
 // turn an authorized output replacement into source deletion.
-pub(super) fn capture(policy: &PathPolicy, environment: &Path, output: &Path) -> Result<Inventory> {
+pub(super) fn capture_checked(
+    policy: &PathPolicy,
+    environment: &Path,
+    output: &Path,
+    checkpoint: impl Fn() -> Result<()>,
+) -> Result<Inventory> {
+    checkpoint()?;
     let base = environment
         .parent()
         .ok_or_else(|| anyhow!("environment has no parent"))?;
@@ -19,7 +25,9 @@ pub(super) fn capture(policy: &PathPolicy, environment: &Path, output: &Path) ->
     context.set_read_policy(Arc::new(policy.clone()));
     context.autodetect_config(environment);
     let preprocessor = Preprocessor::new(&context, environment.to_owned())?;
-    for _ in preprocessor {}
+    for _ in preprocessor {
+        checkpoint()?;
+    }
     anyhow::ensure!(
         !context.read_denied(),
         "documentation input is outside workspace roots"
@@ -39,6 +47,7 @@ pub(super) fn capture(policy: &PathPolicy, environment: &Path, output: &Path) ->
         .file_list()
         .for_each(|path| source_paths.push(path.to_owned()));
     for path in source_paths {
+        checkpoint()?;
         if path.as_os_str().is_empty() {
             continue;
         }
@@ -63,6 +72,7 @@ pub(super) fn capture(policy: &PathPolicy, environment: &Path, output: &Path) ->
     let mut visited = 0_usize;
     let mut stack: Vec<_> = roots.into_iter().map(|path| (path, true)).collect();
     while let Some((path, root)) = stack.pop() {
+        checkpoint()?;
         visited += 1;
         anyhow::ensure!(
             visited <= limit,
@@ -93,6 +103,7 @@ pub(super) fn capture(policy: &PathPolicy, environment: &Path, output: &Path) ->
             add(&mut inputs, policy, &path, output)?;
         }
     }
+    checkpoint()?;
     Ok(inputs)
 }
 

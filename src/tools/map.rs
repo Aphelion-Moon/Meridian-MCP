@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use tracing::info;
 
-use crate::atomic_output::{write_atomic, AtomicOutputError};
+use crate::atomic_output::{write_atomic_checked, AtomicOutputError};
 use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
 use crate::outputs::*;
@@ -91,6 +91,11 @@ async fn render_map_data(
     state: &ServerState,
     args: crate::parameters::RenderMapParams,
 ) -> Result<RenderMapData> {
+    let snapshot = state.snapshot().await?;
+    let control = execution.clone();
+    state.run_mutation_job(execution, move || {
+    let execution = &control;
+    execution.progress(crate::request::Stage::Capture);
     let dmm_path = args.dmm_path.as_str();
     let output_path = args
         .output_path
@@ -102,7 +107,6 @@ async fn render_map_data(
         return Err(anyhow!("File not found: {dmm_path}"));
     }
 
-    let snapshot = state.snapshot().await?;
     let objtree = &snapshot.objtree;
     let context = &snapshot.context;
     let environment_root = snapshot
@@ -125,6 +129,8 @@ async fn render_map_data(
         render_passes::configure_list(&context.config.map_renderer, &enabled, &disabled);
     let errors: RwLock<_> = Default::default();
     let bump = Default::default();
+    execution.checkpoint()?;
+    execution.progress(crate::request::Stage::Execution);
     let image = minimap::generate(
         minimap::Context {
             objtree,
@@ -154,14 +160,18 @@ async fn render_map_data(
     if encoded.len() as u64 > ServerLimits::default().max_render_output_bytes {
         return Err(anyhow!("render exceeds max_render_output_bytes"));
     }
-    let artifact = write_atomic(
+    execution.checkpoint()?;
+    execution.progress(crate::request::Stage::Publication);
+    let artifact = write_atomic_checked(
         execution.policy(),
         &output_path,
         args.overwrite.unwrap_or(false),
         |file| file.write_all(&encoded).map_err(AtomicOutputError::from),
+        || execution.checkpoint().map_err(AtomicOutputError::from),
     )?;
 
     Ok(RenderMapData {analysis:snapshot.identity(),success:true,dmm_path:dmm_path.into(),z_level,output:artifact,output_path:output_path.display().to_string(),dimensions_pixels:PixelDimensions {width:(max[0]-min[0]+1)*32,height:(max[1]-min[1]+1)*32},bounds:RenderBounds {min,max},applied_passes:enabled.into_iter().map(str::to_owned).collect(),non_transparent_pixels,warning:(non_transparent_pixels==0).then_some("The renderer produced a fully transparent image. This can be expected when render passes hide every atom on the selected z-level.")})
+    }).await
 }
 
 /// Get map dimensions and atom instance statistics.
@@ -262,50 +272,59 @@ pub async fn render_maps(
     let snapshot = state.snapshot().await?;
     let admitted = state.for_request(Some(std::sync::Arc::clone(&snapshot)), None);
     let state = &admitted;
-    let files = &args.files;
-    let limits = ServerLimits::default();
-    if files.len() > limits.max_render_files {
-        return Err(anyhow!("batch exceeds max_render_files"));
-    }
-    let overwrite = args.overwrite.unwrap_or(false);
-    let _ = pass_selection(
-        args.enable_passes.as_deref().unwrap_or_default(),
-        args.disable_passes.as_deref().unwrap_or_default(),
-    )?;
-    let mut requests = Vec::new();
-    for file in files {
-        let dmm = file.dmm_path.as_str();
-        let dmm = execution.policy().read_path(dmm)?;
-        let map = load_map(&dmm)?;
-        let chunks = &file.chunks;
-        if requests.len() + chunks.len() > limits.max_render_chunks {
-            return Err(anyhow!("batch exceeds max_render_chunks"));
-        }
-        for chunk in chunks {
-            let output = chunk.output_path.as_str();
-            let output = execution.policy().output_path(output, overwrite)?;
-            if output
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_none_or(|extension| !extension.eq_ignore_ascii_case("png"))
-            {
-                return Err(anyhow!("render output extension must be .png"));
+    let validation_control = execution.clone();
+    let requests = state
+        .run_request_job(execution, move || {
+            let execution = &validation_control;
+            let files = &args.files;
+            let limits = ServerLimits::default();
+            if files.len() > limits.max_render_files {
+                return Err(anyhow!("batch exceeds max_render_files"));
             }
-            let request = crate::parameters::RenderMapParams {
-                expected_snapshot: None,
-                dmm_path: dmm.display().to_string(),
-                output_path: Some(output.display().to_string()),
-                overwrite: Some(overwrite),
-                z_level: chunk.z_level,
-                min: chunk.min,
-                max: chunk.max,
-                enable_passes: args.enable_passes.clone(),
-                disable_passes: args.disable_passes.clone(),
-            };
-            let _ = validated_render_bounds(&request, map.dim_xyz())?;
-            requests.push(request)
-        }
-    }
+            let overwrite = args.overwrite.unwrap_or(false);
+            let _ = pass_selection(
+                args.enable_passes.as_deref().unwrap_or_default(),
+                args.disable_passes.as_deref().unwrap_or_default(),
+            )?;
+            let mut requests = Vec::new();
+            for file in files {
+                execution.checkpoint()?;
+                let dmm = file.dmm_path.as_str();
+                let dmm = execution.policy().read_path(dmm)?;
+                let map = load_map(&dmm)?;
+                let chunks = &file.chunks;
+                if requests.len() + chunks.len() > limits.max_render_chunks {
+                    return Err(anyhow!("batch exceeds max_render_chunks"));
+                }
+                for chunk in chunks {
+                    let output = chunk.output_path.as_str();
+                    let output = execution.policy().output_path(output, overwrite)?;
+                    if output
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_none_or(|extension| !extension.eq_ignore_ascii_case("png"))
+                    {
+                        return Err(anyhow!("render output extension must be .png"));
+                    }
+                    let request = crate::parameters::RenderMapParams {
+                        expected_snapshot: None,
+                        dmm_path: dmm.display().to_string(),
+                        output_path: Some(output.display().to_string()),
+                        overwrite: Some(overwrite),
+                        z_level: chunk.z_level,
+                        min: chunk.min,
+                        max: chunk.max,
+                        enable_passes: args.enable_passes.clone(),
+                        disable_passes: args.disable_passes.clone(),
+                    };
+                    let _ = validated_render_bounds(&request, map.dim_xyz())?;
+                    requests.push(request)
+                }
+            }
+            execution.checkpoint()?;
+            Ok(requests)
+        })
+        .await?;
     let mut results = Vec::new();
     let mut completed = 0;
     let mut failed = 0;
@@ -315,6 +334,12 @@ pub async fn render_maps(
         ..Default::default()
     };
     for (index, request) in requests.into_iter().enumerate() {
+        execution
+            .checkpoint()
+            .map_err(|error| crate::result::OutcomeError {
+                error,
+                outcome: outcome.clone(),
+            })?;
         match render_map_data(execution, state, request).await {
             Ok(data) => {
                 completed += 1;

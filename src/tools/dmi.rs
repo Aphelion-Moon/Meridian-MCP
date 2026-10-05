@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::atomic_output::{write_atomic, AtomicOutputError};
+use crate::atomic_output::{write_atomic_checked, AtomicOutputError};
 use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
 use crate::outputs::*;
@@ -43,13 +43,20 @@ async fn load_with_budget(
     let path = path.to_owned();
     let policy = context.policy().clone();
     let cache = state.asset_cache();
+    let control = context.clone();
     state
-        .run_asset_job(move || {
+        .run_request_job(context, move || {
+            control.checkpoint()?;
+            control.progress(crate::request::Stage::Capture);
             let checked = policy.read_path(&path)?;
             let input = read_dmi(&checked, &limits)?;
-            Ok(cache
-                .blocking_lock()
-                .load_input(input, &limits, remaining_decoded_bytes)?)
+            control.checkpoint()?;
+            Ok(cache.blocking_lock().load_input_checked(
+                input,
+                &limits,
+                remaining_decoded_bytes,
+                || control.checkpoint(),
+            )?)
         })
         .await
 }
@@ -526,117 +533,133 @@ pub async fn extract(
     let source = PathBuf::from(&args.dmi_path);
     let output = PathBuf::from(&args.output_path);
     let asset = load(context, state, &source).await?;
-    let state_name = args.state.as_str();
-    let duplicate = args.duplicate_index.unwrap_or(0) as u32;
-    let icon_state = asset
-        .icon
-        .metadata
-        .states
-        .iter()
-        .find(|value| value.name == state_name && value.duplicate_index == duplicate)
-        .ok_or_else(|| DmiError::Invalid("requested state not found".into()))?;
-    let kind = args
-        .kind
-        .as_ref()
-        .map(|value| value.as_str())
-        .unwrap_or("auto");
-    let renderer = IconRenderer::new(&asset.icon);
-    let automatic = renderer.prepare_render_state(icon_state)?;
-    let automatic_encoder = match automatic.render_type {
-        RenderType::Png => "png",
-        RenderType::Gif => "gif",
-    };
-    let actual = match kind {
-        "auto" => automatic_encoder,
-        "png" | "gif" if kind == automatic_encoder => kind,
-        "png" | "gif" => {
-            return Err(anyhow!(
-                "requested {kind} output does not match state encoder {automatic_encoder}"
-            ));
-        }
-        "contact_sheet" | "frame" => "png",
-        _ => return Err(anyhow!("unknown extraction kind: {kind}")),
-    };
-    if output
-        .extension()
-        .and_then(|value| value.to_str())
-        .is_none_or(|extension| !extension.eq_ignore_ascii_case(actual))
-    {
-        return Err(anyhow!("output extension must be .{actual}"));
-    }
-    let selected_direction = if kind == "frame" {
-        let direction = parse_direction(
-            args.direction
+    let worker_context = context.clone();
+    state
+        .run_mutation_job(context, move || {
+            let context = worker_context;
+            context.checkpoint()?;
+            context.progress(crate::request::Stage::Execution);
+            let state_name = args.state.as_str();
+            let duplicate = args.duplicate_index.unwrap_or(0) as u32;
+            let icon_state = asset
+                .icon
+                .metadata
+                .states
+                .iter()
+                .find(|value| value.name == state_name && value.duplicate_index == duplicate)
+                .ok_or_else(|| DmiError::Invalid("requested state not found".into()))?;
+            let kind = args
+                .kind
                 .as_ref()
                 .map(|value| value.as_str())
-                .unwrap_or("south"),
-        )?;
-        validate_direction(icon_state.dirs, direction)?;
-        Some(direction)
-    } else {
-        None
-    };
-    let selected_frame = args.frame.unwrap_or(0) as u32;
-    if kind == "frame" && selected_frame as usize >= icon_state.frames.count() {
-        return Err(anyhow!("frame is outside the selected state"));
-    }
-    let mut dimensions = extraction_dimensions(icon_state, &asset.icon, kind);
-    let artifact = write_atomic(
-        context.policy(),
-        &output,
-        args.overwrite.unwrap_or(false),
-        |file| {
-            match kind {
-                "auto" | "png" | "gif" => automatic.render(file),
-                "contact_sheet" => {
-                    let images = renderer.render_to_images(&icon_state.get_state_name_index())?;
-                    let width = images.iter().map(|image| image.width).max().unwrap_or(0);
-                    let height = images.iter().map(|image| image.height).sum();
-                    let mut sheet = Image::new_rgba(width, height);
-                    let mut y = 0;
-                    for image in &images {
-                        sheet.composite(
-                            image,
-                            (0, y),
-                            (0, 0, image.width, image.height),
-                            [255, 255, 255, 255],
-                        );
-                        y += image.height;
-                    }
-                    dimensions = (width, height);
-                    sheet.to_write(file)
+                .unwrap_or("auto");
+            let renderer = IconRenderer::new(&asset.icon);
+            let automatic = renderer.prepare_render_state(icon_state)?;
+            let automatic_encoder = match automatic.render_type {
+                RenderType::Png => "png",
+                RenderType::Gif => "gif",
+            };
+            let actual = match kind {
+                "auto" => automatic_encoder,
+                "png" | "gif" if kind == automatic_encoder => kind,
+                "png" | "gif" => {
+                    return Err(anyhow!(
+                        "requested {kind} output does not match state encoder {automatic_encoder}"
+                    ));
                 }
-                "frame" => {
-                    let direction = selected_direction.expect("frame direction was prevalidated");
-                    let rect = asset
-                        .icon
-                        .rect_of_index(icon_state.index_of_frame(direction, selected_frame));
-                    let mut image = Image::new_rgba(rect.2, rect.3);
-                    image.composite(&asset.icon.image, (0, 0), rect, [255, 255, 255, 255]);
-                    image.to_write(file)
-                }
-                _ => unreachable!(),
+                "contact_sheet" | "frame" => "png",
+                _ => return Err(anyhow!("unknown extraction kind: {kind}")),
+            };
+            if output
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_none_or(|extension| !extension.eq_ignore_ascii_case(actual))
+            {
+                return Err(anyhow!("output extension must be .{actual}"));
             }
-            .map_err(|error| AtomicOutputError::writer(error.to_string()))
-        },
-    )?;
-    let mut metadata = ToolMetadata::complete(None);
-    metadata.asset_generation = Some(asset.asset_generation);
-    let outcome = crate::result::MutationOutcome::installed(0, &artifact, true, None);
-    Ok(json_success(
-        metadata,
-        ExtractDmiData {
-            source_path: asset.identity.path,
-            source_sha256: asset.identity.sha256,
-            output: artifact,
-            encoder: actual.into(),
-            kind: kind.into(),
-            dimensions: [dimensions.0, dimensions.1],
-            state: state_name.into(),
-            duplicate_index: duplicate,
-        },
-    )
-    .with_outcome(outcome))
+            let selected_direction = if kind == "frame" {
+                let direction = parse_direction(
+                    args.direction
+                        .as_ref()
+                        .map(|value| value.as_str())
+                        .unwrap_or("south"),
+                )?;
+                validate_direction(icon_state.dirs, direction)?;
+                Some(direction)
+            } else {
+                None
+            };
+            let selected_frame = args.frame.unwrap_or(0) as u32;
+            if kind == "frame" && selected_frame as usize >= icon_state.frames.count() {
+                return Err(anyhow!("frame is outside the selected state"));
+            }
+            let mut dimensions = extraction_dimensions(icon_state, &asset.icon, kind);
+            let artifact = write_atomic_checked(
+                context.policy(),
+                &output,
+                args.overwrite.unwrap_or(false),
+                |file| {
+                    match kind {
+                        "auto" | "png" | "gif" => automatic.render(file),
+                        "contact_sheet" => {
+                            let images =
+                                renderer.render_to_images(&icon_state.get_state_name_index())?;
+                            let width = images.iter().map(|image| image.width).max().unwrap_or(0);
+                            let height = images.iter().map(|image| image.height).sum();
+                            let mut sheet = Image::new_rgba(width, height);
+                            let mut y = 0;
+                            for image in &images {
+                                sheet.composite(
+                                    image,
+                                    (0, y),
+                                    (0, 0, image.width, image.height),
+                                    [255, 255, 255, 255],
+                                );
+                                y += image.height;
+                            }
+                            dimensions = (width, height);
+                            sheet.to_write(file)
+                        }
+                        "frame" => {
+                            let direction =
+                                selected_direction.expect("frame direction was prevalidated");
+                            let rect = asset.icon.rect_of_index(
+                                icon_state.index_of_frame(direction, selected_frame),
+                            );
+                            let mut image = Image::new_rgba(rect.2, rect.3);
+                            image.composite(&asset.icon.image, (0, 0), rect, [255, 255, 255, 255]);
+                            image.to_write(file)
+                        }
+                        _ => unreachable!(),
+                    }
+                    .map_err(|error| AtomicOutputError::writer(error.to_string()))
+                },
+                || {
+                    context.progress(crate::request::Stage::Publication);
+                    context
+                        .checkpoint()
+                        .map_err(|error| AtomicOutputError::writer(error.to_string()))
+                },
+            )?;
+            let mut metadata = ToolMetadata::complete(None);
+            metadata.asset_generation = Some(asset.asset_generation);
+            let outcome = crate::result::MutationOutcome::installed(0, &artifact, true, None);
+            Ok(json_success(
+                metadata,
+                ExtractDmiData {
+                    source_path: asset.identity.path,
+                    source_sha256: asset.identity.sha256,
+                    output: artifact,
+                    encoder: actual.into(),
+                    kind: kind.into(),
+                    dimensions: [dimensions.0, dimensions.1],
+                    state: state_name.into(),
+                    duplicate_index: duplicate,
+                },
+            )
+            .with_outcome(outcome))
+        })
+        .await
 }
 
 fn extraction_dimensions(

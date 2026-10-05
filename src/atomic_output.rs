@@ -56,6 +56,12 @@ impl AtomicOutputError {
     }
 }
 
+impl From<anyhow::Error> for AtomicOutputError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::writer(error.to_string())
+    }
+}
+
 struct TemporaryOutput {
     path: PathBuf,
     armed: bool,
@@ -77,6 +83,13 @@ impl ReservedExternalOutput {
     }
 
     pub fn commit(self) -> Result<OutputArtifact, AtomicOutputError> {
+        self.commit_checked(|| Ok(()))
+    }
+
+    pub(crate) fn commit_checked(
+        self,
+        checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+    ) -> Result<OutputArtifact, AtomicOutputError> {
         let metadata = std::fs::symlink_metadata(&self.temporary.path)?;
         if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
             return Err(AtomicOutputError::InvalidOutputType(
@@ -87,7 +100,7 @@ impl ReservedExternalOutput {
             .write(true)
             .open(&self.temporary.path)?
             .sync_all()?;
-        install_temporary(self.output, self.temporary, self.overwrite)
+        install_temporary_checked(self.output, self.temporary, self.overwrite, checkpoint)
     }
 }
 
@@ -114,6 +127,20 @@ pub fn write_atomic<F>(
 where
     F: FnOnce(&mut File) -> Result<(), AtomicOutputError>,
 {
+    write_atomic_checked(policy, output, overwrite, write, || Ok(()))
+}
+
+pub(crate) fn write_atomic_checked<F>(
+    policy: &PathPolicy,
+    output: &Path,
+    overwrite: bool,
+    write: F,
+    checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+) -> Result<OutputArtifact, AtomicOutputError>
+where
+    F: FnOnce(&mut File) -> Result<(), AtomicOutputError>,
+{
+    checkpoint()?;
     let output = policy.output_path(output, overwrite)?;
     if output.exists() && !output.is_file() {
         return Err(AtomicOutputError::InvalidOutputType(output));
@@ -134,8 +161,8 @@ where
     temporary_file.flush()?;
     temporary_file.sync_all()?;
     drop(temporary_file);
-
-    install_temporary(output, temporary, overwrite)
+    checkpoint()?;
+    install_temporary_checked(output, temporary, overwrite, checkpoint)
 }
 
 pub fn promote_external_atomic<F>(
@@ -212,11 +239,36 @@ fn install_temporary(
     install_with(output, temporary, overwrite, rename_without_replace)
 }
 
+fn install_temporary_checked(
+    output: PathBuf,
+    temporary: TemporaryOutput,
+    overwrite: bool,
+    checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+) -> Result<OutputArtifact, AtomicOutputError> {
+    install_with_checked(
+        output,
+        temporary,
+        overwrite,
+        rename_without_replace,
+        checkpoint,
+    )
+}
+
 fn install_with(
+    output: PathBuf,
+    temporary: TemporaryOutput,
+    overwrite: bool,
+    rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+) -> Result<OutputArtifact, AtomicOutputError> {
+    install_with_checked(output, temporary, overwrite, rename, || Ok(()))
+}
+
+fn install_with_checked(
     output: PathBuf,
     mut temporary: TemporaryOutput,
     overwrite: bool,
     mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+    checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
 ) -> Result<OutputArtifact, AtomicOutputError> {
     let parent = output.parent().ok_or_else(|| {
         AtomicOutputError::Io(std::io::Error::new(
@@ -226,7 +278,7 @@ fn install_with(
     })?;
 
     let bytes = std::fs::metadata(&temporary.path)?.len();
-    let sha256 = hash_file(&temporary.path)?;
+    let sha256 = hash_file_checked(&temporary.path, &checkpoint)?;
     let exists = match std::fs::symlink_metadata(&output) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => true,
         Ok(_) => return Err(AtomicOutputError::InvalidOutputType(output)),
@@ -240,6 +292,7 @@ fn install_with(
         )
         .into());
     }
+    checkpoint()?;
     let backup = if exists {
         let backup = private_available_path(parent, "backup")?;
         rename(&output, &backup)?;
@@ -379,23 +432,60 @@ fn private_path(parent: &Path, purpose: &str) -> Result<PathBuf, AtomicOutputErr
     Ok(parent.join(format!(".meridian-mcp-{suffix}.{purpose}")))
 }
 
+#[cfg(test)]
 fn hash_file(path: &Path) -> Result<String, AtomicOutputError> {
+    hash_file_checked(path, &|| Ok(()))
+}
+
+fn hash_file_checked(
+    path: &Path,
+    checkpoint: &impl Fn() -> Result<(), AtomicOutputError>,
+) -> Result<String, AtomicOutputError> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
+        checkpoint()?;
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
     }
+    checkpoint()?;
     Ok(format!("{:x}", hasher.finalize()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interrupted_final_checkpoint_preserves_existing_output_and_cleans_staging() {
+        let root = private_path(&std::env::temp_dir(), "interrupted-output").unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let output = root.join("result");
+        std::fs::write(&output, "original").unwrap();
+        let policy = PathPolicy::new(vec![root.clone()], vec![]).unwrap();
+        let checkpoints = std::cell::Cell::new(0);
+        let result = write_atomic_checked(
+            &policy,
+            &output,
+            true,
+            |file| file.write_all(b"late").map_err(Into::into),
+            || {
+                checkpoints.set(checkpoints.get() + 1);
+                if checkpoints.get() == 3 {
+                    return Err(AtomicOutputError::writer("request_cancelled"));
+                }
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), b"original");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn post_promotion_cleanup_failure_retains_installed_identity() {

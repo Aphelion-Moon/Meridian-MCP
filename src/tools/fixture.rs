@@ -243,14 +243,14 @@ async fn matching_or_fixture_snapshot(
         }
     }
     let temporary = state.isolated_analysis_state();
-    let parsed = super::parse::parse_environment_with_policy(
+    let parsed = super::parse::parse_environment_controlled(
+        context,
         &temporary,
         crate::parameters::ParseEnvironmentParams {
             dme_path: dme_path.display().to_string(),
             force: None,
             timeout_ms: None,
         },
-        context.policy(),
     )
     .await?;
     if parsed.is_error == Some(true) {

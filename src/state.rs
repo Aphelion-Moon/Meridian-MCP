@@ -511,7 +511,7 @@ pub struct ServerState {
     runtime: Arc<Mutex<RuntimeState>>,
     assets: Arc<Mutex<DmiCache>>,
     asset_limits: crate::limits::ServerLimits,
-    asset_jobs: Arc<tokio::sync::Semaphore>,
+    blocking_work: crate::request::BlockingPool,
     debugger: Arc<Mutex<Option<DebuggerSession>>>,
     lifecycle: Arc<Mutex<()>>,
     /// Serializes environment parses. Held for the whole build so two callers
@@ -545,7 +545,7 @@ impl ServerState {
             analysis_metadata: Arc::new(StdMutex::new(AnalysisMetadata::default())),
             runtime: Arc::new(Mutex::new(RuntimeState::new())),
             assets: Arc::new(Mutex::new(DmiCache::default())),
-            asset_jobs: Arc::new(tokio::sync::Semaphore::new(limits.max_blocking_jobs.max(1))),
+            blocking_work: crate::request::BlockingPool::new(limits.max_blocking_jobs),
             asset_limits: limits,
             debugger: Arc::new(Mutex::new(None)),
             lifecycle: Arc::new(Mutex::new(())),
@@ -582,6 +582,7 @@ impl ServerState {
     pub(crate) fn isolated_analysis_state(&self) -> Self {
         let mut isolated = Self::with_limits(self.asset_limits.clone());
         isolated.parse = Arc::clone(&self.parse);
+        isolated.blocking_work = self.blocking_work.clone();
         isolated
     }
 
@@ -612,16 +613,27 @@ impl ServerState {
         Ok(snapshot)
     }
 
+    #[cfg(test)]
     pub(crate) async fn install_analysis_before_deadline(
         &self,
         snapshot: AnalysisSnapshot,
         deadline: tokio::time::Instant,
     ) -> Result<Option<Arc<AnalysisSnapshot>>> {
+        self.install_analysis_checked(snapshot, deadline, || true)
+            .await
+    }
+
+    pub(crate) async fn install_analysis_checked(
+        &self,
+        snapshot: AnalysisSnapshot,
+        deadline: tokio::time::Instant,
+        current: impl Fn() -> bool,
+    ) -> Result<Option<Arc<AnalysisSnapshot>>> {
         let epoch = self.epoch()?;
         let Ok(mut state) = tokio::time::timeout_at(deadline, self.analysis.write()).await else {
             return Ok(None);
         };
-        if tokio::time::Instant::now() >= deadline {
+        if tokio::time::Instant::now() >= deadline || !current() {
             return Ok(None);
         }
         let (snapshot, previous) = self.publish_analysis(&mut state, snapshot, &epoch);
@@ -770,6 +782,11 @@ impl ServerState {
         self.check_runtime_id(runtime.runtime_id.as_deref())?;
         Ok(runtime)
     }
+    pub(crate) fn runtime_blocking_checked(&self) -> Result<MutexGuard<'_, RuntimeState>> {
+        let runtime = self.runtime.blocking_lock();
+        self.check_runtime_id(runtime.runtime_id.as_deref())?;
+        Ok(runtime)
+    }
     pub(crate) async fn bind_current_runtime(&self) -> Result<Self> {
         let runtime = self.runtime_checked().await?;
         let mut state = self.clone();
@@ -785,6 +802,13 @@ impl ServerState {
 
     pub(crate) async fn tracy_capture_checked(&self) -> Result<MutexGuard<'_, TracyCaptureState>> {
         let capture = self.tracy_capture().await;
+        self.check_runtime_id(capture.runtime_id.as_deref())?;
+        Ok(capture)
+    }
+    pub(crate) fn tracy_capture_blocking_checked(
+        &self,
+    ) -> Result<MutexGuard<'_, TracyCaptureState>> {
+        let capture = self.tracy_capture.blocking_lock();
         self.check_runtime_id(capture.runtime_id.as_deref())?;
         Ok(capture)
     }
@@ -841,12 +865,62 @@ impl ServerState {
         &self,
         work: impl FnOnce() -> Result<T> + Send + 'static,
     ) -> Result<T> {
-        let permit = self.asset_jobs.clone().acquire_owned().await?;
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            work()
-        })
-        .await?
+        self.run_blocking_job(work).await
+    }
+
+    pub(crate) async fn run_blocking_job<T: Send + 'static>(
+        &self,
+        work: impl FnOnce() -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        self.blocking_work.run(work).await
+    }
+
+    pub(crate) async fn run_request_job<T: Send + 'static>(
+        &self,
+        context: &crate::tools::ToolExecutionContext,
+        work: impl FnOnce() -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        context.checkpoint()?;
+        let control = context.clone();
+        let job = self.blocking_work.run_tracked(
+            move || {
+                control.checkpoint()?;
+                work()
+            },
+            Some(context.worker_completions()),
+        );
+        tokio::time::timeout_at(context.total_deadline(), job)
+            .await
+            .map_err(|_| anyhow::anyhow!("request_timed_out"))?
+    }
+
+    pub(crate) async fn drain_blocking_jobs(&self, deadline: tokio::time::Instant) -> Result<()> {
+        self.blocking_work.drain(deadline).await
+    }
+
+    pub(crate) async fn run_mutation_job<T: Send + 'static>(
+        &self,
+        context: &crate::tools::ToolExecutionContext,
+        work: impl FnOnce() -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        context.checkpoint()?;
+        let control = context.clone();
+        // Admission consumes useful-work time. Once started, an owner must
+        // observe real publication/cleanup and retain any physical outcome.
+        self.blocking_work
+            .run_admitted(
+                move || {
+                    control.checkpoint()?;
+                    work()
+                },
+                Some(context.worker_completions()),
+                Some(context.total_deadline()),
+            )
+            .await
+    }
+
+    pub(crate) fn blocking_pool(&self) -> crate::request::BlockingPool {
+        self.blocking_work.clone()
     }
 
     pub async fn debugger(&self) -> MutexGuard<'_, Option<DebuggerSession>> {
@@ -869,14 +943,14 @@ impl ServerState {
         self.tracy_capture.lock().await
     }
 
-    pub(crate) async fn tracy_publication(&self) -> MutexGuard<'_, ()> {
-        self.tracy_publication.lock().await
+    pub(crate) async fn tracy_publication(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.tracy_publication.clone().lock_owned().await
     }
 
     pub(crate) fn try_tracy_publication(
         &self,
-    ) -> Result<MutexGuard<'_, ()>, tokio::sync::TryLockError> {
-        self.tracy_publication.try_lock()
+    ) -> Result<tokio::sync::OwnedMutexGuard<()>, tokio::sync::TryLockError> {
+        self.tracy_publication.clone().try_lock_owned()
     }
 }
 
@@ -1039,6 +1113,19 @@ mod tests {
         for task in first {
             task.abort();
             let _ = task.await;
+        }
+        let context = crate::tools::ToolExecutionContext::new(
+            crate::CapabilityMode::Development,
+            crate::PathPolicy::new(vec![std::env::current_dir().unwrap()], vec![]).unwrap(),
+        );
+        for tool in ["dm_status", "dm_stop", "dm_server_status"] {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                crate::tools::call_tool(&context, &state, tool, serde_json::json!({})),
+            )
+            .await
+            .expect("control queued behind saturated file workers")
+            .unwrap();
         }
         let fifth = launch();
         let admitted_early = tokio::time::timeout(std::time::Duration::from_millis(100), async {

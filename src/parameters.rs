@@ -4222,6 +4222,61 @@ pub(crate) enum ToolRequest {
 }
 
 impl ToolRequest {
+    /// Wait limits of zero remain immediate probes; they never create a zero
+    /// ingress budget. All useful work shares the original request start.
+    pub(crate) fn total_budget_ms(&self, default_budget_ms: u64) -> u64 {
+        match self {
+            Self::ParseEnvironment(args) => args.timeout_ms.unwrap_or(600_000),
+            Self::Compile(args) => args.timeout_ms.unwrap_or(600_000),
+            Self::RiftCompile(args) => args.timeout_ms.unwrap_or(RIFT_DEFAULT_TIMEOUT_MS),
+            Self::DebugLaunch(args) => args.startup_timeout_ms.unwrap_or(60_000),
+            Self::Run(args) => args.startup_timeout_ms.unwrap_or(300_000),
+            Self::TracyLaunch(args) => args
+                .startup_timeout_ms
+                .unwrap_or(60_000)
+                .saturating_add(args.initialization_timeout_ms.unwrap_or(180_000)),
+            Self::TracyCapture(args) => args.duration_ms.saturating_add(60_000),
+            Self::Topic(args) => args.timeout_ms.unwrap_or(5_000),
+            Self::GenerateDocs(_) => crate::limits::ServerLimits::default().max_docs_duration_ms,
+            _ => default_budget_ms,
+        }
+    }
+
+    pub(crate) fn needs_path_admission(&self) -> bool {
+        use ToolRequest::*;
+        matches!(
+            self,
+            ParseEnvironment(_)
+                | CheckFixtureSync(_)
+                | MemorySummary(_)
+                | MemoryCompare(_)
+                | NativeEvidenceSummary(_)
+                | NativeEvidenceCompare(_)
+                | DocumentSymbols(_)
+                | DmiInfo(_)
+                | CompareDmiStates(_)
+                | FindDmiDuplicates(_)
+                | AuditIcons(_)
+                | ExtractDmi(_)
+                | GenerateDocs(_)
+                | RenderMap(_)
+                | MapInfo(_)
+                | FindOnMap(_)
+                | DiffMaps(_)
+                | Compile(_)
+                | RiftCompile(_)
+                | Run(_)
+                | DebugLaunch(_)
+                | DebugSetBreakpoints(_)
+                | TracyPrepare(_)
+                | TracyLaunch(_)
+                | TracyHotspots(_)
+                | TracyZone(_)
+                | TracyFrameStats(_)
+                | TracyCompare(_)
+        )
+    }
+
     pub(crate) fn snapshot_expectation(&self) -> Option<Option<&str>> {
         match self {
             Self::GetType(args) => Some(args.expected_snapshot.as_deref()),

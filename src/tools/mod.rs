@@ -39,9 +39,16 @@ pub struct ToolExecutionContext {
     private_state: Option<std::sync::Arc<crate::PrivateStateStore>>,
     build_provenance: Option<std::sync::Arc<crate::BuildProvenanceStore>>,
     integrity_recovery: std::sync::Arc<[crate::runtime_integrity::RuntimeIntegritySummary]>,
-    owned_requests:
-        std::sync::Arc<std::sync::Mutex<Vec<std::sync::Weak<tokio::sync::watch::Sender<bool>>>>>,
+    owned_requests: crate::request::CompletionRegistry,
+    request_jobs: crate::request::CompletionRegistry,
+    external_cancelled: Option<std::sync::Arc<dyn Fn() -> bool + Send + Sync>>,
+    request_deadline: Option<tokio::time::Instant>,
+    response_deadline: std::sync::Arc<std::sync::OnceLock<tokio::time::Instant>>,
+    request_id: Option<std::sync::Arc<str>>,
+    progress: Option<tokio::sync::watch::Sender<crate::request::Stage>>,
+    cleanup_request: bool,
     pub(crate) cancellation: Option<tokio::sync::watch::Receiver<bool>>,
+    request_cancellation: Option<std::sync::Arc<tokio::sync::watch::Sender<bool>>>,
     pub(crate) request_started: Option<tokio::time::Instant>,
     request_owner: Option<std::sync::Arc<()>>,
 }
@@ -68,7 +75,15 @@ impl ToolExecutionContext {
             build_provenance: None,
             integrity_recovery: std::sync::Arc::from([]),
             owned_requests: Default::default(),
+            request_jobs: Default::default(),
+            external_cancelled: None,
+            request_deadline: None,
+            response_deadline: Default::default(),
+            request_id: None,
+            progress: None,
+            cleanup_request: false,
             cancellation: None,
+            request_cancellation: None,
             request_started: None,
             request_owner: None,
         }
@@ -132,7 +147,15 @@ impl ToolExecutionContext {
             build_provenance,
             integrity_recovery: std::sync::Arc::from(integrity_recovery),
             owned_requests: Default::default(),
+            request_jobs: Default::default(),
+            external_cancelled: None,
+            request_deadline: None,
+            response_deadline: Default::default(),
+            request_id: None,
+            progress: None,
+            cleanup_request: false,
             cancellation: None,
+            request_cancellation: None,
             request_started: None,
             request_owner: None,
         }
@@ -149,19 +172,50 @@ impl ToolExecutionContext {
         self.mode
     }
 
-    pub(crate) fn cancel_owned_requests(&self) {
-        let mut requests = self
-            .owned_requests
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        requests.retain(|request| {
-            if let Some(request) = request.upgrade() {
-                let _ = request.send(true);
-                true
-            } else {
-                false
-            }
-        });
+    pub(crate) async fn drain_owned_requests(&self, deadline: tokio::time::Instant) -> Result<()> {
+        self.owned_requests.cancel_and_drain(deadline).await
+    }
+
+    pub(crate) fn for_request(
+        &self,
+        started: tokio::time::Instant,
+        id: String,
+        cancelled: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+        progress: Option<tokio::sync::watch::Sender<crate::request::Stage>>,
+    ) -> Self {
+        let mut request = self.clone();
+        request.request_started = Some(started);
+        request.request_id = Some(id.into());
+        request.response_deadline = Default::default();
+        request.external_cancelled = Some(cancelled);
+        request.progress = progress;
+        request
+    }
+
+    pub(crate) fn for_cleanup(&self) -> Self {
+        let mut request = self.clone();
+        request.cleanup_request = true;
+        request.request_started = None;
+        request.request_deadline = None;
+        request.response_deadline = Default::default();
+        request.request_id = None;
+        request.cancellation = None;
+        request.external_cancelled = None;
+        request.progress = None;
+        request
+    }
+
+    pub(crate) fn progress(&self, stage: crate::request::Stage) {
+        if let Some(sender) = &self.progress {
+            sender.send_if_modified(|current| {
+                if stage > *current {
+                    *current = stage;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
     }
 
     pub(crate) fn cancellation(&self) -> Option<tokio::sync::watch::Receiver<bool>> {
@@ -171,6 +225,10 @@ impl ToolExecutionContext {
         self.cancellation
             .as_ref()
             .is_some_and(|receiver| *receiver.borrow())
+            || self
+                .external_cancelled
+                .as_ref()
+                .is_some_and(|cancelled| cancelled())
     }
     pub(crate) fn finalization_reason(
         &self,
@@ -186,13 +244,58 @@ impl ToolExecutionContext {
     }
 
     pub(crate) fn deadline(&self, timeout_ms: u64) -> tokio::time::Instant {
-        self.request_started
+        let deadline = self
+            .request_started
             .unwrap_or_else(tokio::time::Instant::now)
-            + std::time::Duration::from_millis(timeout_ms)
+            + std::time::Duration::from_millis(timeout_ms);
+        self.request_deadline
+            .map_or(deadline, |total| total.min(deadline))
+    }
+
+    pub(crate) fn checkpoint(&self) -> Result<()> {
+        if let Some(reason) = self.finalization_reason(self.total_deadline()) {
+            return Err(anyhow!(reason));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn total_deadline(&self) -> tokio::time::Instant {
+        self.response_deadline
+            .get()
+            .copied()
+            .or(self.request_deadline)
+            .unwrap_or_else(|| self.deadline(300_000))
+    }
+
+    pub(crate) fn worker_completions(&self) -> crate::request::CompletionRegistry {
+        self.request_jobs.clone()
+    }
+
+    pub(crate) async fn admit<T, E: Into<anyhow::Error>>(
+        &self,
+        future: impl std::future::Future<Output = std::result::Result<T, E>>,
+    ) -> Result<T> {
+        self.checkpoint()?;
+        let cancellation = async {
+            if let Some(mut receiver) = self.cancellation() {
+                let _ = receiver.wait_for(|cancelled| *cancelled).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        let result = tokio::select! {
+            biased;
+            _ = cancellation => return Err(anyhow!("request_cancelled")),
+            _ = tokio::time::sleep_until(self.total_deadline()) => return Err(anyhow!("request_timed_out")),
+            result = future => result.map_err(Into::into)?,
+        };
+        self.checkpoint()?;
+        Ok(result)
     }
 
     pub(crate) async fn execution_lease(
         &self,
+        state: &ServerState,
         artifact: &std::path::Path,
         working_directory: &std::path::Path,
         kind: &'static str,
@@ -216,22 +319,25 @@ impl ToolExecutionContext {
         let artifact = artifact.to_owned();
         let working = working_directory.to_owned();
         let request_owner = self.request_owner.clone();
-        let task = tokio::task::spawn_blocking(move || {
-            if tokio::time::Instant::now() >= deadline {
-                return Err(crate::execution_lease::AdmissionError::Other(anyhow!(
-                    "execution admission expired"
-                )));
-            }
-            let mut lease = crate::execution_lease::ExecutionLease::acquire(
-                store, &policy, &artifact, &working, kind,
-            )?;
-            lease.request_owner = request_owner;
-            if tokio::time::Instant::now() >= deadline {
-                return Err(crate::execution_lease::AdmissionError::Other(anyhow!(
-                    "execution admission expired"
-                )));
-            }
-            Ok(lease)
+        let control = self.clone();
+        let task = state.run_request_job(self, move || {
+            Ok((|| {
+                if control.finalization_reason(deadline).is_some() {
+                    return Err(crate::execution_lease::AdmissionError::Other(anyhow!(
+                        "execution admission expired"
+                    )));
+                }
+                let mut lease = crate::execution_lease::ExecutionLease::acquire(
+                    store, &policy, &artifact, &working, kind,
+                )?;
+                lease.request_owner = request_owner;
+                if control.finalization_reason(deadline).is_some() {
+                    return Err(crate::execution_lease::AdmissionError::Other(anyhow!(
+                        "execution admission expired"
+                    )));
+                }
+                Ok(lease)
+            })())
         });
         match tokio::time::timeout_at(deadline, task).await {
             Ok(result) => Ok(result?.map_err(|error| error.result())),
@@ -343,6 +449,46 @@ pub async fn call_tool(
     name: &str,
     args: Value,
 ) -> Result<ToolResult> {
+    let mut execution = context.clone();
+    execution.request_jobs = Default::default();
+    if execution.request_id.is_none() {
+        execution.response_deadline = Default::default();
+    }
+    execution
+        .request_started
+        .get_or_insert_with(tokio::time::Instant::now);
+    let (sender, receiver) = tokio::sync::watch::channel(false);
+    let sender = std::sync::Arc::new(sender);
+    let original = execution.cancellation.clone();
+    let external = execution.external_cancelled.clone();
+    execution.external_cancelled = Some(std::sync::Arc::new(move || {
+        original.as_ref().is_some_and(|receiver| *receiver.borrow())
+            || external.as_ref().is_some_and(|cancelled| cancelled())
+    }));
+    execution.cancellation = Some(receiver);
+    execution.request_cancellation = Some(sender.clone());
+    let mut ownership = RequestOwnership {
+        cancellation: Some(sender),
+        acknowledge: None,
+    };
+    let result = call_tool_inner(&execution, state, name, args).await;
+    ownership.cancellation = None;
+    result
+}
+
+async fn call_tool_inner(
+    context: &ToolExecutionContext,
+    state: &ServerState,
+    name: &str,
+    args: Value,
+) -> Result<ToolResult> {
+    if context.owned_requests.closing() && !context.cleanup_request {
+        return Ok(ToolResult::structured_error(
+            "shutting_down",
+            "server is shutting down",
+            "Retry on a running server.",
+        ));
+    }
     if name == "rift_compile" && !cfg!(windows) {
         return Ok(policy_error(
             "unsupported_platform",
@@ -365,7 +511,7 @@ pub async fn call_tool(
             json!({"tool":name,"mode":match context.mode { CapabilityMode::Analysis => "analysis", CapabilityMode::Development => "development" }}),
         ));
     };
-    let mut args = match (contract.decode)(args) {
+    let args = match (contract.decode)(args) {
         Ok(args) => args,
         Err(error) => {
             return Ok(if matches!(name, "rift_compile" | "dm_generate_docs") {
@@ -375,7 +521,35 @@ pub async fn call_tool(
             })
         }
     };
-    if let Err(error) = contain_arguments(&context.policy, &mut args) {
+    let mut execution = context.clone();
+    execution.request_deadline =
+        Some(context.deadline(args.total_budget_ms(contract.timeout_ms.unwrap_or(300_000))));
+    let _ = execution
+        .response_deadline
+        .set(execution.request_deadline.expect("typed request deadline"));
+    let context = &execution;
+    context.progress(crate::request::Stage::Admission);
+    context.checkpoint()?;
+    let admission_policy = context.policy.clone();
+    let (args, containment, canonical) = if args.needs_path_admission() {
+        state
+            .run_request_job(context, move || {
+                let mut args = args;
+                let containment = contain_arguments(&admission_policy, &mut args);
+                let canonical = if containment.is_ok() {
+                    args.validate_canonical_paths()
+                } else {
+                    Ok(())
+                };
+                Ok((args, containment, canonical))
+            })
+            .await?
+    } else {
+        // Status and stop must stay usable when all file workers are occupied.
+        let canonical = args.validate_canonical_paths();
+        (args, Ok(()), canonical)
+    };
+    if let Err(error) = containment {
         let mut details = json!({
             "path": error.path().display().to_string(),
             "policy_code": error.code(),
@@ -407,13 +581,16 @@ pub async fn call_tool(
             None => result,
         });
     }
-    if let Err(error) = args.validate_canonical_paths() {
+    if let Err(error) = canonical {
         return Ok(error.result());
     }
     // Freeze admission only after strict decoding and path authorization. All
     // downstream snapshot reads on this request view clone the same Arc.
     let snapshot = if let Some(expected) = args.snapshot_expectation() {
-        let snapshot = match state.snapshot().await {
+        let snapshot = match context
+            .admit(async { Ok::<_, anyhow::Error>(state.snapshot().await) })
+            .await?
+        {
             Ok(snapshot) => snapshot,
             Err(_) => {
                 return Ok(ToolResult::structured_error(
@@ -440,13 +617,17 @@ pub async fn call_tool(
     };
     let runtime = if let Some((debugger, expected)) = args.runtime_expectation() {
         let current = if debugger {
-            state
-                .debugger()
-                .await
+            context
+                .admit(async { Ok::<_, anyhow::Error>(state.debugger().await) })
+                .await?
                 .as_ref()
                 .map(|session| session.runtime_id.clone())
         } else {
-            state.runtime().await.runtime_id.clone()
+            context
+                .admit(async { Ok::<_, anyhow::Error>(state.runtime().await) })
+                .await?
+                .runtime_id
+                .clone()
         };
         if let Some(expected) = expected {
             if Some(expected) != current.as_deref() {
@@ -468,23 +649,27 @@ pub async fn call_tool(
     };
     let mut admitted = state.for_request(snapshot, runtime);
     if args.uses_optional_analysis() && admitted.admitted_analysis().is_none() {
-        admitted.freeze_optional_analysis(state.active_snapshot().await);
+        admitted.freeze_optional_analysis(
+            context
+                .admit(async { Ok::<_, anyhow::Error>(state.active_snapshot().await) })
+                .await?,
+        );
     }
     let state = &admitted;
-    if matches!(
-        name,
-        "dm_compile" | "rift_compile" | "dm_run" | "dm_debug_launch" | "dm_tracy_launch"
-    ) {
-        let (sender, receiver) = tokio::sync::watch::channel(false);
-        let sender = std::sync::Arc::new(sender);
-        {
-            let mut requests = context
-                .owned_requests
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            requests.retain(|request| request.strong_count() != 0);
-            requests.push(std::sync::Arc::downgrade(&sender));
-        }
+    let owned = contract.effects.writes_files
+        || contract.effects.spawns_process
+        || contract.effects.destructive
+        || contract.effects.network_loopback
+        || contract.effects.project_behavior;
+    if owned && !context.cleanup_request {
+        let sender = context
+            .request_cancellation
+            .clone()
+            .expect("request cancellation owner");
+        let receiver = context
+            .cancellation()
+            .expect("request cancellation receiver");
+        let completion = context.owned_requests.register(Some(sender.clone()))?;
         let (acknowledge, acknowledged) = tokio::sync::oneshot::channel();
         let mut owner = RequestOwnership {
             cancellation: Some(sender),
@@ -500,30 +685,105 @@ pub async fn call_tool(
         let name = name.to_owned();
         let (response, result) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
-            let launch = !matches!(name.as_str(), "dm_compile" | "rift_compile");
-            let mut cancellation = receiver;
-            let outcome = if launch {
-                tokio::select! {
-                    biased;
-                    _ = cancellation.wait_for(|cancelled| *cancelled) => Ok(ToolResult::structured_error("cancelled", "launch was cancelled", "Retry as a new operation after cleanup.")),
-                    result = dispatch_tool(&execution, &state, &name, args) => result,
-                }
-            } else {
-                dispatch_tool(&execution, &state, &name, args).await
+            let launch = matches!(
+                name.as_str(),
+                "dm_run" | "dm_debug_launch" | "dm_tracy_launch"
+            );
+            let cancellation = receiver;
+            // The owner never drops launch startup guards to implement useful-
+            // work cancellation. Handlers leave their useful awaits and then
+            // confirm cleanup with their actual process and lease still owned.
+            let mut outcome = dispatch_tool(&execution, &state, &name, args).await;
+            let cancelled = *cancellation.borrow()
+                || execution
+                    .finalization_reason(execution.total_deadline())
+                    .is_some();
+            let mut cleanup_confirmed = match &outcome {
+                Ok(result) => result.outcome.as_ref().is_none_or(|outcome| {
+                    !outcome.recovery_required && !outcome.process_start_uncertain
+                }),
+                Err(error) => error
+                    .downcast_ref::<crate::result::OutcomeError>()
+                    .is_none_or(|error| {
+                        !error.outcome.recovery_required && !error.outcome.process_start_uncertain
+                    }),
             };
-            let cancelled = *cancellation.borrow();
             if cancelled && launch {
-                if let Err(error) = cleanup_owned_launch(&execution, &state, &name).await {
-                    let _ = response.send(Err(error));
-                    return;
+                match cleanup_owned_launch(&execution, &state, &name).await {
+                    Ok(Some(cleanup)) => {
+                        outcome = merge_launch_cleanup(outcome, cleanup);
+                        cleanup_confirmed = true;
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        let mut essential = match &outcome {
+                            Ok(result) => result.outcome.as_deref().cloned(),
+                            Err(error) => error
+                                .downcast_ref::<crate::result::OutcomeError>()
+                                .map(|error| error.outcome.clone()),
+                        }
+                        .unwrap_or_default();
+                        essential.cleanup_complete = false;
+                        essential.recovery_required |= essential.operation_ran;
+                        let _ = response.send(finish_dispatch(
+                            &execution,
+                            &state,
+                            Err(crate::result::OutcomeError {
+                                error,
+                                outcome: essential,
+                            }
+                            .into()),
+                        ));
+                        completion.finish(false);
+                        return;
+                    }
                 }
             }
-            let delivered = response.send(outcome).is_ok();
+            if let Err(error) = execution
+                .request_jobs
+                .cancel_and_drain(tokio::time::Instant::now() + std::time::Duration::from_secs(5))
+                .await
+            {
+                cleanup_confirmed = false;
+                outcome = match outcome {
+                    Ok(result) => {
+                        Ok({
+                            let mut failure = ToolResult::structured_error("cleanup_incomplete", error.to_string(), "Wait for owned work to end before retrying; inspect recovery state.");
+                            failure.meta = result.meta;
+                            if let Some(mut essential) = result.outcome.map(|outcome| *outcome) {
+                                essential.cleanup_complete = false;
+                                essential.recovery_required |= essential.operation_ran;
+                                failure = failure.with_outcome(essential);
+                            }
+                            failure
+                        })
+                    }
+                    Err(original) => {
+                        let mut essential = original
+                            .downcast_ref::<crate::result::OutcomeError>()
+                            .map(|error| error.outcome.clone())
+                            .unwrap_or_default();
+                        essential.cleanup_complete = false;
+                        essential.recovery_required |= essential.operation_ran;
+                        Err(crate::result::OutcomeError {
+                            error: original.context(error.to_string()),
+                            outcome: essential,
+                        }
+                        .into())
+                    }
+                };
+            }
+            let delivered = response
+                .send(finish_dispatch(&execution, &state, outcome))
+                .is_ok();
             // Retain the owner until the caller acknowledges delivery. A caller
             // dropped after launch completed still requires owned cleanup.
             if launch && !cancelled && (!delivered || acknowledged.await.is_err()) {
-                let _ = cleanup_owned_launch(&execution, &state, &name).await;
+                cleanup_confirmed &= cleanup_owned_launch(&execution, &state, &name)
+                    .await
+                    .is_ok();
             }
+            completion.finish(cleanup_confirmed);
         });
         let result = result.await?;
         owner.cancellation = None;
@@ -532,11 +792,28 @@ pub async fn call_tool(
         }
         return result;
     }
-    let result = match dispatch_tool(context, state, name, args).await {
+    let dispatch = dispatch_tool(context, state, name, args);
+    let result = if context.cleanup_request {
+        dispatch.await
+    } else {
+        tokio::time::timeout_at(context.total_deadline(), dispatch)
+            .await
+            .map_err(|_| anyhow!("request_timed_out"))?
+    };
+    finish_dispatch(context, state, result)
+}
+
+fn finish_dispatch(
+    context: &ToolExecutionContext,
+    state: &ServerState,
+    result: Result<ToolResult>,
+) -> Result<ToolResult> {
+    let result = match result {
         Err(error) if error.is::<crate::identity::StaleIdentity>() => Ok(error
             .downcast_ref::<crate::identity::StaleIdentity>()
             .expect("checked error type")
             .result()),
+        Ok(result) => Ok(checked_result(context, result)),
         result => result,
     };
     result
@@ -552,6 +829,31 @@ pub async fn call_tool(
             Some(snapshot) => result.with_analysis(snapshot.identity()),
             None => result,
         })
+}
+
+pub(crate) fn checked_result(context: &ToolExecutionContext, result: ToolResult) -> ToolResult {
+    let deadline = context.total_deadline();
+    let Some(reason) = context.finalization_reason(deadline) else {
+        return result;
+    };
+    if result.is_error == Some(true)
+        && result.structured_content.as_ref().is_some_and(|data| {
+            data["finalization_interruption"].as_str() == Some(reason)
+                || data["code"].as_str() == Some(reason)
+        })
+    {
+        return result;
+    }
+    let mut interrupted = ToolResult::structured_error(
+        reason,
+        "request useful-work budget ended",
+        "Retry as a new request after cleanup.",
+    );
+    interrupted.meta = result.meta;
+    if let Some(outcome) = result.outcome.map(|outcome| *outcome) {
+        interrupted = interrupted.with_outcome(outcome);
+    }
+    interrupted
 }
 
 struct RequestOwnership {
@@ -570,7 +872,13 @@ async fn cleanup_owned_launch(
     context: &ToolExecutionContext,
     state: &ServerState,
     name: &str,
-) -> Result<()> {
+) -> Result<Option<crate::result::MutationOutcome>> {
+    // Setup can outlive its cancelled caller; wait for registration/publication
+    // before looking for the owned runtime to clean up.
+    context
+        .request_jobs
+        .cancel_and_drain(tokio::time::Instant::now() + std::time::Duration::from_secs(5))
+        .await?;
     let _lifecycle = state.lifecycle().await;
     let owner = context
         .request_owner
@@ -584,7 +892,10 @@ async fn cleanup_owned_launch(
             .and_then(|session| session.execution_lease.as_ref())
             .is_some_and(|lease| lease.belongs_to(owner));
         if owns {
-            debugger::stop_with_lifecycle(state).await?;
+            return Ok(debugger::stop_with_lifecycle(state)
+                .await?
+                .outcome
+                .map(|outcome| *outcome));
         }
     } else {
         let owns = state
@@ -595,13 +906,47 @@ async fn cleanup_owned_launch(
             .is_some_and(|lease| lease.belongs_to(owner));
         if owns {
             if name == "dm_tracy_launch" {
-                tracy::stop_with_lifecycle(context, state).await?;
+                return Ok(tracy::stop_with_lifecycle(context, state)
+                    .await?
+                    .outcome
+                    .map(|outcome| *outcome));
             } else {
-                runtime::stop_with_lifecycle(state).await?;
+                return Ok(runtime::stop_with_lifecycle(state)
+                    .await?
+                    .outcome
+                    .map(|outcome| *outcome));
             }
         }
     }
-    Ok(())
+    Ok(None)
+}
+
+fn merge_launch_cleanup(
+    result: Result<ToolResult>,
+    cleanup: crate::result::MutationOutcome,
+) -> Result<ToolResult> {
+    let mut essential = match &result {
+        Ok(result) => result.outcome.as_deref().cloned(),
+        Err(error) => error
+            .downcast_ref::<crate::result::OutcomeError>()
+            .map(|error| error.outcome.clone()),
+    }
+    .unwrap_or_default();
+    essential.operation_ran |= cleanup.operation_ran;
+    essential.process_started |= cleanup.process_started || cleanup.process_stopped;
+    essential.process_stopped |= cleanup.process_stopped;
+    essential.cleanup_complete = cleanup.cleanup_complete;
+    essential.recovery_required = cleanup.recovery_required;
+    essential.runtime_id = essential.runtime_id.or(cleanup.runtime_id);
+    essential.outputs.extend(cleanup.outputs);
+    match result {
+        Ok(result) => Ok(result.with_outcome(essential)),
+        Err(error) => Err(crate::result::OutcomeError {
+            error,
+            outcome: essential,
+        }
+        .into()),
+    }
 }
 
 async fn dispatch_tool(
@@ -615,7 +960,7 @@ async fn dispatch_tool(
         // Parsing tools
         ToolRequest::ServerStatus(_args) => server_status::status(context, state).await,
         ToolRequest::ParseEnvironment(args) => {
-            parse::parse_environment_with_policy(state, args, context.policy()).await
+            parse::parse_environment_controlled(context, state, args).await
         }
         ToolRequest::CheckFixtureSync(args) => fixture::check_sync(context, state, args).await,
         ToolRequest::MemorySummary(args) => {
@@ -664,20 +1009,24 @@ async fn dispatch_tool(
 
         ToolRequest::DebugLaunch(args) => debugger::launch(context, state, args).await,
         ToolRequest::DebugStop(_args) => debugger::stop(state).await,
-        ToolRequest::DebugSetBreakpoints(args) => debugger::set_breakpoints(state, args).await,
+        ToolRequest::DebugSetBreakpoints(args) => {
+            debugger::set_breakpoints(context, state, args).await
+        }
         ToolRequest::DebugSetFunctionBreakpoints(args) => {
-            debugger::set_function_breakpoints(state, args).await
+            debugger::set_function_breakpoints(context, state, args).await
         }
         ToolRequest::DebugSetExceptionBreakpoints(args) => {
-            debugger::set_exception_breakpoints(state, args).await
+            debugger::set_exception_breakpoints(context, state, args).await
         }
-        ToolRequest::DebugControl(args) => debugger::control(state, args).await,
+        ToolRequest::DebugControl(args) => debugger::control(context, state, args).await,
         ToolRequest::DebugThreads(_args) => debugger::threads(state).await,
         ToolRequest::DebugStackTrace(args) => debugger::stack_trace(state, args).await,
         ToolRequest::DebugScopes(args) => debugger::scopes(state, args).await,
         ToolRequest::DebugVariables(args) => debugger::variables(state, args).await,
-        ToolRequest::DebugEvaluate(args) => debugger::evaluate(state, args).await,
-        ToolRequest::DebugMemory(args) => debugger::memory(state, args.into_control()).await,
+        ToolRequest::DebugEvaluate(args) => debugger::evaluate(context, state, args).await,
+        ToolRequest::DebugMemory(args) => {
+            debugger::memory(context, state, args.into_control()).await
+        }
         ToolRequest::DebugExceptionInfo(_args) => debugger::exception_info(state).await,
         ToolRequest::DebugSource(args) => debugger::source(state, args).await,
         ToolRequest::DebugWaitForEvent(args) => debugger::wait_for_event(state, args).await,
@@ -687,8 +1036,8 @@ async fn dispatch_tool(
         ToolRequest::WaitForOutput(args) => runtime::wait_for_output(state, args).await,
         ToolRequest::Stop(args) => runtime::stop(state, args).await,
         ToolRequest::Status(args) => runtime::status(state, args).await,
-        ToolRequest::Topic(args) => runtime::topic(state, args).await,
-        ToolRequest::TracyPrepare(args) => tracy::prepare(context, args).await,
+        ToolRequest::Topic(args) => runtime::topic_controlled(context, state, args).await,
+        ToolRequest::TracyPrepare(args) => tracy::prepare(context, state, args).await,
         ToolRequest::TracyLaunch(args) => tracy::launch(context, state, args).await,
         ToolRequest::TracyCapture(args) => tracy::capture(context, state, args).await,
         ToolRequest::TracyStatus(_args) => tracy::status(state).await,
@@ -831,12 +1180,30 @@ fn contain_arguments(
     Ok(())
 }
 
-pub(crate) fn require_launchable_artifact(
+pub(crate) async fn require_launchable_artifact_owned(
+    context: &ToolExecutionContext,
+    state: &ServerState,
+    dmb_path: &std::path::Path,
+    require_verified: bool,
+) -> Result<std::result::Result<crate::LaunchProvenance, ToolResult>> {
+    let control = context.clone();
+    let path = dmb_path.to_owned();
+    state
+        .run_request_job(context, move || {
+            control.progress(crate::request::Stage::Capture);
+            let decision = require_launchable_artifact(&control, &path, require_verified);
+            control.checkpoint()?;
+            Ok(decision)
+        })
+        .await
+}
+
+fn require_launchable_artifact(
     context: &ToolExecutionContext,
     dmb_path: &std::path::Path,
     require_verified: bool,
 ) -> std::result::Result<crate::LaunchProvenance, ToolResult> {
-    let dmb = match crate::FileIdentity::capture(dmb_path) {
+    let dmb = match crate::FileIdentity::capture_checked(dmb_path, || context.checkpoint()) {
         Ok(dmb) => dmb,
         Err(error) => {
             return Err(structured_error(
@@ -848,7 +1215,9 @@ pub(crate) fn require_launchable_artifact(
         }
     };
     let decision = match context.build_provenance() {
-        Some(store) => match store.evaluate_launch(dmb_path, require_verified) {
+        Some(store) => match store
+            .evaluate_launch_checked(dmb_path, require_verified, || context.checkpoint())
+        {
             Ok(decision) => decision,
             Err(error) => {
                 return Err(structured_error(
@@ -920,6 +1289,42 @@ fn policy_error(
 mod tests {
     use super::get_tool_definitions;
     use serde_json::json;
+
+    #[test]
+    fn response_expiry_preserves_completed_operation_facts() {
+        let mut context = super::ToolExecutionContext::new(
+            crate::CapabilityMode::Analysis,
+            crate::PathPolicy::new(vec![std::env::current_dir().unwrap()], vec![]).unwrap(),
+        );
+        context.request_deadline =
+            Some(tokio::time::Instant::now() - std::time::Duration::from_millis(1));
+        for (succeeded, failure) in [(true, None), (false, Some("compiler_failed"))] {
+            let physical = crate::result::MutationOutcome {
+                operation_ran: true,
+                operation_succeeded: Some(succeeded),
+                failure_code: failure.map(str::to_owned),
+                process_started: true,
+                process_stopped: true,
+                cleanup_complete: true,
+                attempt_id: Some("retained-attempt".into()),
+                ..Default::default()
+            };
+            let result = super::checked_result(
+                &context,
+                crate::mcp::ToolResult::text("ready").with_outcome(physical.clone()),
+            );
+            assert_eq!(result.is_error, Some(true));
+            assert_eq!(
+                serde_json::to_value(result.outcome.as_deref()).unwrap(),
+                serde_json::to_value(Some(&physical)).unwrap()
+            );
+            assert!(result
+                .structured_content
+                .unwrap()
+                .to_string()
+                .contains("request_timed_out"));
+        }
+    }
 
     #[tokio::test]
     async fn admitted_snapshot_answers_and_metadata_survive_concurrent_reparse() {

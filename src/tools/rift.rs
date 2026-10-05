@@ -30,6 +30,7 @@ pub enum BuildEvidence {
     InsufficientEvidence,
 }
 
+#[derive(Clone)]
 struct ValidatedProject {
     root: PathBuf,
     dme: PathBuf,
@@ -180,22 +181,12 @@ pub async fn compile(
     }
 
     let deadline = context.deadline(timeout_ms);
-    let mut lease = match context
-        .execution_lease(&project.dmb, &project.root, "rift_compile", deadline)
+    let lease = match context
+        .execution_lease(state, &project.dmb, &project.root, "rift_compile", deadline)
         .await?
     {
         Ok(lease) => lease,
         Err(result) => return Ok(result),
-    };
-    let before = match capture_artifacts(&project) {
-        Ok(artifacts) => artifacts,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "insufficient_evidence",
-                error.to_string(),
-                "Restore canonical contained artifact paths and retry.",
-            ));
-        }
     };
     let command_processor = match system_command_processor() {
         Ok(command_processor) => command_processor,
@@ -227,35 +218,99 @@ pub async fn compile(
             ));
         }
     };
-    let mut prepared = PreparedBuild::capture(
-        context.policy(),
-        Some(&snapshot),
-        fixture.as_ref(),
-        &project.dme,
-        &compiler,
-        vec![
-            "/D".to_owned(),
-            "/S".to_owned(),
-            "/C".to_owned(),
-            "call".to_owned(),
-            script_argument.to_string_lossy().into_owned(),
-        ],
-        command_path(&project.root),
-    )?;
-    prepared.reason = Some("rift_compiler_closure_not_proved");
-    for path in [&project.rift_build, &project.human_build] {
-        prepared.inputs.push(BuildInputIdentity::capture_authorized(
-            context.policy(),
-            &project.root,
-            path,
-            "build_entrypoint",
-        )?);
-    }
+    let initial_control = context.clone();
+    let initial_project = project.clone();
+    let initial_compiler = compiler.clone();
+    let initial_fixture = fixture.clone();
+    let initial_arguments = vec![
+        "/D".to_owned(),
+        "/S".to_owned(),
+        "/C".to_owned(),
+        "call".to_owned(),
+        script_argument.to_string_lossy().into_owned(),
+    ];
+    let (mut lease, before, prepared, attempt) = state
+        .run_mutation_job(context, move || {
+            let checkpoint = || initial_control.checkpoint();
+            initial_control.progress(crate::request::Stage::Capture);
+            let before = capture_artifacts_checked(&initial_project, checkpoint)?;
+            let mut prepared = PreparedBuild::capture_checked(
+                initial_control.policy(),
+                Some(&snapshot),
+                initial_fixture.as_ref(),
+                &initial_project.dme,
+                &initial_compiler,
+                initial_arguments,
+                command_path(&initial_project.root),
+                checkpoint,
+            )?;
+            prepared.reason = Some("rift_compiler_closure_not_proved");
+            for path in [&initial_project.rift_build, &initial_project.human_build] {
+                checkpoint()?;
+                prepared.inputs.push(BuildInputIdentity::capture_authorized(
+                    initial_control.policy(),
+                    &initial_project.root,
+                    path,
+                    "build_entrypoint",
+                )?);
+            }
+            let attempt = initial_control
+                .build_provenance()
+                .map(|store| {
+                    store.begin_attempt_checked(
+                        &initial_project.dmb,
+                        prepared.inputs.clone(),
+                        checkpoint,
+                    )
+                })
+                .transpose()?;
+            Ok((lease, before, prepared, attempt))
+        })
+        .await?;
     let mut output = output::BuildOutput::new(response.diagnostic_limit());
-    let attempt = context
-        .build_provenance()
-        .map(|store| store.begin_attempt(&project.dmb, prepared.inputs.clone()))
-        .transpose()?;
+    if let Some(code) = context.finalization_reason(deadline) {
+        let control = context.clone();
+        return state
+            .run_blocking_job(move || {
+                let mut essential = crate::result::MutationOutcome {
+                    operation_ran: attempt.is_some(),
+                    operation_succeeded: Some(false),
+                    failure_code: Some(code.to_owned()),
+                    attempt_id: attempt.as_ref().map(|attempt| attempt.attempt_id.clone()),
+                    action: Some("rift_pre_spawn".into()),
+                    cleanup_complete: true,
+                    ..Default::default()
+                };
+                let cleanup = (|| -> Result<()> {
+                    if let (Some(store), Some(mut attempt)) = (control.build_provenance(), attempt)
+                    {
+                        attempt.outcome = BuildAttemptOutcome::Interrupted {
+                            code: code.to_owned(),
+                        };
+                        store.finish_attempt(&attempt, None)?;
+                    }
+                    lease.finish()?;
+                    Ok(())
+                })();
+                if let Err(error) = cleanup {
+                    essential.cleanup_complete = false;
+                    essential.recovery_required = true;
+                    return Err(crate::result::OutcomeError {
+                        error,
+                        outcome: essential,
+                    }
+                    .into());
+                }
+                Ok(ToolResult::structured_error(
+                    code,
+                    "full build ended before process spawn",
+                    "Retry after cleanup.",
+                )
+                .with_outcome(essential))
+            })
+            .await;
+    }
+    context.progress(crate::request::Stage::Execution);
     lease.mark_writer_started();
     let outcome = match run_owned_process_observed(
         ProcessSpec {
@@ -317,47 +372,83 @@ pub async fn compile(
     if let Some(warning) = outcome.network_audit.warning.clone() {
         warnings.push(warning);
     }
-    let after = match capture_artifacts(&project) {
-        Ok(artifacts) => artifacts,
-        Err(error) => {
-            return Ok(ToolResult::structured_error(
-                "insufficient_evidence",
-                error.to_string(),
-                "Restore canonical contained build artifacts and rerun the full build.",
+    let context = context.clone();
+    state
+        .run_blocking_job(move || {
+            context.progress(crate::request::Stage::Evidence);
+            let after = match (|| -> Result<_> {
+                Ok(ArtifactPair {
+                    dmb: ArtifactSnapshot::capture_after(&project.root, &project.dmb, || {
+                        context.checkpoint()
+                    })?,
+                    rsc: ArtifactSnapshot::capture_after(&project.root, &project.rsc, || {
+                        context.checkpoint()
+                    })?,
+                })
+            })() {
+                Ok(artifacts) => artifacts,
+                Err(error) => {
+                    return Ok(ToolResult::structured_error(
+                        "insufficient_evidence",
+                        error.to_string(),
+                        "Restore canonical contained build artifacts and rerun the full build.",
+                    )
+                    .with_outcome(crate::result::MutationOutcome {
+                        cleanup_complete: false,
+                        recovery_required: true,
+                        ..executed
+                    }));
+                }
+            };
+            let analysis = output.finish(
+                outcome.output_complete,
+                outcome.stdout.truncated_bytes == 0 && outcome.stderr.truncated_bytes == 0,
+            );
+            let result = classify_result(
+                &context,
+                deadline,
+                &prepared,
+                attempt,
+                &profile,
+                &project,
+                generation,
+                &params,
+                timeout_ms,
+                idle_timeout_ms,
+                timeout_policy,
+                before,
+                after,
+                outcome,
+                analysis,
+                response,
+                warnings,
             )
-            .with_outcome(executed));
-        }
-    };
-    let analysis = output.finish(
-        outcome.output_complete,
-        outcome.stdout.truncated_bytes == 0 && outcome.stderr.truncated_bytes == 0,
-    );
-    let result = classify_result(
-        context,
-        deadline,
-        &prepared,
-        attempt,
-        &profile,
-        &project,
-        generation,
-        &params,
-        timeout_ms,
-        idle_timeout_ms,
-        timeout_policy,
-        before,
-        after,
-        outcome,
-        analysis,
-        response,
-        warnings,
-    )?;
-    lease
-        .finish()
-        .map_err(|error| crate::result::OutcomeError {
-            error,
-            outcome: result.outcome.as_deref().cloned().unwrap_or_default(),
-        })?;
-    Ok(result)
+            .map_err(|error| {
+                let mut essential = error
+                    .downcast_ref::<crate::result::OutcomeError>()
+                    .map(|error| error.outcome.clone())
+                    .unwrap_or_default();
+                essential.cleanup_complete = false;
+                essential.recovery_required = true;
+                crate::result::OutcomeError {
+                    error,
+                    outcome: essential,
+                }
+            })?;
+            context.progress(crate::request::Stage::Publication);
+            lease
+                .finish()
+                .map_err(|error| crate::result::OutcomeError {
+                    error,
+                    outcome: crate::result::MutationOutcome {
+                        cleanup_complete: false,
+                        recovery_required: true,
+                        ..result.outcome.as_deref().cloned().unwrap_or_default()
+                    },
+                })?;
+            Ok(result)
+        })
+        .await
 }
 
 fn validate_project(
@@ -403,10 +494,13 @@ fn require_direct_root_file(root: &Path, path: &Path, expected_name: &str) -> Re
     Ok(())
 }
 
-fn capture_artifacts(project: &ValidatedProject) -> Result<ArtifactPair> {
+fn capture_artifacts_checked(
+    project: &ValidatedProject,
+    checkpoint: impl Fn() -> Result<()>,
+) -> Result<ArtifactPair> {
     Ok(ArtifactPair {
-        dmb: ArtifactSnapshot::capture(&project.root, &project.dmb)?,
-        rsc: ArtifactSnapshot::capture(&project.root, &project.rsc)?,
+        dmb: ArtifactSnapshot::capture_checked(&project.root, &project.dmb, &checkpoint)?,
+        rsc: ArtifactSnapshot::capture_checked(&project.root, &project.rsc, &checkpoint)?,
     })
 }
 
@@ -776,7 +870,19 @@ fn record_rift_provenance(
         code
     };
     let interruption = store.finish_attempt_checked(&attempt, None, checkpoint)?;
-    let decision = store.evaluate_launch(&after.dmb.path, false)?;
+    let evaluated = store.evaluate_launch_checked(&after.dmb.path, false, || context.checkpoint());
+    let interruption = interruption.or_else(checkpoint);
+    let decision = match evaluated {
+        Ok(decision) => decision,
+        Err(_) if interruption.is_some() => {
+            return Ok(json!({
+                "status":"unverified", "record_id":null, "attempt_id":attempt.attempt_id,
+                "reasons":[{"code":interruption}], "retained_dmb_sha256":after.dmb.sha256,
+                "interruption":interruption,
+            }))
+        }
+        Err(error) => return Err(error),
+    };
     let reasons = if interruption.is_some()
         || matches!(
             evidence,
@@ -805,7 +911,7 @@ fn artifact_changed(before: &ArtifactSnapshot, after: &ArtifactSnapshot) -> bool
         && (!before.exists
             || before.size != after.size
             || before.modified_unix_ms != after.modified_unix_ms
-            || before.sha256 != after.sha256)
+            || (after.sha256.is_some() && before.sha256 != after.sha256))
 }
 
 fn parse_rift_result(output: &str) -> Result<Option<RiftResultRecord>, &'static str> {

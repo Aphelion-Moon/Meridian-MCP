@@ -45,6 +45,7 @@ pub async fn launch(
     let require_verified = args.require_verified_provenance.unwrap_or(false);
     let mut lease = match context
         .execution_lease(
+            state,
             &dmb_path,
             dmb_path
                 .parent()
@@ -58,7 +59,9 @@ pub async fn launch(
         Err(result) => return Ok(result),
     };
     let launch_provenance =
-        match super::require_launchable_artifact(context, &dmb_path, require_verified) {
+        match super::require_launchable_artifact_owned(context, state, &dmb_path, require_verified)
+            .await?
+        {
             Ok(provenance) => provenance,
             Err(result) => return Ok(result),
         };
@@ -109,6 +112,8 @@ pub async fn launch(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    context.checkpoint()?;
+    context.progress(crate::request::Stage::Execution);
     lease.mark_writer_started();
     let (mut process, containment) = crate::process::spawn_runtime_process(&mut command)?;
     let mut startup = DebuggerStartup {
@@ -123,9 +128,9 @@ pub async fn launch(
         recovery_required: true,
         ..Default::default()
     };
-    let handshake=async {
-    let limits = ServerLimits::default();
-    let accepted = tokio::time::timeout(
+    let handshake = async {
+        let limits = ServerLimits::default();
+        let accepted = tokio::time::timeout(
         Duration::from_millis(args.startup_timeout_ms.unwrap_or(limits.max_debug_startup_ms)),
         async {
             tokio::select! {
@@ -135,53 +140,54 @@ pub async fn launch(
         },
     )
     .await;
-    let (stream, peer) = match accepted {
-        Ok(Ok(value)) if value.1.ip().is_loopback() => value,
-        Ok(Ok(_)) => {
-            let _ = process.kill().await;
-            return Err(anyhow!("debugger rejected a non-loopback connection"));
-        }
-        Ok(Err(error)) => {
-            let _ = process.kill().await;
-            return Err(error);
-        }
-        Err(_) => {
-            let _ = process.kill().await;
-            return Err(anyhow!("debugger startup timed out"));
-        }
-    };
-    let _ = peer;
-    let mut connection = AuxConnection::new(
-        stream,
-        limits.max_debug_message_bytes,
-        Duration::from_millis(limits.max_debug_request_ms),
-    );
-    let stddef_source = match connection.request(AuxRequest::StdDef).await? {
-        AuxResponse::StdDef(source) => source,
-        response => return Err(anyhow!("unexpected StdDef response: {response:?}")),
-    };
-    if !matches!(
-        connection.request(AuxRequest::Configured).await?,
-        AuxResponse::Ack
-    ) {
-        let _ = process.kill().await;
-        return Err(anyhow!("debugger configuration was not acknowledged"));
-    }
-    if memory_profile {
-        let response = connection
-            .request(AuxRequest::Eval {
-                frame_id: None,
-                command: "#meridian_memory_v1 {\"action\":\"status\"}".into(),
-                context: Some("repl".into()),
-            })
-            .await?;
-        let AuxResponse::Eval(response) = response else {
-            return Err(anyhow!("Native memory capability handshake failed"));
+        let (stream, peer) = match accepted {
+            Ok(Ok(value)) if value.1.ip().is_loopback() => value,
+            Ok(Ok(_)) => {
+                let _ = process.kill().await;
+                return Err(anyhow!("debugger rejected a non-loopback connection"));
+            }
+            Ok(Err(error)) => {
+                let _ = process.kill().await;
+                return Err(error);
+            }
+            Err(_) => {
+                let _ = process.kill().await;
+                return Err(anyhow!("debugger startup timed out"));
+            }
         };
-        crate::native_memory::parse_response(&response.value)?;
-    }
-    Ok::<_,anyhow::Error>((connection,stddef_source))
-    }.await;
+        let _ = peer;
+        let mut connection = AuxConnection::new(
+            stream,
+            limits.max_debug_message_bytes,
+            Duration::from_millis(limits.max_debug_request_ms),
+        );
+        let stddef_source = match connection.request(AuxRequest::StdDef).await? {
+            AuxResponse::StdDef(source) => source,
+            response => return Err(anyhow!("unexpected StdDef response: {response:?}")),
+        };
+        if !matches!(
+            connection.request(AuxRequest::Configured).await?,
+            AuxResponse::Ack
+        ) {
+            let _ = process.kill().await;
+            return Err(anyhow!("debugger configuration was not acknowledged"));
+        }
+        if memory_profile {
+            let response = connection
+                .request(AuxRequest::Eval {
+                    frame_id: None,
+                    command: "#meridian_memory_v1 {\"action\":\"status\"}".into(),
+                    context: Some("repl".into()),
+                })
+                .await?;
+            let AuxResponse::Eval(response) = response else {
+                return Err(anyhow!("Native memory capability handshake failed"));
+            };
+            crate::native_memory::parse_response(&response.value)?;
+        }
+        Ok::<_, anyhow::Error>((connection, stddef_source))
+    };
+    let handshake = context.admit(handshake).await;
     let (connection, stddef_source) = match handshake {
         Ok(value) => value,
         Err(error) => {
@@ -193,8 +199,20 @@ pub async fn launch(
             essential.cleanup_complete =
                 crate::process::wait_for_cleanup(&containment).await.is_ok();
             if essential.cleanup_complete {
-                if let Some(lease) = startup.lease.as_mut() {
-                    essential.cleanup_complete = lease.finish().is_ok();
+                if let Some(mut lease) = startup.lease.take() {
+                    let (result, lease) = state
+                        .run_blocking_job(move || Ok((lease.finish(), lease)))
+                        .await
+                        .map_err(|error| {
+                            let mut outcome = essential.clone();
+                            outcome.cleanup_complete = false;
+                            outcome.recovery_required = true;
+                            crate::result::OutcomeError { error, outcome }
+                        })?;
+                    essential.cleanup_complete = result.is_ok();
+                    if result.is_err() {
+                        startup.lease = Some(lease);
+                    }
                 }
                 if essential.cleanup_complete {
                     startup.lease = None;
@@ -312,7 +330,7 @@ pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResul
     let launch_provenance = session.launch_provenance.clone();
     let runtime_id = session.runtime_id.clone();
     let metadata = debugger_metadata(session);
-    session.stop().await?;
+    session.stop_with_pool(Some(state.blocking_pool())).await?;
     *slot = None;
     Ok(json_success(
         metadata,
@@ -365,10 +383,24 @@ fn debugger_metadata(session: &DebuggerSession) -> ToolMetadata {
 }
 
 async fn request(state: &ServerState, request: AuxRequest) -> Result<(ToolMetadata, AuxResponse)> {
-    let mut slot = state.debugger_checked().await?;
+    request_controlled(None, state, request).await
+}
+
+async fn request_controlled(
+    context: Option<&ToolExecutionContext>,
+    state: &ServerState,
+    request: AuxRequest,
+) -> Result<(ToolMetadata, AuxResponse)> {
+    let mut slot = match context {
+        Some(context) => context.admit(state.debugger_checked()).await?,
+        None => state.debugger_checked().await?,
+    };
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
+    if let Some(context) = context {
+        context.checkpoint()?;
+    }
     let response = session.connection.request(request).await?;
     Ok((debugger_metadata(session), response))
 }
@@ -503,6 +535,7 @@ pub async fn variables(
 }
 
 pub async fn evaluate(
+    execution: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugEvaluateParams,
 ) -> Result<ToolResult> {
@@ -519,7 +552,8 @@ pub async fn evaluate(
     {
         return Err(anyhow!("unknown evaluation context"));
     }
-    let (generation, response) = request(
+    let (generation, response) = request_controlled(
+        Some(execution),
         state,
         AuxRequest::Eval {
             frame_id: args.frame_id.map(|v| v as u32),
@@ -560,17 +594,19 @@ fn validate_expression(expression: &str) -> Result<()> {
 }
 
 pub async fn memory(
+    execution: &ToolExecutionContext,
     state: &ServerState,
     args: crate::native_memory::MemoryControl,
 ) -> Result<ToolResult> {
     let control = args;
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = execution.admit(state.debugger_checked()).await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("No debugger session is active"))?;
     let hash = session.memory_helper_sha256.clone().ok_or_else(|| {
         anyhow!("Launch the debugger with memory_profile: true before using native memory controls")
     })?;
+    execution.checkpoint()?;
     let response = session
         .connection
         .request(AuxRequest::Eval {
@@ -628,15 +664,17 @@ pub async fn memory(
 }
 
 pub async fn set_exception_breakpoints(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugSetExceptionBreakpointsParams,
 ) -> Result<ToolResult> {
     let enabled = args.break_on_runtimes;
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = context.admit(state.debugger_checked()).await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     let generation = debugger_metadata(session);
+    context.checkpoint()?;
     session
         .connection
         .send(AuxRequest::CatchRuntimes {
@@ -658,6 +696,7 @@ pub async fn set_exception_breakpoints(
 }
 
 pub async fn control(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugControlParams,
 ) -> Result<ToolResult> {
@@ -685,7 +724,8 @@ pub async fn control(
         },
         _ => return Err(anyhow!("unknown debugger control action")),
     };
-    let (generation, response) = request(state, request_value).await?;
+    context.checkpoint()?;
+    let (generation, response) = request_controlled(Some(context), state, request_value).await?;
     if !matches!(response, AuxResponse::Ack) {
         return Err(anyhow!("debugger control was not acknowledged"));
     }
@@ -704,6 +744,7 @@ pub async fn control(
 }
 
 pub async fn set_function_breakpoints(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugSetFunctionBreakpointsParams,
 ) -> Result<ToolResult> {
@@ -729,10 +770,11 @@ pub async fn set_function_breakpoints(
             condition,
         ));
     }
-    replace_breakpoints(state, desired).await
+    replace_breakpoints_controlled(Some(context), state, desired).await
 }
 
 pub async fn set_breakpoints(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugSetBreakpointsParams,
 ) -> Result<ToolResult> {
@@ -742,7 +784,7 @@ pub async fn set_breakpoints(
     if breakpoints.len() > 10_000 {
         return Err(anyhow!("breakpoint limit exceeded"));
     }
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = context.admit(state.debugger_checked()).await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
@@ -756,6 +798,7 @@ pub async fn set_breakpoints(
     }
     let mut desired = Vec::new();
     for breakpoint in breakpoints {
+        context.checkpoint()?;
         let line = breakpoint.line as u32;
         let symbol = snapshot
             .language_index
@@ -791,14 +834,18 @@ pub async fn set_breakpoints(
             breakpoint.condition.clone(),
         ));
     }
-    replace_breakpoints_in_session(session, desired).await
+    replace_breakpoints_in_session(Some(context), session, desired).await
 }
 
-async fn replace_breakpoints(
+async fn replace_breakpoints_controlled(
+    context: Option<&ToolExecutionContext>,
     state: &ServerState,
     desired: Vec<(InstructionRef, Option<String>)>,
 ) -> Result<ToolResult> {
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = match context {
+        Some(context) => context.admit(state.debugger_checked()).await?,
+        None => state.debugger_checked().await?,
+    };
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
@@ -820,10 +867,14 @@ async fn replace_breakpoints(
             .into());
         }
     }
-    replace_breakpoints_in_session(session, desired).await
+    if let Some(context) = context {
+        context.checkpoint()?;
+    }
+    replace_breakpoints_in_session(context, session, desired).await
 }
 
 async fn replace_breakpoints_in_session(
+    context: Option<&ToolExecutionContext>,
     session: &mut DebuggerSession,
     desired: Vec<(InstructionRef, Option<String>)>,
 ) -> Result<ToolResult> {
@@ -844,6 +895,14 @@ async fn replace_breakpoints_in_session(
         ..Default::default()
     };
     for instruction in removed {
+        if let Some(context) = context {
+            context
+                .checkpoint()
+                .map_err(|error| crate::result::OutcomeError {
+                    error,
+                    outcome: essential.clone(),
+                })?;
+        }
         let response = session
             .connection
             .request(AuxRequest::BreakpointUnset {
@@ -868,6 +927,14 @@ async fn replace_breakpoints_in_session(
     let mut results = Vec::new();
     for (index, (instruction, condition)) in desired.into_iter().enumerate() {
         essential.failed_request_index = Some(index);
+        if let Some(context) = context {
+            context
+                .checkpoint()
+                .map_err(|error| crate::result::OutcomeError {
+                    error,
+                    outcome: essential.clone(),
+                })?;
+        }
         let response = session
             .connection
             .request(AuxRequest::BreakpointSet {
@@ -1160,6 +1227,7 @@ mod tests {
         assert_eq!(stale.meta.unwrap().analysis, snapshot.identity());
         let bound = state.for_request(None, Some(Some(first)));
         assert!(control(
+            &context,
             &bound,
             crate::parameters::decode(json!({"action":"pause"})).unwrap()
         )

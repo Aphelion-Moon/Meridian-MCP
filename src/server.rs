@@ -28,11 +28,13 @@ pub struct MeridianServer {
 impl MeridianServer {
     /// Finalize the owned runtime after transport shutdown, with a bounded wait.
     pub async fn shutdown(&self) -> Result<()> {
-        self.execution.cancel_owned_requests();
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let owners = self.execution.drain_owned_requests(deadline).await;
+        let cleanup = self.execution.for_cleanup();
+        let sessions = tokio::time::timeout_at(deadline, async {
             if self.state.debugger().await.is_some() {
                 tools::call_tool(
-                    &self.execution,
+                    &cleanup,
                     &self.state,
                     "dm_debug_stop",
                     serde_json::json!({}),
@@ -49,7 +51,7 @@ impl MeridianServer {
                 || self.state.tracy_capture().await.integrity_journal.is_some();
             if tracy_active {
                 tools::call_tool(
-                    &self.execution,
+                    &cleanup,
                     &self.state,
                     "dm_tracy_stop",
                     serde_json::json!({}),
@@ -64,7 +66,11 @@ impl MeridianServer {
             anyhow::anyhow!(
                 "runtime shutdown exceeded five seconds; process-owner containment remains active"
             )
-        })?
+        });
+        let workers = self.state.drain_blocking_jobs(deadline).await;
+        owners?;
+        sessions??;
+        workers
     }
 
     pub fn new(config: ServerConfig) -> Result<Self> {
@@ -177,20 +183,74 @@ impl ServerHandler for MeridianServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
+        let started = tokio::time::Instant::now();
+        let (progress, progress_task) = if let Some(token) = context.meta.get_progress_token() {
+            let (sender, mut receiver) =
+                tokio::sync::watch::channel(crate::request::Stage::Admission);
+            let peer = context.peer.clone();
+            let task = tokio::spawn(async move {
+                let mut last = None;
+                loop {
+                    let stage = *receiver.borrow_and_update();
+                    if last != Some(stage) {
+                        let notification = rmcp::model::ProgressNotificationParam::new(
+                            token.clone(),
+                            stage.step(),
+                        )
+                        .with_message(stage.message());
+                        if !matches!(
+                            tokio::time::timeout(
+                                std::time::Duration::from_millis(150),
+                                peer.notify_progress(notification)
+                            )
+                            .await,
+                            Ok(Ok(()))
+                        ) {
+                            break;
+                        }
+                        last = Some(stage);
+                    }
+                    if receiver.changed().await.is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            });
+            (Some(sender), Some(task))
+        } else {
+            (None, None)
+        };
+        struct ProgressTask(Option<tokio::task::JoinHandle<()>>);
+        impl Drop for ProgressTask {
+            fn drop(&mut self) {
+                if let Some(task) = &self.0 {
+                    task.abort();
+                }
+            }
+        }
+        let _progress_task = ProgressTask(progress_task);
+        let cancellation = context.ct.clone();
+        let execution = self.execution.for_request(
+            started,
+            format!("{}", context.id),
+            Arc::new(move || cancellation.is_cancelled()),
+            progress,
+        );
         let arguments = Value::Object(request.arguments.unwrap_or_default());
-        let result = tools::call_tool(
-            &self.execution,
-            self.state.as_ref(),
-            &request.name,
-            arguments,
-        )
-        .await
+        let call = tools::call_tool(&execution, self.state.as_ref(), &request.name, arguments);
+        let result = tokio::select! {
+            biased;
+            _ = context.ct.cancelled() => Ok(DomainToolResult::structured_error("request_cancelled", "request was cancelled", "Retry after owned cleanup completes.")),
+            result = call => result,
+        }
         .unwrap_or_else(crate::result::tool_error);
         let structured = context
             .protocol_version()
             .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2025_06_18);
         let result = enforce_output_limit(&request.name, result, structured);
+        let result = tools::checked_result(&execution, result);
         let sdk = sdk_result_for_version(result, structured);
+        execution.progress(crate::request::Stage::Complete);
         Ok(CallToolResponse::Complete(sdk))
     }
 }
@@ -315,6 +375,113 @@ fn to_sdk_result(result: DomainToolResult) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sdk_cancellation_discards_a_live_parser_result() {
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/language/fixture.dme");
+        let server = MeridianServer::new(
+            crate::ServerConfig::from_values(
+                Some("analysis"),
+                vec![fixture.parent().unwrap().to_owned()],
+                vec![],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let observer = server.clone();
+        let worker = server.state.parse_worker_test.clone();
+        struct Release(Arc<crate::state::ParseWorkerTestControl>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                self.0.release();
+            }
+        }
+        worker.pause();
+        let release = Release(worker.clone());
+        let (client, transport) = tokio::io::duplex(8192);
+        let running = tokio::spawn(crate::mcp::run_transport(
+            server,
+            tokio::io::split(transport),
+        ));
+        let (reader, mut writer) = tokio::io::split(client);
+        let mut reader = tokio::io::BufReader::new(reader);
+        writer.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"fixture\",\"version\":\"1\"}}}\n").await.unwrap();
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        writer
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+            .await
+            .unwrap();
+        let request = serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"dm_parse_environment","arguments":{"dme_path":fixture},"_meta":{"progressToken":"first"}}});
+        writer
+            .write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while worker.started.load(Ordering::SeqCst) == 0 {
+                worker.changed.notified().await;
+            }
+        })
+        .await
+        .unwrap();
+        let second = serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"dm_parse_environment","arguments":{"dme_path":fixture},"_meta":{"progressToken":"second"}}});
+        writer
+            .write_all(format!("{second}\n").as_bytes())
+            .await
+            .unwrap();
+        let mut progress = std::collections::BTreeMap::new();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while progress.len() < 2 {
+                line.clear();
+                reader.read_line(&mut line).await.unwrap();
+                let message: Value = serde_json::from_str(&line).unwrap();
+                if message["method"] == "notifications/progress" {
+                    let token = message["params"]["progressToken"].as_str().unwrap();
+                    assert!(matches!(token, "first" | "second"));
+                    let step = message["params"]["progress"].as_f64().unwrap();
+                    assert!((1.0..=6.0).contains(&step));
+                    if let Some(previous) = progress.insert(token.to_owned(), step) {
+                        assert!(step > previous);
+                    }
+                    assert!(!message["params"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("fixture"));
+                }
+            }
+        })
+        .await
+        .unwrap();
+        writer.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":2,\"reason\":\"fixture\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":4,\"reason\":\"fixture\"}}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}\n").await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                line.clear();
+                reader.read_line(&mut line).await.unwrap();
+                if serde_json::from_str::<Value>(&line).unwrap()["id"] == 3 {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        // The SDK cancelled the request while its handler/worker remained alive.
+        drop(release);
+        let _finished = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            observer.state.parse_permit(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            observer.state.active_snapshot().await.is_none(),
+            "cancelled SDK request published its late parser result"
+        );
+        writer.shutdown().await.unwrap();
+        running.await.unwrap().unwrap();
+    }
 
     #[tokio::test]
     async fn semantic_error_identity_survives_sdk_conversion_and_output_replacement() {
