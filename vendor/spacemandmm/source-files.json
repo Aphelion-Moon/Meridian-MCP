@@ -2,7 +2,7 @@
   "schema": 1,
   "upstream_revision": "351ddc0ffb2439876d4565ce5130bb6b027ee605",
   "local_patch": "meridian-read-policy-v4",
-  "delta_sha256": "03e89b1680bc3cf9602f5d4bcd2b8677e7effe577794c571f3cb60289fcee687",
+  "delta_sha256": "3c2ebc4e84ac6a5fe5126d6fa33b88a090b46ab96c6561a05c827cf4a744525a",
   "files": {
     "dmm-tools/Cargo.toml": "ae3a0fc5d19104ff24df301af3f2722c0fdf7666924ca327fd0245d19aeda782",
     "dmm-tools/examples/duplicate_icon_states.rs": "12dd01e051d1155e789a77a5fa146c66c299dd5ac1b006ffd2ddb6cd14bbe00c",
@@ -42,7 +42,7 @@
     "dreammaker/src/lib.rs": "d7339592d997846d7ddbba82c8cd2984bb2962337529d13db9c9c16cb08b3b3e",
     "dreammaker/src/objtree.rs": "24eb358f87b137c3e035f7e2e24aa136b37188637e2d2924e0eddcb3f33e32ad",
     "dreammaker/src/parser.rs": "1a6b53601ff0909d76be7c6cda94ecce0008c494538c0472ae977b912ca4bb0b",
-    "dreammaker/src/preprocessor.rs": "a0557d2a1dd90483869720d5aa6d362bb3d1f7b72772e73b331143546d6e97c1",
+    "dreammaker/src/preprocessor.rs": "6e0dea5d541bffc65e8b4d6d25bc0c674437cd2ded6ec0f246bbc652e03853ab",
     "dreammaker/tests/annotation_tests.rs": "d32206258cef3b4b2c5922d00b8cfa445182580352eed344d7e069642aae9933",
     "dreammaker/tests/ast_tests.rs": "00c2fc0e62bd824595474d8ddd5e683938118efa2fbe35a4c6fd8734e1461729",
     "dreammaker/tests/builtins_tests.rs": "50d0515d734609635653980a46499a6511a37c3e81e10bedcddba68624be8d0e",

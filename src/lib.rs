@@ -2,6 +2,7 @@ pub mod analysis_snapshot;
 pub mod artifact;
 mod artifact_location;
 pub mod atomic_output;
+pub mod authoring_export;
 pub mod build_identity;
 pub mod build_provenance;
 pub mod capabilities;

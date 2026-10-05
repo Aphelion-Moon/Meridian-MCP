@@ -23,6 +23,8 @@ Version 3 also retains the parser's existing procedure-header start location in 
 
 Version 4 rejects cyclic `parent_type` graphs before constant evaluation and retains a separate cycle flag so disabled diagnostics cannot make Meridian accept the candidate. It also adds a checked, cell-limited DMM loader. Meridian limits the dense grid to 16,777,216 cells before allocation; upstream callers retain the existing loader API.
 
+The authoring exporter also uses `Preprocessor::branch_with_current_defines` to inspect constants with the exact live macro stacks. This small public API copies existing define state into a buffer-only child; it does not change ordinary preprocessing. It avoids treating the root environment's EOF source location as later than included-file definition locations when inspecting final state.
+
 Compare the vendored files against the exact baseline and review `local-delta.patch`; do not edit Cargo's cache. Keep upstream helper/CI pins unchanged for this patch. Re-run containment, snapshot, map, DMI, stdio, and the repository's full Rust qualification before promoting compatibility. Any upstream revision change requires the normal dependency-update matrix and a fresh delta/hash.
 
 Changed baseline files:

@@ -8,6 +8,11 @@ fn default_rust_log_filter() -> String {
 }
 
 fn main() -> Result<()> {
+    if meridian_mcp::authoring_export::dispatch_cli(
+        &std::env::args_os().skip(1).collect::<Vec<_>>(),
+    )? {
+        return Ok(());
+    }
     #[cfg(unix)]
     {
         if meridian_mcp::process::dispatch_runtime_guardian() {

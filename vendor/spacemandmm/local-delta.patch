@@ -210,7 +210,25 @@
                  if let Some(dest) = self.annotations.as_mut() {
 --- a/dreammaker/src/preprocessor.rs
 +++ b/dreammaker/src/preprocessor.rs
-@@ -678,13 +678,18 @@
+@@ -514,6 +514,17 @@
+         }
+     }
+ 
++    /// Branch for expression analysis using the exact live macro stacks.
++    /// This avoids reconstructing current state from source-location ordering.
++    pub fn branch_with_current_defines<'ctx2>(
++        &self,
++        context: &'ctx2 Context,
++    ) -> Preprocessor<'ctx2> {
++        let mut child = Preprocessor::from_buffer(context, self.env_file.clone(), String::new());
++        child.defines = self.defines.clone();
++        child
++    }
++
+     /// Access the ifdef history.
+     pub fn ifdef_history(&self) -> &IntervalTree<Location, bool> {
+         &self.ifdef_history
+@@ -678,13 +689,18 @@
  
      fn prepare_include_file(&mut self, path: PathBuf) -> Result<Include<'ctx>, DMError> {
          // Attempt to open the file.

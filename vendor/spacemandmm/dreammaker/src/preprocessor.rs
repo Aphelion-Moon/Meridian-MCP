@@ -514,6 +514,17 @@ impl<'ctx> Preprocessor<'ctx> {
         }
     }
 
+    /// Branch for expression analysis using the exact live macro stacks.
+    /// This avoids reconstructing current state from source-location ordering.
+    pub fn branch_with_current_defines<'ctx2>(
+        &self,
+        context: &'ctx2 Context,
+    ) -> Preprocessor<'ctx2> {
+        let mut child = Preprocessor::from_buffer(context, self.env_file.clone(), String::new());
+        child.defines = self.defines.clone();
+        child
+    }
+
     /// Access the ifdef history.
     pub fn ifdef_history(&self) -> &IntervalTree<Location, bool> {
         &self.ifdef_history
