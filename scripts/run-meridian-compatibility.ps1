@@ -413,7 +413,7 @@ try {
 	Assert-True ($toolNames -contains 'rift_compile') 'rift_compile was not advertised under the network development ceiling.'
 	$riftTool = @($toolsResponse.result.tools | Where-Object { $_.name -eq 'rift_compile' })[0]
 	$riftProperties = @($riftTool.inputSchema.properties.PSObject.Properties.Name | Sort-Object)
-	$expectedRiftProperties = @('capture_network', 'fixture_manifest_path', 'force_rebuild', 'idle_timeout_ms', 'network_mode', 'timeout_ms')
+	$expectedRiftProperties = @('capture_network', 'diagnostic_limit', 'fixture_manifest_path', 'force_rebuild', 'idle_timeout_ms', 'include_output', 'network_mode', 'output_max_bytes', 'timeout_ms')
 	Assert-True ([string]::Join(',', $riftProperties) -eq [string]::Join(',', $expectedRiftProperties)) 'rift_compile advertised an unexpected schema.'
 
 	$parsePayload = Get-ToolPayload -Responses $session.Responses -Id 3 -Stage 'dm_parse_environment'
