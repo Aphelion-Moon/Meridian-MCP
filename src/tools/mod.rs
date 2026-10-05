@@ -25,12 +25,15 @@ use crate::result::{structured_error, ToolErrorCode};
 use crate::spaceman::debugger::DebuggerInstallation;
 use crate::state::ServerState;
 use crate::tracy::TracyInstallation;
-use crate::{contracts_for_configuration, CapabilityMode, PathPolicy, RiftBuildAccess};
+use crate::{
+    contracts_for_configuration, CapabilityMode, PathPolicy, RiftBuildAccess, ToolProfile,
+};
 
 #[derive(Clone)]
 pub struct ToolExecutionContext {
     catalog: std::sync::Arc<[&'static crate::ToolContract]>,
     mode: CapabilityMode,
+    tool_profile: ToolProfile,
     policy: PathPolicy,
     rift_build: RiftBuildAccess,
     dmdoc_helper: Option<std::path::PathBuf>,
@@ -64,8 +67,16 @@ impl ToolExecutionContext {
         rift_build: RiftBuildAccess,
     ) -> Self {
         Self {
-            catalog: std::sync::Arc::from(active_contracts(mode, rift_build, false, false, false)),
+            catalog: std::sync::Arc::from(active_contracts(
+                mode,
+                rift_build,
+                false,
+                false,
+                false,
+                ToolProfile::All,
+            )),
             mode,
+            tool_profile: ToolProfile::All,
             policy,
             rift_build,
             dmdoc_helper: None,
@@ -136,8 +147,10 @@ impl ToolExecutionContext {
                 dmdoc_helper.is_some(),
                 debugger.is_some(),
                 tracy.is_some(),
+                ToolProfile::All,
             )),
             mode,
+            tool_profile: ToolProfile::All,
             policy,
             rift_build,
             dmdoc_helper,
@@ -159,6 +172,24 @@ impl ToolExecutionContext {
             request_started: None,
             request_owner: None,
         }
+    }
+
+    /// Applied during startup, before the server caches its protocol catalogs.
+    pub fn with_tool_profile(mut self, profile: ToolProfile) -> Self {
+        self.catalog = std::sync::Arc::from(active_contracts(
+            self.mode,
+            self.rift_build,
+            self.dmdoc_helper.is_some(),
+            self.debugger.is_some(),
+            self.tracy.is_some(),
+            profile,
+        ));
+        self.tool_profile = profile;
+        self
+    }
+
+    pub fn tool_profile(&self) -> ToolProfile {
+        self.tool_profile
     }
 
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
@@ -406,9 +437,11 @@ fn active_contracts(
     docs: bool,
     debugger: bool,
     tracy: bool,
+    profile: ToolProfile,
 ) -> Vec<&'static crate::ToolContract> {
     contracts_for_configuration(mode, rift)
         .into_iter()
+        .filter(|contract| contract.profiles.includes(profile))
         .filter(|contract| match contract.gate {
             crate::contracts::StartupGate::Docs => docs,
             crate::contracts::StartupGate::Debugger => debugger,
@@ -437,7 +470,7 @@ pub fn get_tool_definitions_for_runtime(
     debugger: bool,
     tracy: bool,
 ) -> Vec<ToolDefinition> {
-    active_contracts(mode, rift, docs, debugger, tracy)
+    active_contracts(mode, rift, docs, debugger, tracy, ToolProfile::All)
         .into_iter()
         .map(definition)
         .collect()
@@ -489,7 +522,12 @@ async fn call_tool_inner(
             "Retry on a running server.",
         ));
     }
-    if name == "rift_compile" && !cfg!(windows) {
+    if name == "rift_compile"
+        && !cfg!(windows)
+        && crate::all_contracts().iter().any(|contract| {
+            contract.name == name && contract.profiles.includes(context.tool_profile)
+        })
+    {
         return Ok(policy_error(
             "unsupported_platform",
             "rift_compile is supported only on Windows".to_string(),
@@ -508,7 +546,7 @@ async fn call_tool_inner(
             "tool is not available in this startup configuration".into(),
             None,
             "Use a tool advertised by tools/list.",
-            json!({"tool":name,"mode":match context.mode { CapabilityMode::Analysis => "analysis", CapabilityMode::Development => "development" }}),
+            json!({"tool":name,"tool_profile":context.tool_profile,"mode":match context.mode { CapabilityMode::Analysis => "analysis", CapabilityMode::Development => "development" }}),
         ));
     };
     let args = match (contract.decode)(args) {
@@ -1324,6 +1362,88 @@ mod tests {
                 .to_string()
                 .contains("request_timed_out"));
         }
+    }
+
+    #[test]
+    fn startup_profiles_intersect_mode_helper_and_rift_gates() {
+        use crate::{CapabilityMode, RiftBuildAccess, ToolProfile};
+        let names = |mode, rift, helpers, profile| {
+            super::active_contracts(mode, rift, helpers, helpers, helpers, profile)
+                .into_iter()
+                .map(|contract| contract.name)
+                .collect::<std::collections::HashSet<_>>()
+        };
+        for profile in [
+            ToolProfile::All,
+            ToolProfile::Code,
+            ToolProfile::Assets,
+            ToolProfile::Runtime,
+        ] {
+            let analysis = names(
+                CapabilityMode::Analysis,
+                RiftBuildAccess::Network,
+                true,
+                profile,
+            );
+            for hidden in [
+                "dm_compile",
+                "rift_compile",
+                "dm_generate_docs",
+                "dm_debug_launch",
+                "dm_tracy_launch",
+            ] {
+                assert!(!analysis.contains(hidden), "{profile:?} {hidden}");
+            }
+            let absent = names(
+                CapabilityMode::Development,
+                RiftBuildAccess::Disabled,
+                false,
+                profile,
+            );
+            for hidden in [
+                "rift_compile",
+                "dm_generate_docs",
+                "dm_debug_launch",
+                "dm_tracy_launch",
+            ] {
+                assert!(!absent.contains(hidden), "{profile:?} {hidden}");
+            }
+        }
+        let code = names(
+            CapabilityMode::Development,
+            RiftBuildAccess::Offline,
+            true,
+            ToolProfile::Code,
+        );
+        assert!(code.contains("dm_generate_docs") && code.contains("dm_compile"));
+        assert!(!code.contains("dm_debug_launch") && !code.contains("dm_tracy_launch"));
+        let runtime = names(
+            CapabilityMode::Development,
+            RiftBuildAccess::Offline,
+            true,
+            ToolProfile::Runtime,
+        );
+        assert!(
+            runtime.contains("dm_debug_launch")
+                && runtime.contains("dm_tracy_launch")
+                && runtime.contains("dm_compile")
+        );
+        assert!(!runtime.contains("dm_generate_docs"));
+        assert_eq!(code.contains("rift_compile"), cfg!(windows));
+        assert_eq!(runtime.contains("rift_compile"), cfg!(windows));
+        let assets = names(
+            CapabilityMode::Development,
+            RiftBuildAccess::Network,
+            true,
+            ToolProfile::Assets,
+        );
+        assert!(assets.contains("dm_render_map"));
+        assert!(
+            !assets.contains("rift_compile")
+                && !assets.contains("dm_generate_docs")
+                && !assets.contains("dm_debug_launch")
+                && !assets.contains("dm_tracy_launch")
+        );
     }
 
     #[tokio::test]

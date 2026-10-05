@@ -109,7 +109,8 @@ impl MeridianServer {
             debugger,
             tracy,
             private_state,
-        );
+        )
+        .with_tool_profile(config.tool_profile());
         let catalog = execution
             .definitions()
             .into_iter()

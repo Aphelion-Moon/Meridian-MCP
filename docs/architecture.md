@@ -4,6 +4,8 @@
 
 The server exposes only contracts active for its startup configuration. Analysis mode contains parsing, indexing, exact lookup, search, diagnostics, and read-only map inspection. Development mode additionally exposes direct compilation, PNG output, DreamDaemon lifecycle, and loopback `Topic()` calls. Windows `rift_compile` is a further conditional contract controlled by the immutable full-build ceiling. One descriptor per tool binds its request type, derived schema, typed dispatch variant, effects, limits and support gates. Startup freezes catalog membership after helper validation; discovery, lookup and invocation use that membership. The SDK tool projection is cached once. Modern discovery carries a private 60-second catalog cache hint; legacy discovery omits those fields.
 
+The immutable `MERIDIAN_MCP_TOOL_PROFILE` defaults to `all`; `code`, `assets` and `runtime` narrow that catalog using membership on the same descriptors. Status and parsing are shared, and builds serve code and runtime. Profile selection intersects the existing mode and helper gates before protocol catalogs are cached; invocation uses that same frozen membership. The typed status result exposes `tool_profile`. Profiles never add roots, authorize executables, enable helpers or change the shared parser state.
+
 Tool calls cross these boundaries in order:
 
 1. The SDK negotiates MCP, validates JSON-RPC framing, and presents the tool schema.

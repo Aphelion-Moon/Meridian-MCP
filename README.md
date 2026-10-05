@@ -55,6 +55,8 @@ Use the installer and configuration updater to validate the binary, helpers, aut
 
 The complete packaging example is in [Operator and contributor reference](#operator-and-contributor-reference). At minimum, development configuration sets `MERIDIAN_MCP_MODE=development`, supplies one or more roots, allowlists the compiler, and points `MERIDIAN_MCP_STATE_DIR` to an existing writable directory outside every workspace root. Restart the MCP client after changing startup authorization.
 
+Set optional `MERIDIAN_MCP_TOOL_PROFILE` to narrow the advertised tools for a workflow. `all` is the default and preserves the complete configured catalog; `code` selects source analysis, fixture checks, documentation and builds; `assets` selects DMI and map tools; `runtime` selects builds, runtime controls, debugging, profiling and runtime evidence. Every profile includes status and parsing. Profiles preserve mode, helper and authorization requirements; selecting `runtime` in analysis mode does not enable active controls. The profile is fixed at startup, reported as `tool_profile` by `dm_server_status`, and applies to both discovery and invocation. Restart after changing it. Per-tool membership appears in the [tool contracts](docs/tool-contracts.md).
+
 ### Verify a Codex installation
 
 Fully quit and reopen Codex after installing a binary or changing MCP settings. Closing a task alone does not restart the server.
@@ -320,6 +322,7 @@ Keep the builders' `helpers/licenses` directory with the helper binaries and the
 The server reads immutable startup configuration:
 
 - `MERIDIAN_MCP_MODE`: `analysis` (default) or `development`.
+- `MERIDIAN_MCP_TOOL_PROFILE`: `all` (default), `code`, `assets`, or `runtime`. Unknown values are rejected. Narrows the configured catalog without granting capabilities or changing parser behavior.
 - `MERIDIAN_MCP_ROOTS`: semicolon-separated workspace roots on Windows; platform path-list syntax elsewhere.
 - `MERIDIAN_MCP_REPOSITORIES`: optional path list of explicitly authorized local Git working trees. At startup, Meridian-MCP discovers and verifies their linked worktrees using fixed local Git commands, then adds those exact canonical paths to the effective roots.
 - `MERIDIAN_MCP_COMPILERS`: allowlisted DreamMaker executables.

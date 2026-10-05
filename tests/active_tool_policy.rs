@@ -1,7 +1,7 @@
 use meridian_mcp::result::{ToolContent, ToolResult};
 use meridian_mcp::state::ServerState;
 use meridian_mcp::tools::{call_tool, ToolExecutionContext};
-use meridian_mcp::{CapabilityMode, PathPolicy, RiftBuildAccess};
+use meridian_mcp::{CapabilityMode, PathPolicy, RiftBuildAccess, ToolProfile};
 use serde_json::json;
 
 fn message(result: &ToolResult) -> &str {
@@ -12,6 +12,105 @@ fn message(result: &ToolResult) -> &str {
 
 fn payload(result: &ToolResult) -> serde_json::Value {
     serde_json::from_str(message(result)).expect("tool policy errors should be structured JSON")
+}
+
+#[tokio::test]
+async fn default_startup_profile_is_reported_in_typed_status() {
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(
+            vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))],
+            vec![],
+        )
+        .unwrap(),
+    );
+    let result = call_tool(&context, &ServerState::new(), "dm_server_status", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(payload(&result)["tool_profile"], "all");
+    assert_eq!(payload(&result), result.structured_content.unwrap());
+}
+
+#[tokio::test]
+async fn startup_profiles_reject_hidden_calls_before_decoding_and_preserve_other_gates() {
+    let policy = PathPolicy::new(
+        vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))],
+        vec![],
+    )
+    .unwrap();
+    for (profile, mode, hidden) in [
+        (
+            ToolProfile::Code,
+            CapabilityMode::Development,
+            "dm_dmi_info",
+        ),
+        (ToolProfile::Code, CapabilityMode::Development, "dm_topic"),
+        (
+            ToolProfile::Assets,
+            CapabilityMode::Development,
+            "dm_get_type",
+        ),
+        (
+            ToolProfile::Assets,
+            CapabilityMode::Development,
+            "rift_compile",
+        ),
+        (
+            ToolProfile::Runtime,
+            CapabilityMode::Development,
+            "dm_get_var",
+        ),
+        (ToolProfile::Runtime, CapabilityMode::Analysis, "dm_run"),
+        (
+            ToolProfile::Code,
+            CapabilityMode::Development,
+            "dm_generate_docs",
+        ),
+        (
+            ToolProfile::Runtime,
+            CapabilityMode::Development,
+            "dm_debug_launch",
+        ),
+        (
+            ToolProfile::Runtime,
+            CapabilityMode::Development,
+            "dm_tracy_launch",
+        ),
+    ] {
+        let context = ToolExecutionContext::new(mode, policy.clone()).with_tool_profile(profile);
+        let state = ServerState::new();
+        let rejected = call_tool(&context, &state, hidden, json!({"unknown":true}))
+            .await
+            .unwrap();
+        assert_eq!(rejected.is_error, Some(true));
+        assert_eq!(
+            payload(&rejected)["code"],
+            "tool_not_available",
+            "{profile:?} {hidden}"
+        );
+        assert_eq!(
+            payload(&rejected)["details"]["tool_profile"],
+            serde_json::to_value(profile).unwrap()
+        );
+        let status = call_tool(&context, &state, "dm_server_status", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(
+            payload(&status)["tool_profile"],
+            serde_json::to_value(profile).unwrap()
+        );
+        assert_eq!(
+            status.structured_content.as_ref().unwrap()["tool_profile"],
+            payload(&status)["tool_profile"]
+        );
+    }
+    let assets = ToolExecutionContext::new(CapabilityMode::Analysis, policy)
+        .with_tool_profile(ToolProfile::Code)
+        .with_tool_profile(ToolProfile::Assets);
+    let admitted = call_tool(&assets, &ServerState::new(), "dm_dmi_info", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(payload(&admitted)["code"], "invalid_input");
 }
 
 #[cfg(unix)]

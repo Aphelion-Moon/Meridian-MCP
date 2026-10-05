@@ -42,6 +42,7 @@ pub enum AnalysisStatus {
 pub struct ServerStatusOutput {
     pub mcp_build: crate::build_identity::BuildIdentity,
     pub mode: &'static str,
+    pub tool_profile: crate::ToolProfile,
     pub optional_capabilities: OptionalCapabilities,
     pub containment: crate::path_policy::PathPolicyStatus,
     pub private_state: PrivateStateStatus,

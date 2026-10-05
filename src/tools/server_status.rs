@@ -40,6 +40,7 @@ pub async fn status(context: &ToolExecutionContext, state: &ServerState) -> Resu
                 CapabilityMode::Analysis => "analysis",
                 CapabilityMode::Development => "development",
             },
+            tool_profile: context.tool_profile(),
             optional_capabilities: OptionalCapabilities {
                 rift_build: match context.rift_build_access() {
                     RiftBuildAccess::Disabled => "disabled",

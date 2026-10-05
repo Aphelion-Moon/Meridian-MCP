@@ -1,8 +1,52 @@
 use meridian_mcp::{
     all_contracts, contracts_for, contracts_for_configuration, render_tool_reference,
-    CapabilityMode, RiftBuildAccess,
+    CapabilityMode, RiftBuildAccess, ToolProfile,
 };
 use std::collections::HashSet;
+
+#[test]
+fn startup_profile_membership_keeps_shared_and_build_tools_in_their_domains() {
+    let registry = all_contracts();
+    for (profile, expected_count) in [
+        (ToolProfile::All, 62),
+        (ToolProfile::Code, 17),
+        (ToolProfile::Assets, 13),
+        (ToolProfile::Runtime, 38),
+    ] {
+        assert_eq!(
+            registry
+                .iter()
+                .filter(|contract| contract.profiles.includes(profile))
+                .count(),
+            expected_count,
+            "{profile:?}"
+        );
+    }
+    for (name, expected) in [
+        ("dm_server_status", [true, true, true]),
+        ("dm_parse_environment", [true, true, true]),
+        ("dm_get_proc", [true, false, false]),
+        ("dm_check_fixture_sync", [true, false, false]),
+        ("dm_generate_docs", [true, false, false]),
+        ("dm_audit_icons", [false, true, false]),
+        ("dm_render_maps", [false, true, false]),
+        ("dm_compile", [true, false, true]),
+        ("rift_compile", [true, false, true]),
+        ("dm_memory_summary", [false, false, true]),
+        ("dm_native_evidence_summary", [false, false, true]),
+        ("dm_run", [false, false, true]),
+        ("dm_debug_source", [false, false, true]),
+        ("dm_tracy_compare", [false, false, true]),
+    ] {
+        let contract = registry
+            .iter()
+            .find(|contract| contract.name == name)
+            .unwrap();
+        let actual = [ToolProfile::Code, ToolProfile::Assets, ToolProfile::Runtime]
+            .map(|profile| contract.profiles.includes(profile));
+        assert_eq!(actual, expected, "{name}");
+    }
+}
 
 #[test]
 fn contracts_are_unique_bounded_and_analysis_is_read_only() {

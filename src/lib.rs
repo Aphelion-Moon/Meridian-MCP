@@ -54,7 +54,9 @@ pub use build_provenance::{
     BuildAttempt, BuildAttemptOutcome, BuildInputIdentity, BuildProvenanceStore, BuildRecord,
     LaunchDecision, LaunchProvenance, ProjectBuildIdentity, ProvenanceReason, ProvenanceStatus,
 };
-pub use config::{CapabilityMode, DebuggerAccess, RiftBuildAccess, ServerConfig, TracyAccess};
+pub use config::{
+    CapabilityMode, DebuggerAccess, RiftBuildAccess, ServerConfig, ToolProfile, TracyAccess,
+};
 pub use contracts::{
     all_contracts, contracts_for, contracts_for_configuration, render_tool_reference, SupportLevel,
     ToolContract, ToolEffects,
