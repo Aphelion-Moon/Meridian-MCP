@@ -11,7 +11,10 @@ fn message(result: &ToolResult) -> &str {
 }
 
 fn payload(result: &ToolResult) -> serde_json::Value {
-    serde_json::from_str(message(result)).expect("tool policy errors should be structured JSON")
+    let value: serde_json::Value = serde_json::from_str(message(result))
+        .expect("tool policy errors should be structured JSON");
+    assert_eq!(result.structured_content.as_ref(), Some(&value));
+    value
 }
 
 #[tokio::test]

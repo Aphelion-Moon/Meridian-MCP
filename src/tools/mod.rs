@@ -1318,15 +1318,20 @@ fn policy_error(
     recovery: &str,
     details: Value,
 ) -> ToolResult {
-    ToolResult::error(
-        json!({
-            "code": code,
-            "message": message,
-            "recovery": recovery,
-            "details": details,
-            "path": path.map(|path| path.display().to_string())
-        })
-        .to_string(),
+    let details = match details {
+        Value::Object(details) => details.into_iter().collect(),
+        value => std::collections::BTreeMap::from([("value".to_owned(), value)]),
+    };
+    crate::result::projection(
+        crate::result::ToolFailure {
+            code: code.to_owned(),
+            message,
+            recovery: Some(recovery.to_owned()),
+            details,
+            path: path.map(|path| path.display().to_string()),
+        },
+        false,
+        true,
     )
 }
 

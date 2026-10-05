@@ -133,8 +133,17 @@ impl InputError {
         self.result_with_code("invalid_input")
     }
     pub fn result_with_code(&self, code: &str) -> crate::mcp::ToolResult {
-        crate::mcp::ToolResult::error(serde_json::json!({"code":code,"message":self.reason,
-            "recovery":"Use the advertised fields, types and bounds.","details":{"field":self.field}}).to_string())
+        crate::result::projection(
+            crate::result::ToolFailure {
+                code: code.to_owned(),
+                message: self.reason.to_owned(),
+                recovery: Some("Use the advertised fields, types and bounds.".to_owned()),
+                details: BTreeMap::from([("field".to_owned(), Value::String(self.field.clone()))]),
+                path: None,
+            },
+            false,
+            true,
+        )
     }
 }
 impl std::fmt::Display for InputError {

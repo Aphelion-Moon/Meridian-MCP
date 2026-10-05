@@ -78,6 +78,7 @@ pub struct ToolFailure {
     pub message: String,
     pub recovery: Option<String>,
     pub details: std::collections::BTreeMap<String, Value>,
+    pub path: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
@@ -510,6 +511,7 @@ fn structured_error_value(
             message,
             recovery,
             details: details.into_iter().collect(),
+            path: None,
         },
         false,
         true,
