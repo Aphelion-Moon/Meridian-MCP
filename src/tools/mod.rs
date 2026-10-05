@@ -559,6 +559,13 @@ async fn call_tool_inner(
             })
         }
     };
+    // Startup selection is an immutable, in-memory prerequisite. Reject an
+    // unusable configuration before queueing filesystem work or its deadline.
+    if let crate::parameters::ToolRequest::Compile(args) = &args {
+        if let Err(error) = compile::select_compiler(context, args.compiler_path.as_deref()) {
+            return Ok(error);
+        }
+    }
     let mut execution = context.clone();
     execution.request_deadline =
         Some(context.deadline(args.total_budget_ms(contract.timeout_ms.unwrap_or(300_000))));

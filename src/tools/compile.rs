@@ -234,6 +234,28 @@ fn compiler_environment() -> Vec<(OsString, OsString)> {
         .collect()
 }
 
+pub(super) fn select_compiler<'a>(
+    context: &'a ToolExecutionContext,
+    requested: Option<&'a str>,
+) -> Result<&'a Path, ToolResult> {
+    if let Some(compiler) = requested {
+        return Ok(Path::new(compiler));
+    }
+    match context.policy().compiler_allowlist() {
+        [] => Err(ToolResult::structured_error(
+            "compiler_not_configured",
+            "dm_compile requires a startup-allowlisted DreamMaker compiler when compiler_path is omitted.",
+            "Restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS, or supply an explicitly allowlisted compiler_path.",
+        )),
+        [compiler] => Ok(compiler),
+        _ => Err(ToolResult::structured_error(
+            "compiler_ambiguous",
+            "dm_compile cannot select among multiple startup-allowlisted compilers when compiler_path is omitted.",
+            "Supply compiler_path naming one allowlisted compiler, or restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS.",
+        )),
+    }
+}
+
 /// Compile a DreamMaker environment
 pub async fn compile(
     context: &ToolExecutionContext,
@@ -276,44 +298,18 @@ pub async fn compile(
         }
     }
 
-    let compiler = if let Some(compiler) = compiler_path {
-        match context.policy().executable(compiler) {
-            Ok(compiler) => compiler,
-            Err(error) => {
-                return Ok(ToolResult::structured_error(
-                    error.code(),
-                    error.to_string(),
-                    "Configure an existing DreamMaker executable in MERIDIAN_MCP_COMPILERS.",
-                ));
-            }
-        }
-    } else {
-        let configured = match context.policy().compiler_allowlist() {
-            [] => {
-                return Ok(ToolResult::structured_error(
-                    "compiler_not_configured",
-                    "dm_compile requires a startup-allowlisted DreamMaker compiler when compiler_path is omitted.",
-                    "Restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS, or supply an explicitly allowlisted compiler_path.",
-                ));
-            }
-            [compiler] => compiler,
-            _ => {
-                return Ok(ToolResult::structured_error(
-                    "compiler_ambiguous",
-                    "dm_compile cannot select among multiple startup-allowlisted compilers when compiler_path is omitted.",
-                    "Supply compiler_path naming one allowlisted compiler, or restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS.",
-                ));
-            }
-        };
-        match context.policy().executable(configured) {
-            Ok(compiler) => compiler,
-            Err(error) => {
-                return Ok(ToolResult::structured_error(
-                    error.code(),
-                    error.to_string(),
-                    "Configure an existing DreamMaker executable in MERIDIAN_MCP_COMPILERS.",
-                ));
-            }
+    let selected = match select_compiler(context, compiler_path.as_deref()) {
+        Ok(compiler) => compiler,
+        Err(error) => return Ok(error),
+    };
+    let compiler = match context.policy().executable(selected) {
+        Ok(compiler) => compiler,
+        Err(error) => {
+            return Ok(ToolResult::structured_error(
+                error.code(),
+                error.to_string(),
+                "Configure an existing DreamMaker executable in MERIDIAN_MCP_COMPILERS.",
+            ));
         }
     };
 
