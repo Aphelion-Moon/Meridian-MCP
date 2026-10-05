@@ -460,6 +460,26 @@ async fn oversized_language_results_page_before_the_transport_ceiling() {
         .await
         .unwrap(),
     );
+    let mut listed = std::collections::BTreeSet::new();
+    let mut query = json!({"prefix":"/datum/large_page","limit":500});
+    loop {
+        let result = call_tool(&context, &state, "dm_list_types", query.clone())
+            .await
+            .unwrap();
+        let native = result.structured_content.clone().unwrap();
+        let page = payload(result);
+        assert_eq!(page, native);
+        assert!(page["count"].as_u64().unwrap() > 0);
+        assert!(serde_json::to_vec(&page).unwrap().len() < 160 * 1024);
+        for row in page["types"].as_array().unwrap() {
+            assert!(listed.insert(row["path"].as_str().unwrap().to_owned()));
+        }
+        if page["pagination"]["next_cursor"].is_null() {
+            break;
+        }
+        query["cursor"] = page["pagination"]["next_cursor"].clone();
+    }
+    assert_eq!(listed, expected);
     for detail in ["full", "compact"] {
         let mut args = json!({"type_path":"/datum/large_page", "limit":10000, "detail":detail});
         let mut received = std::collections::BTreeSet::new();
@@ -492,4 +512,85 @@ async fn oversized_language_results_page_before_the_transport_ceiling() {
         }
         assert_eq!(received, expected);
     }
+}
+
+#[tokio::test]
+async fn get_type_selected_sections_and_large_constants_advance_complete_member_pages() {
+    let directory = FixtureDirectory::new();
+    let root = directory.path();
+    let mut source = String::from("/datum/type_page\n");
+    for index in 0..80 {
+        source.push_str(&format!(
+            "    var/member_{index:03} = \"{}\"\n",
+            "x".repeat(if index == 0 { 32768 } else { 2048 })
+        ));
+    }
+    for index in 0..12 {
+        source.push_str(&format!("/datum/type_page/child_{index:03}\n"));
+    }
+    std::fs::write(root.join("fixture.dm"), source).unwrap();
+    std::fs::write(root.join("fixture.dme"), "#include \"fixture.dm\"\n").unwrap();
+    let context = ToolExecutionContext::new(
+        CapabilityMode::Analysis,
+        PathPolicy::new(vec![root.into()], vec![]).unwrap(),
+    );
+    let state = ServerState::new();
+    payload(
+        call_tool(
+            &context,
+            &state,
+            "dm_parse_environment",
+            json!({"dme_path":root.join("fixture.dme")}),
+        )
+        .await
+        .unwrap(),
+    );
+    let mut query =
+        json!({"type_path":"/datum/type_page","sections":["vars","children"],"limit":7});
+    let mut names = Vec::new();
+    let mut children = Vec::new();
+    let mut pages = 0;
+    loop {
+        let result = call_tool(&context, &state, "dm_get_type", query.clone())
+            .await
+            .unwrap();
+        let native = result.structured_content.clone().unwrap();
+        let page = payload(result);
+        assert_eq!(page, native);
+        assert!(page.get("procs").is_none() && page.get("documentation").is_none());
+        assert!(page["pagination"]["count"].as_u64().unwrap() > 0);
+        if pages == 0 {
+            assert_eq!(page["vars"][0]["constant"], "<constant preview omitted>");
+            assert!(page["vars"][0]["field_omissions"]["constant"].is_string());
+        }
+        names.extend(
+            page["vars"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row["name"].as_str().unwrap().to_owned()),
+        );
+        children.extend(
+            page["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row.as_str().unwrap().to_owned()),
+        );
+        pages += 1;
+        assert!(pages < 30);
+        let cursor = &page["pagination"]["next_cursor"];
+        if cursor.is_null() {
+            break;
+        }
+        query["cursor"] = cursor.clone();
+        query["limit"] = json!(11);
+    }
+    assert_eq!(
+        names,
+        (0..80)
+            .map(|index| format!("member_{index:03}"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(children.len(), 12);
 }

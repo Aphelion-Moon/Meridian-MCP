@@ -1,5 +1,6 @@
 use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
+use crate::outputs::*;
 use crate::process::ProcessContainment;
 use crate::result::{json_success, ToolMetadata};
 use crate::spaceman::debugger::{
@@ -10,6 +11,7 @@ use crate::spaceman::debugger::{
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
+#[cfg(test)]
 use serde_json::json;
 use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
@@ -113,6 +115,15 @@ pub async fn launch(
         containment: std::sync::Arc::clone(&containment),
         lease: Some(lease),
     };
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        process_started: true,
+        runtime_id: Some(runtime_id.clone()),
+        action: Some("debug_launch".into()),
+        recovery_required: true,
+        ..Default::default()
+    };
+    let handshake=async {
     let limits = ServerLimits::default();
     let accepted = tokio::time::timeout(
         Duration::from_millis(args.startup_timeout_ms.unwrap_or(limits.max_debug_startup_ms)),
@@ -169,6 +180,34 @@ pub async fn launch(
         };
         crate::native_memory::parse_response(&response.value)?;
     }
+    Ok::<_,anyhow::Error>((connection,stddef_source))
+    }.await;
+    let (connection, stddef_source) = match handshake {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = containment.request_termination();
+            essential.process_stopped = matches!(
+                tokio::time::timeout(Duration::from_secs(2), process.wait()).await,
+                Ok(Ok(_))
+            );
+            essential.cleanup_complete =
+                crate::process::wait_for_cleanup(&containment).await.is_ok();
+            if essential.cleanup_complete {
+                if let Some(lease) = startup.lease.as_mut() {
+                    essential.cleanup_complete = lease.finish().is_ok();
+                }
+                if essential.cleanup_complete {
+                    startup.lease = None;
+                }
+            }
+            essential.recovery_required = !essential.cleanup_complete;
+            return Err(crate::result::OutcomeError {
+                error,
+                outcome: essential,
+            }
+            .into());
+        }
+    };
     *slot = Some(DebuggerSession {
         runtime_id: runtime_id.clone(),
         analysis: analysis.clone(),
@@ -190,9 +229,25 @@ pub async fn launch(
         execution_lease: startup.lease.take(),
     });
     Ok(json_success(
-        session_metadata(generation, Some(runtime_id), analysis),
-        json!({"lifecycle":"running","host_mode":host_mode,"port":port,"dmb_path":dmb_path,"dll_sha256":dll_sha256,"memory_profile":memory_profile,"launch_provenance":launch_provenance}),
-    ))
+        session_metadata(generation, Some(runtime_id.clone()), analysis),
+        DebugLaunchData {
+            lifecycle: "running",
+            host_mode: host_mode.into(),
+            port,
+            dmb_path,
+            dll_sha256: dll_sha256.clone(),
+            memory_profile,
+            launch_provenance,
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        process_started: true,
+        runtime_id: Some(runtime_id),
+        action: Some("launch".into()),
+        ..Default::default()
+    }))
 }
 
 fn debugger_host_executable(
@@ -255,13 +310,25 @@ pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResul
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     let launch_provenance = session.launch_provenance.clone();
+    let runtime_id = session.runtime_id.clone();
     let metadata = debugger_metadata(session);
     session.stop().await?;
     *slot = None;
     Ok(json_success(
         metadata,
-        json!({"lifecycle":"stopped","launch_provenance":launch_provenance}),
-    ))
+        DebugStopData {
+            lifecycle: "stopped",
+            launch_provenance,
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        process_stopped: true,
+        runtime_id: Some(runtime_id),
+        action: Some("stop".into()),
+        ..Default::default()
+    }))
 }
 
 struct DebuggerStartup {
@@ -308,10 +375,19 @@ async fn request(state: &ServerState, request: AuxRequest) -> Result<(ToolMetada
 
 pub async fn threads(state: &ServerState) -> Result<ToolResult> {
     let (generation, response) = request(state, AuxRequest::Stacks).await?;
-    let AuxResponse::Stacks { stacks } = response else {
+    let AuxResponse::Stacks { mut stacks } = response else {
         return Err(anyhow!("unexpected stacks response"));
     };
-    Ok(json_success(generation, json!({"threads":stacks})))
+    let mut budget = crate::outputs::budget::Budget::default();
+    let mut omissions = crate::outputs::Omissions::default();
+    stacks.truncate(10000);
+    for row in &mut stacks {
+        row.name = budget.text(&row.name, 4096, "threads.name", &mut omissions);
+    }
+    Ok(json_success(
+        generation,
+        DebugThreadsData { threads: stacks },
+    ))
 }
 
 pub async fn stack_trace(
@@ -347,7 +423,10 @@ pub async fn stack_trace(
     }
     Ok(json_success(
         metadata,
-        json!({"frames":frames,"total_count":total_count}),
+        DebugStackTraceData {
+            frames,
+            total_count,
+        },
     ))
 }
 
@@ -372,7 +451,11 @@ pub async fn scopes(
     };
     Ok(json_success(
         generation,
-        json!({"arguments":arguments,"locals":locals,"globals":globals}),
+        DebugScopesData {
+            arguments,
+            locals,
+            globals,
+        },
     ))
 }
 
@@ -401,7 +484,22 @@ pub async fn variables(
             .truncation_reasons
             .push("debug_variable_limit".into());
     }
-    Ok(json_success(metadata, json!({"variables":vars})))
+    let mut budget = crate::outputs::budget::Budget::default();
+    let mut omissions = crate::outputs::Omissions::default();
+    let mut retained = 0;
+    for row in &mut vars {
+        if retained > 0 && budget.bytes < 256 {
+            break;
+        }
+        row.name = budget.text(&row.name, 4096, "variables.name", &mut omissions);
+        row.value = budget.text(&row.value, 8192, "variables.value", &mut omissions);
+        retained += 1;
+    }
+    vars.truncate(retained);
+    Ok(json_success(
+        metadata,
+        DebugVariablesData { variables: vars },
+    ))
 }
 
 pub async fn evaluate(
@@ -430,10 +528,28 @@ pub async fn evaluate(
         },
     )
     .await?;
-    let AuxResponse::Eval(result) = response else {
+    let AuxResponse::Eval(mut result) = response else {
         return Err(anyhow!("unexpected evaluation response"));
     };
-    Ok(json_success(generation, json!({"result":result})))
+    let original_bytes = result.value.len();
+    result.value = crate::result::bounded_text(&result.value, 128 * 1024, 128 * 1024, false).into();
+    let mut generation = generation;
+    if result.value.len() < original_bytes {
+        generation.truncated = true;
+        generation
+            .truncation_reasons
+            .push("evaluation_value_bytes".into());
+    }
+    Ok(
+        json_success(generation, DebugEvaluateData { result }).with_outcome(
+            crate::result::MutationOutcome {
+                operation_ran: true,
+                cleanup_complete: true,
+                action: Some("evaluate".into()),
+                ..Default::default()
+            },
+        ),
+    )
 }
 
 fn validate_expression(expression: &str) -> Result<()> {
@@ -466,26 +582,49 @@ pub async fn memory(
     let AuxResponse::Eval(response) = response else {
         return Err(anyhow!("Unexpected native memory response"));
     };
-    let evidence = crate::native_memory::parse_response(&response.value)?;
+    let mut evidence: NativeMemoryEnvelope =
+        serde_json::from_value(crate::native_memory::parse_response(&response.value)?)?;
     let mut metadata = debugger_metadata(session);
-    for (key, reason) in [
-        ("rows_truncated", "native_memory_row_limit"),
-        ("capacity_exceeded", "native_memory_record_limit"),
-    ] {
-        if evidence["evidence"]["result"][key] == true {
+    if let NativeMemoryResult::Stop(stop) = &mut evidence.evidence.result {
+        let mut bytes = crate::outputs::budget::DETAIL_BYTES;
+        let mut retained = 0;
+        let mut clipped = false;
+        for row in &mut stop.procedures {
+            if let Some(path) = &mut row.proc_path {
+                let bounded = crate::result::bounded_text(path, 256, 256, false);
+                if bounded.len() < path.len() {
+                    row.proc_path_truncated = true;
+                    clipped = true;
+                }
+                *path = bounded.into();
+            }
+            let size = crate::result::encoded_bytes(row, usize::MAX).unwrap_or(usize::MAX);
+            if size > bytes {
+                break;
+            }
+            bytes -= size;
+            retained += 1;
+        }
+        if retained < stop.procedures.len() || clipped {
+            stop.rows_truncated = true;
             metadata.truncated = true;
-            metadata.truncation_reasons.push(reason.into());
+            metadata
+                .truncation_reasons
+                .push("native_memory_response_bytes".into());
+        }
+        stop.procedures.truncate(retained);
+
+        for (present, reason) in [
+            (stop.rows_truncated, "native_memory_row_limit"),
+            (stop.capacity_exceeded, "native_memory_record_limit"),
+        ] {
+            if present {
+                metadata.truncated = true;
+                metadata.truncation_reasons.push(reason.into());
+            }
         }
     }
-    Ok(json_success(
-        metadata,
-        json!({
-            "native_memory": evidence, "helper_sha256": hash,
-            "helper_source_revision": crate::native_memory::SOURCE_REVISION,
-            "launch_provenance":session.launch_provenance,
-            "warning":"Observed requested allocation bytes are not retained-object sizes or proof of a leak. Cross-thread frees are not observed."
-        }),
-    ))
+    Ok(json_success(metadata,DebugMemoryData {native_memory:evidence,helper_sha256:hash,helper_source_revision:crate::native_memory::SOURCE_REVISION,launch_provenance:session.launch_provenance.clone(),warning:"Observed requested allocation bytes are not retained-object sizes or proof of a leak. Cross-thread frees are not observed."}).with_outcome(crate::result::MutationOutcome {operation_ran:true,cleanup_complete:true,action:Some("memory".into()),..Default::default()}))
 }
 
 pub async fn set_exception_breakpoints(
@@ -506,8 +645,16 @@ pub async fn set_exception_breakpoints(
         .await?;
     Ok(json_success(
         generation,
-        json!({"break_on_runtimes":enabled}),
-    ))
+        DebugExceptionBreakpointsData {
+            break_on_runtimes: enabled,
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        action: Some("exception_breakpoints".into()),
+        ..Default::default()
+    }))
 }
 
 pub async fn control(
@@ -542,7 +689,18 @@ pub async fn control(
     if !matches!(response, AuxResponse::Ack) {
         return Err(anyhow!("debugger control was not acknowledged"));
     }
-    Ok(json_success(generation, json!({"action":action})))
+    Ok(json_success(
+        generation,
+        DebugControlData {
+            action: action.into(),
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        action: Some(action.into()),
+        ..Default::default()
+    }))
 }
 
 pub async fn set_function_breakpoints(
@@ -678,25 +836,49 @@ async fn replace_breakpoints_in_session(
         .difference(&desired_set)
         .cloned()
         .collect::<Vec<_>>();
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        action: Some("replace_breakpoints".into()),
+        runtime_id: Some(session.runtime_id.clone()),
+        ..Default::default()
+    };
     for instruction in removed {
         let response = session
             .connection
-            .request(AuxRequest::BreakpointUnset { instruction })
-            .await?;
+            .request(AuxRequest::BreakpointUnset {
+                instruction: instruction.clone(),
+            })
+            .await
+            .map_err(|error| crate::result::OutcomeError {
+                error: error.into(),
+                outcome: essential.clone(),
+            })?;
         if !matches!(response, AuxResponse::BreakpointUnset { success: true }) {
-            return Err(anyhow!("auxtools failed to remove a stale breakpoint"));
+            essential.recovery_required = true;
+            return Err(crate::result::OutcomeError {
+                error: anyhow!("auxtools failed to remove a stale breakpoint"),
+                outcome: essential,
+            }
+            .into());
         }
+        session.active_breakpoints.remove(&instruction);
+        essential.removed_breakpoints += 1;
     }
     let mut results = Vec::new();
-    let mut installed = HashSet::new();
-    for (instruction, condition) in desired {
+    for (index, (instruction, condition)) in desired.into_iter().enumerate() {
+        essential.failed_request_index = Some(index);
         let response = session
             .connection
             .request(AuxRequest::BreakpointSet {
                 instruction: instruction.clone(),
                 condition,
             })
-            .await?;
+            .await
+            .map_err(|error| crate::result::OutcomeError {
+                error: error.into(),
+                outcome: essential.clone(),
+            })?;
         let verified = matches!(
             response,
             AuxResponse::BreakpointSet {
@@ -704,15 +886,24 @@ async fn replace_breakpoints_in_session(
             }
         );
         if verified {
-            installed.insert(instruction.clone());
+            session.active_breakpoints.insert(instruction.clone());
+            essential.verified_request_indices.push(index);
+        } else {
+            essential.unverified_request_indices.push(index);
         }
-        results.push(json!({"instruction":instruction,"verified":verified}));
+        results.push(DebugBreakpoint {
+            instruction,
+            verified,
+        });
     }
-    session.active_breakpoints = installed;
+    essential.failed_request_index = None;
     Ok(json_success(
         debugger_metadata(session),
-        json!({"breakpoints":results}),
-    ))
+        DebugBreakpointsData {
+            breakpoints: results,
+        },
+    )
+    .with_outcome(essential))
 }
 
 pub async fn exception_info(state: &ServerState) -> Result<ToolResult> {
@@ -722,7 +913,10 @@ pub async fn exception_info(state: &ServerState) -> Result<ToolResult> {
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     Ok(json_success(
         debugger_metadata(session),
-        json!({"message":session.last_exception,"sequence":session.event_sequence}),
+        DebugExceptionInfoData {
+            message: session.last_exception.clone(),
+            sequence: session.event_sequence,
+        },
     ))
 }
 
@@ -743,7 +937,12 @@ pub async fn source(
     }
     Ok(json_success(
         debugger_metadata(session),
-        json!({"source_reference":1,"name":"stddef.dm","content":source,"source_origin":"native_debugger_stddef"}),
+        DebugSourceData {
+            source_reference: 1,
+            name: "stddef.dm",
+            content: crate::result::bounded_text(source, 128 * 1024, 128 * 1024, false).into(),
+            source_origin: "native_debugger_stddef",
+        },
     ))
 }
 
@@ -842,7 +1041,13 @@ fn event_result(
 ) -> Result<ToolResult> {
     Ok(json_success(
         debugger_metadata(session),
-        json!({"event":event,"timed_out":timed_out,"dropped_events":session.dropped_events.saturating_add(session.connection.dropped_events())}),
+        DebugEventData {
+            event,
+            timed_out,
+            dropped_events: session
+                .dropped_events
+                .saturating_add(session.connection.dropped_events()),
+        },
     ))
 }
 

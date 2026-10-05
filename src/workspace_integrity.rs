@@ -10,7 +10,7 @@ use std::process::Command;
 const MAX_INTEGRITY_ENTRIES: usize = 250_000;
 const MAX_INTEGRITY_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct FileIdentity {
     pub tracked: bool,
     pub git_object_kind: Option<String>,
@@ -20,7 +20,7 @@ pub struct FileIdentity {
     pub status: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct WorkspaceSnapshot {
     pub root: PathBuf,
     pub records: BTreeMap<String, FileIdentity>,
@@ -28,7 +28,9 @@ pub struct WorkspaceSnapshot {
     pub preexisting_changes: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MutationKind {
     Added,
@@ -36,7 +38,7 @@ pub enum MutationKind {
     Deleted,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct PathMutation {
     pub relative_path: String,
     pub change_kind: MutationKind,
@@ -44,7 +46,7 @@ pub struct PathMutation {
     pub after: Option<FileIdentity>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct IntegrityDelta {
     pub added: Vec<PathMutation>,
     pub modified: Vec<PathMutation>,
@@ -60,7 +62,7 @@ pub struct IntegrityBaseline {
     pub preexisting_changes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IntegrityCheckpoint {
     pub action: String,
     pub baseline_digest: String,
@@ -71,14 +73,14 @@ pub struct IntegrityCheckpoint {
     pub owned_paths: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IntegrityJournalStatus {
     Active,
     Finalized,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 struct IntegrityJournalDocument {
     schema: u32,
     journal_id: String,
@@ -95,7 +97,7 @@ pub struct IntegrityJournal {
     document: IntegrityJournalDocument,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct IntegrityJournalSummary {
     pub journal_id: String,
     pub status: IntegrityJournalStatus,

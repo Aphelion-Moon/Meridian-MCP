@@ -10,7 +10,7 @@ use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
 use installation::{validate_directory_target, StagingDirectory};
-use serde_json::{json, Value};
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -71,8 +71,10 @@ pub async fn generate(
         .await?;
     let mut staging = StagingDirectory::create(&parent)?;
     let limits = ServerLimits::default();
+    let mut process_attempted = false;
     let outcome = async {
         staging.check_installation_support()?;
+        process_attempted = true;
         run_contained_process(ProcessSpec {
             program: helper.to_owned(),
             arguments: vec![
@@ -92,20 +94,33 @@ pub async fn generate(
         .await
     }
     .await;
-    let mut result = json!({"output_directory":output,"helper":helper,"source_revision":snapshot.spacemandmm_revision,
-        "installed":false,"success":false,"cleanup_complete":true,"stdout":"","stderr":"",
-        "stdout_truncated_bytes":0,"stderr_truncated_bytes":0});
+    let mut result = crate::outputs::DocsData {
+        output_directory: Some(output.clone()),
+        helper: Some(helper.into()),
+        source_revision: snapshot.spacemandmm_revision.into(),
+        cleanup_complete: true,
+        stdout: Some(String::new()),
+        stderr: Some(String::new()),
+        ..Default::default()
+    };
+    let process_started = outcome
+        .as_ref()
+        .is_ok_and(|outcome| outcome.process_started);
+    let process_start_uncertain = process_attempted
+        && outcome.as_ref().map_or(true, |outcome| {
+            outcome.termination == TerminationReason::SpawnFailed
+        });
     let installation = match outcome {
         Err(error) => Err(anyhow!("dmdoc process setup failed: {error}")),
         Ok(outcome) => {
-            result["duration_ms"] = json!(outcome.duration_ms);
-            result["termination"] = json!(outcome.termination);
-            result["exit_code"] = json!(outcome.exit_code);
-            result["stdout"] = json!(outcome.stdout.text);
-            result["stderr"] = json!(outcome.stderr.text);
-            result["stdout_truncated_bytes"] = json!(outcome.stdout.truncated_bytes);
-            result["stderr_truncated_bytes"] = json!(outcome.stderr.truncated_bytes);
-            result["output_complete"] = json!(outcome.output_complete);
+            result.duration_ms = Some(outcome.duration_ms);
+            result.termination = Some(outcome.termination);
+            result.exit_code = Some(outcome.exit_code);
+            result.stdout = Some(outcome.stdout.text);
+            result.stderr = Some(outcome.stderr.text);
+            result.stdout_truncated_bytes = outcome.stdout.truncated_bytes;
+            result.stderr_truncated_bytes = outcome.stderr.truncated_bytes;
+            result.output_complete = Some(outcome.output_complete);
             if outcome.termination != TerminationReason::Exited || outcome.exit_code != Some(0) {
                 Err(anyhow!(
                     "dmdoc failed ({:?}, exit {:?})",
@@ -134,30 +149,59 @@ pub async fn generate(
         }
     };
     if let Err(error) = installation {
-        result["code"] = json!("documentation_generation_failed");
-        result["message"] = json!(error.to_string());
+        result.code = Some("documentation_generation_failed".into());
+        result.message = Some(error.to_string());
     }
     if let Some(error) = staging.cleanup() {
-        result["success"] = json!(false);
-        result["cleanup_complete"] = json!(false);
-        result["code"] = json!("documentation_cleanup_incomplete");
-        result["staging_directory"] = json!(staging.path());
-        result["staging_name"] = json!(staging.path().file_name());
-        result["staging_cleanup_error"] = json!(error);
+        result.success = false;
+        result.cleanup_complete = false;
+        result.code = Some("documentation_cleanup_incomplete".into());
+        result.staging_directory = Some(staging.path().into());
+        result.staging_name = staging
+            .path()
+            .file_name()
+            .map(|v| v.to_string_lossy().into_owned());
+        result.staging_cleanup_error = Some(error);
     }
-    result.as_object_mut().unwrap().extend(
-        serde_json::to_value(ToolMetadata::for_snapshot(&snapshot))?
-            .as_object()
-            .unwrap()
-            .clone(),
-    );
-    let failed = result["success"] != true;
-    let text = build_response::format_helper(result, options.response)?;
-    Ok(if failed {
-        ToolResult::error(text)
-    } else {
-        ToolResult::text(text)
-    })
+    let data = result;
+    let essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        operation_succeeded: Some(data.success),
+        failure_code: data.code.clone(),
+        process_started,
+        process_stopped: process_started,
+        process_start_uncertain,
+        cleanup_complete: data.cleanup_complete && !process_start_uncertain,
+        recovery_required: !data.cleanup_complete || process_start_uncertain,
+        outputs: vec![crate::result::OutputMutation {
+            request_index: 0,
+            installed: data.installed,
+            path_preview: Some(crate::result::path_preview(&output)),
+            sha256: None,
+            cleanup_complete: data.cleanup_complete,
+            backup_preview: data
+                .backup_directory
+                .as_deref()
+                .map(crate::result::path_preview),
+        }],
+        ..Default::default()
+    };
+    let failed = !data.success;
+    let projected = build_response::project_helper(data, options.response).map_err(|error| {
+        crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        }
+    })?;
+    let mut metadata = ToolMetadata::for_snapshot(&snapshot);
+    metadata.truncated = projected.truncated;
+    metadata.truncation_reasons = projected.truncation_reasons;
+    let mut result =
+        crate::result::json_success_compact(metadata, projected.data).with_outcome(essential);
+    if failed {
+        result.is_error = Some(true);
+    }
+    Ok(result)
 }
 
 fn install_generated(
@@ -165,7 +209,7 @@ fn install_generated(
     output: &Path,
     overwrite: bool,
     limits: &ServerLimits,
-    result: &mut Value,
+    result: &mut crate::outputs::DocsData,
 ) -> Result<()> {
     anyhow::ensure!(
         validate_directory_target(staging.path())?,
@@ -176,15 +220,13 @@ fn install_generated(
         "dmdoc did not produce index.html"
     );
     let (files, bytes) = directory_stats(staging.path(), limits)?;
-    result["files"] = json!(files);
-    result["bytes"] = json!(bytes);
+    result.files = Some(files);
+    result.bytes = Some(bytes);
     let installation = staging.install(output, overwrite)?;
-    result
-        .as_object_mut()
-        .unwrap()
-        .extend(installation.as_object().unwrap().clone());
-    if result["installed"] == true {
-        result["index"] = json!(output.join("index.html"));
+    // Capture installed state before any later reply serialization can fail.
+    result.installation(installation);
+    if result.installed {
+        result.index = Some(output.join("index.html"));
     }
     Ok(())
 }

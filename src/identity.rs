@@ -55,7 +55,7 @@ pub(crate) fn runtime(epoch: &[u8; 16], sequence: u64) -> String {
     format!("r1:{:x}", hash.finalize())
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct AnalysisIdentity {
     pub snapshot_id: String,
     pub generation: u64,

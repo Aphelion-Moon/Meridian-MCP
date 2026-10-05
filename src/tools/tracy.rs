@@ -1,6 +1,7 @@
 use super::ToolExecutionContext;
 use crate::atomic_output::{write_atomic, OutputArtifact};
 use crate::mcp::ToolResult;
+use crate::outputs::*;
 use crate::result::{json_success, structured_error, ToolErrorCode, ToolMetadata};
 use crate::tracy_artifact::{reserve_trace_set, validate_capture_result, ReservedTraceSet};
 use crate::tracy_collector::{
@@ -98,7 +99,12 @@ pub async fn prepare(
         };
         return Ok(json_success(
             ToolMetadata::complete(None),
-            json!({"state":"already_prepared","artifact":artifact,"source_revision":installation.hook.source_revision,"protocol_version":installation.hook.protocol_version}),
+            TracyPrepareData {
+                state: "already_prepared",
+                artifact,
+                source_revision: installation.hook.source_revision.clone(),
+                protocol_version: installation.hook.protocol_version,
+            },
         ));
     }
 
@@ -108,10 +114,17 @@ pub async fn prepare(
         std::io::copy(&mut input, output)?;
         Ok(())
     })?;
+    let essential = crate::result::MutationOutcome::installed(0, &artifact, true, None);
     Ok(json_success(
         ToolMetadata::complete(None),
-        json!({"state":"prepared","artifact":artifact,"source_revision":installation.hook.source_revision,"protocol_version":installation.hook.protocol_version}),
-    ))
+        TracyPrepareData {
+            state: "prepared",
+            artifact,
+            source_revision: installation.hook.source_revision.clone(),
+            protocol_version: installation.hook.protocol_version,
+        },
+    )
+    .with_outcome(essential))
 }
 
 pub async fn launch(
@@ -126,7 +139,7 @@ pub async fn launch(
         .integrity_journal
         .as_ref()
         .map(|journal| journal.summary().journal_id);
-    let result = launch_inner(context, state, args).await;
+    let mut result = launch_inner(context, state, args).await;
     let failed = result
         .as_ref()
         .map_or(true, |tool_result| tool_result.is_error == Some(true));
@@ -150,7 +163,33 @@ pub async fn launch(
     if failed
         && ((current_journal_id.is_some() && current_journal_id != prior_journal_id) || owns_lease)
     {
-        let _ = stop_with_lifecycle(context, state).await;
+        let cleanup = stop_with_lifecycle(context, state).await;
+        let cleanup = match cleanup {
+            Ok(reply) => reply.outcome.map(|outcome| *outcome),
+            Err(error) => error
+                .downcast_ref::<crate::result::OutcomeError>()
+                .map(|error| error.outcome.clone()),
+        };
+        if let Some(cleanup) = cleanup {
+            match &mut result {
+                Ok(reply) => {
+                    let mut outcome = reply.outcome.take().map(|v| *v).unwrap_or_default();
+                    outcome.process_stopped |= cleanup.process_stopped;
+                    outcome.cleanup_complete = cleanup.cleanup_complete;
+                    outcome.recovery_required = cleanup.recovery_required;
+                    outcome.outputs.extend(cleanup.outputs);
+                    *reply = reply.clone().with_outcome(outcome);
+                }
+                Err(error) => {
+                    if let Some(error) = error.downcast_mut::<crate::result::OutcomeError>() {
+                        error.outcome.process_stopped |= cleanup.process_stopped;
+                        error.outcome.cleanup_complete = cleanup.cleanup_complete;
+                        error.outcome.recovery_required = cleanup.recovery_required;
+                        error.outcome.outputs.extend(cleanup.outputs);
+                    }
+                }
+            }
+        }
     }
     result
 }
@@ -160,7 +199,14 @@ async fn launch_inner(
     state: &crate::state::ServerState,
     args: crate::parameters::TracyLaunchParams,
 ) -> Result<ToolResult> {
-    let runtime_id = state.new_runtime_id()?;
+    let mut essential = crate::result::MutationOutcome {
+        cleanup_complete: true,
+        action: Some("tracy_launch".into()),
+        ..Default::default()
+    };
+    let outcome=async {
+
+    let runtime_id = state.new_runtime_id()?;essential.runtime_id=Some(runtime_id.clone());
     let dmb_path = Path::new(args.dmb_path.as_str());
     let canonical_dmb = dmb_path.canonicalize()?;
     let game_port = u16::try_from(args.game_port.unwrap_or(1337))?;
@@ -355,6 +401,7 @@ async fn launch_inner(
         return Ok(runtime_result);
     }
     let experiment_started_at = tokio::time::Instant::now();
+    essential.operation_ran=true;essential.process_started=true;
     let initial_process_identities = owned_process_identities(state).await?;
     let (memory_series, memory_stop, memory_task) =
         start_memory_sampler(&initial_process_identities, experiment_started_at);
@@ -458,6 +505,7 @@ async fn launch_inner(
         std::io::Write::write_all(output, b"\n")?;
         Ok(())
     })?;
+    essential.outputs.extend(crate::result::MutationOutcome::installed(0,&launch_artifact,true,None).outputs);
     {
         let mut capture = state.tracy_capture_checked().await?;
         capture.phase = Some(TracySessionPhase::HealthyIdle);
@@ -484,7 +532,7 @@ async fn launch_inner(
             initialization_timeout_ms,
         )
         .await?;
-        if initialization["matched"].as_bool() != Some(true) {
+        if !initialization.matched {
             let _ = stop_with_lifecycle(context, state).await;
             return Ok(structured_error(
                 ToolErrorCode::TimedOut,
@@ -711,18 +759,28 @@ async fn launch_inner(
     let capture = state.tracy_capture_checked().await?;
     Ok(json_success(
         metadata,
-        json!({
-            "lifecycle":"ready",
-            "profiler_port":profiler_port,
-            "collector":capture.last_status,
-            "executable_identity":capture.experiment.as_ref().map(|experiment| &experiment.executable),
-            "runtime_configuration":capture.experiment.as_ref().and_then(|experiment| experiment.runtime_configuration.as_ref()),
-            "runtime_wake":runtime_wake,
-            "integrity_checkpoint":integrity_checkpoint,
-            "integrity_journal":capture.integrity_journal.as_ref().map(crate::workspace_integrity::IntegrityJournal::summary),
-            "launch_provenance":launch_provenance,
-        }),
+        TracyLaunchData {lifecycle:"ready",profiler_port,collector:capture.last_status.clone().map(serde_json::from_value).transpose()?,executable_identity:capture.experiment.as_ref().map(|e|e.executable.clone()),runtime_configuration:capture.experiment.as_ref().and_then(|e|e.runtime_configuration.clone()),runtime_wake:runtime_wake.map(RuntimeWake::decode).transpose()?,integrity_checkpoint,integrity_journal:capture.integrity_journal.as_ref().map(crate::workspace_integrity::IntegrityJournal::summary),launch_provenance},
     ))
+    }.await;
+    match outcome {
+        Ok(result) => {
+            essential.operation_succeeded = Some(result.is_error != Some(true));
+            Ok(if essential.operation_ran {
+                result.with_outcome(essential)
+            } else {
+                result
+            })
+        }
+        Err(error) => {
+            essential.cleanup_complete = false;
+            essential.recovery_required = essential.operation_ran;
+            Err(crate::result::OutcomeError {
+                error,
+                outcome: essential,
+            }
+            .into())
+        }
+    }
 }
 
 pub async fn capture(
@@ -730,8 +788,16 @@ pub async fn capture(
     state: &crate::state::ServerState,
     args: crate::parameters::TracyCaptureParams,
 ) -> Result<ToolResult> {
+    let mut essential = crate::result::MutationOutcome {
+        cleanup_complete: true,
+        action: Some("tracy_capture".into()),
+        ..Default::default()
+    };
+    let outcome=async {
+
     let admitted = state.bind_current_runtime().await?;
     let state = &admitted;
+    essential.runtime_id=state.runtime_checked().await?.runtime_id.clone();
     let _publication = state
         .try_tracy_publication()
         .map_err(|_| anyhow!("a Tracy capture or its finalization is already active"))?;
@@ -820,6 +886,8 @@ pub async fn capture(
                         Ok(())
                     },
                 )?;
+                essential.operation_ran=true;
+                essential.outputs.extend(crate::result::MutationOutcome::installed(2,&artifact,true,None).outputs);
                 new_owned_path = Some(artifact.path);
                 experiment.locked_identity = Some(identity);
             }
@@ -870,6 +938,7 @@ pub async fn capture(
         .experiment_started_at
         .map(|started| started.elapsed().as_millis() as u64)
         .unwrap_or(0);
+    essential.operation_ran=true;
     let invocation = collector
         .capture_window(
             duration_ms,
@@ -940,6 +1009,8 @@ pub async fn capture(
                 },
                 details.clone(),
             )?;
+            essential.outputs.extend(crate::result::MutationOutcome::installed(0,&diagnostic.trace,true,None).outputs);
+            essential.outputs.extend(crate::result::MutationOutcome::installed(1,&diagnostic.sidecar,true,None).outputs);
             let integrity_checkpoint = record_invalid_capture(
                 context,
                 state,
@@ -1093,6 +1164,7 @@ pub async fn capture(
         "runtime_wake":runtime_wake,
     });
     let artifacts = reserved.promote(&sidecar)?;
+    essential.outputs.extend(crate::result::MutationOutcome::installed(0,&artifacts.trace,true,None).outputs);essential.outputs.extend(crate::result::MutationOutcome::installed(1,&artifacts.sidecar,true,None).outputs);
     {
         let mut capture = state.tracy_capture_checked().await?;
         capture
@@ -1116,16 +1188,28 @@ pub async fn capture(
     let integrity_checkpoint = checkpoint_integrity(context, state, "post_capture").await?;
     Ok(json_success(
         runtime_metadata(state).await?,
-        json!({
-            "artifact":artifacts.trace,
-            "sidecar":artifacts.sidecar,
-            "capture":sidecar["capture"],
-            "network_audit":sidecar["network_evidence"],
-            "helper_revision":installation.helper.source_revision,
-            "protocol_version":installation.helper.protocol_version,
-            "integrity_checkpoint":integrity_checkpoint,
-        }),
+        TracyCaptureData {artifact:artifacts.trace,sidecar:artifacts.sidecar,capture:serde_json::from_value(sidecar["capture"].clone())?,network_audit:serde_json::from_value(sidecar["network_evidence"].clone())?,helper_revision:installation.helper.source_revision.clone(),protocol_version:installation.helper.protocol_version,integrity_checkpoint},
     ))
+    }.await;
+    match outcome {
+        Ok(result) => {
+            essential.operation_succeeded = Some(result.is_error != Some(true));
+            Ok(if essential.operation_ran {
+                result.with_outcome(essential)
+            } else {
+                result
+            })
+        }
+        Err(error) => {
+            essential.cleanup_complete = false;
+            essential.recovery_required = essential.operation_ran;
+            Err(crate::result::OutcomeError {
+                error,
+                outcome: essential,
+            }
+            .into())
+        }
+    }
 }
 
 struct InvalidCaptureContext<'a> {
@@ -1302,25 +1386,37 @@ pub async fn status(state: &crate::state::ServerState) -> Result<ToolResult> {
     }
     Ok(json_success(
         metadata,
-        json!({
-            "running":running,
-            "runtime_kind":kind,
-            "game_port":game_port,
-            "profiler_port":profiler_port,
-            "pid":pid,
-            "last_exit_code":last_exit_code,
-            "recent_output":recent_output,
-            "capture_active":capture.active,
-            "capture_output_path":capture.output_path,
-            "last_capture_error":capture.last_error,
-            "collector_phase":capture.phase,
-            "collector_status":capture.last_status,
-            "runtime_wake":capture.experiment.as_ref().and_then(|experiment| experiment.runtime_wake.as_ref()),
-            "integrity_journal":capture.integrity_journal.as_ref().map(crate::workspace_integrity::IntegrityJournal::summary),
-            "collector_stderr_tail":collector_stderr_tail,
-            "collector_exit_code":collector_exit_code,
-            "launch_provenance":launch_provenance,
-        }),
+        TracyStatusData {
+            running,
+            runtime_kind: kind,
+            game_port,
+            profiler_port,
+            pid,
+            last_exit_code,
+            recent_output: crate::outputs::runtime::recent(recent_output),
+            capture_active: capture.active,
+            capture_output_path: capture.output_path.clone(),
+            last_capture_error: capture.last_error.clone(),
+            collector_phase: capture.phase,
+            collector_status: capture
+                .last_status
+                .clone()
+                .map(serde_json::from_value)
+                .transpose()?,
+            runtime_wake: capture
+                .experiment
+                .as_ref()
+                .and_then(|e| e.runtime_wake.clone())
+                .map(RuntimeWake::decode)
+                .transpose()?,
+            integrity_journal: capture
+                .integrity_journal
+                .as_ref()
+                .map(crate::workspace_integrity::IntegrityJournal::summary),
+            collector_stderr_tail: crate::outputs::runtime::recent(collector_stderr_tail),
+            collector_exit_code,
+            launch_provenance,
+        },
     ))
 }
 
@@ -1336,6 +1432,14 @@ pub(super) async fn stop_with_lifecycle(
     context: &ToolExecutionContext,
     state: &crate::state::ServerState,
 ) -> Result<ToolResult> {
+    let mut essential = crate::result::MutationOutcome {
+        cleanup_complete: true,
+        action: Some("tracy_stop_with_lifecycle".into()),
+        ..Default::default()
+    };
+    let outcome=async {
+
+    essential.runtime_id=state.runtime_checked().await?.runtime_id.clone();
     let cleanup_only = state
         .tracy_capture_checked()
         .await?
@@ -1361,6 +1465,7 @@ pub(super) async fn stop_with_lifecycle(
     );
     let collector = state.tracy_capture_checked().await?.collector.clone();
     if let Some(collector) = collector {
+        essential.operation_ran=true;
         let _ = collector.cancel().await;
     }
     // The active window can end before trace/sidecar/journal publication. This
@@ -1394,7 +1499,9 @@ pub(super) async fn stop_with_lifecycle(
     let runtime_was_running = runtime.is_game_running();
     let runtime_was_profiled = runtime.kind == Some(crate::state::RuntimeKind::Tracy);
     if runtime_was_running && runtime_was_profiled {
+        essential.operation_ran=true;
         runtime.stop_game_process().await?;
+        essential.process_stopped=true;
     }
     if !runtime_was_running {
         runtime.finish_runtime_cleanup().await?;
@@ -1475,6 +1582,7 @@ pub(super) async fn stop_with_lifecycle(
     } else {
         None
     };
+    if let Some(artifact)=&experiment_manifest {essential.outputs.extend(crate::result::MutationOutcome::installed(0,artifact,true,None).outputs);}
     let post_stop_checkpoint = checkpoint_integrity(context, state, "post_stop").await;
     let integrity_errors = [pre_stop_checkpoint.as_ref(), post_stop_checkpoint.as_ref()]
         .into_iter()
@@ -1513,6 +1621,7 @@ pub(super) async fn stop_with_lifecycle(
         }
     }
     if !integrity_errors.is_empty() {
+        essential.cleanup_complete=false;essential.recovery_required=true;
         return Ok(structured_error(
             ToolErrorCode::WorkspaceIntegrityViolation,
             "The profiling lifecycle stopped its owned processes but failed workspace integrity checks.",
@@ -1527,16 +1636,28 @@ pub(super) async fn stop_with_lifecycle(
     }
     Ok(json_success(
         runtime_metadata(state).await?,
-        json!({
-            "lifecycle":"stopped",
-            "runtime_was_running":runtime_was_running,
-            "experiment_manifest":experiment_manifest,
-            "pre_stop_integrity_checkpoint":pre_stop_checkpoint.ok().flatten(),
-            "post_stop_integrity_checkpoint":post_stop_checkpoint.ok().flatten(),
-            "integrity_journal":journal_summary,
-            "launch_provenance":launch_provenance,
-        }),
+        TracyStopData {lifecycle:"stopped",runtime_was_running,experiment_manifest,pre_stop_integrity_checkpoint:pre_stop_checkpoint.ok().flatten(),post_stop_integrity_checkpoint:post_stop_checkpoint.ok().flatten(),integrity_journal:journal_summary,launch_provenance},
     ))
+    }.await;
+    match outcome {
+        Ok(result) => {
+            essential.operation_succeeded = Some(result.is_error != Some(true));
+            Ok(if essential.operation_ran {
+                result.with_outcome(essential)
+            } else {
+                result
+            })
+        }
+        Err(error) => {
+            essential.cleanup_complete = false;
+            essential.recovery_required = essential.operation_ran;
+            Err(crate::result::OutcomeError {
+                error,
+                outcome: essential,
+            }
+            .into())
+        }
+    }
 }
 
 pub async fn hotspots(
@@ -1798,7 +1919,7 @@ pub async fn control_stats(
     }
     let (frame_time, noise) = crate::tracy_statistics::summarize_controls(&values)
         .ok_or_else(|| anyhow!("insufficient_complete_samples"))?;
-    let mut zones = serde_json::Map::new();
+    let mut zones = std::collections::BTreeMap::new();
     let mut request_id = trace_paths.len() as u64 + 1;
     for key in zone_keys {
         let parts = key.split('|').collect::<Vec<_>>();
@@ -1850,22 +1971,30 @@ pub async fn control_stats(
         }
         let (summary, zone_noise) = crate::tracy_statistics::summarize_controls(&zone_values)
             .ok_or_else(|| anyhow!("insufficient_complete_samples"))?;
-        zones.insert(key, json!({"distribution":summary,"noise":zone_noise}));
+        zones.insert(
+            key,
+            ZoneDistribution {
+                distribution: summary,
+                noise: zone_noise,
+            },
+        );
     }
     Ok(json_success(
         ToolMetadata::complete(None),
-        json!({
-            "schema":2,
-            "input_count":trace_paths.len(),
-            "valid_count":trace_paths.len() - incomplete_count,
-            "incomplete_count":incomplete_count,
-            "establishes_control_baseline":incomplete_count == 0 && !noise.noisy && zones.values().all(|value| !value["noise"]["noisy"].as_bool().unwrap_or(true)),
-            "compatibility":compatibility,
-            "frame_percentile":percentile,
-            "frame_time":frame_time,
-            "zones":zones,
-            "noise":noise,
-        }),
+        TracyControlStatsData {
+            schema: 2,
+            input_count: trace_paths.len(),
+            valid_count: trace_paths.len() - incomplete_count,
+            incomplete_count,
+            establishes_control_baseline: incomplete_count == 0
+                && !noise.noisy
+                && zones.values().all(|v| !v.noise.noisy),
+            compatibility,
+            frame_percentile: percentile.into(),
+            frame_time,
+            zones,
+            noise,
+        },
     ))
 }
 
@@ -1971,62 +2100,46 @@ async fn invoke_analysis(
         "protocol_version".into(),
         json!(installation.helper.protocol_version),
     );
-    correlate_sources(snapshot.as_deref(), &mut result);
-    Ok(json_success(
-        snapshot
-            .as_ref()
-            .map(|snapshot| ToolMetadata::for_snapshot(snapshot))
-            .unwrap_or_else(|| ToolMetadata::complete(None)),
-        result,
-    ))
+
+    let metadata = snapshot
+        .as_ref()
+        .map(|snapshot| ToolMetadata::for_snapshot(snapshot))
+        .unwrap_or_else(|| ToolMetadata::complete(None));
+    match command {
+        TracyCommand::Hotspots => {
+            typed_statistics::<TracyHotspotsStatistics>(metadata, result, snapshot.as_deref())
+        }
+        TracyCommand::Zone => {
+            typed_statistics::<TracyZoneStatisticsResult>(metadata, result, snapshot.as_deref())
+        }
+        TracyCommand::FrameStats => {
+            typed_statistics::<TracyFrameStatistics>(metadata, result, snapshot.as_deref())
+        }
+        TracyCommand::Compare => {
+            typed_statistics::<TracyComparisonStatistics>(metadata, result, snapshot.as_deref())
+        }
+        TracyCommand::Capture => Err(anyhow!("capture is a lifecycle operation")),
+    }
 }
 
-fn correlate_sources(
+fn typed_statistics<T: NativeStatistics + serde::de::DeserializeOwned + serde::Serialize>(
+    metadata: ToolMetadata,
+    result: Value,
     snapshot: Option<&crate::analysis_snapshot::AnalysisSnapshot>,
-    result: &mut Value,
-) {
-    let Some(snapshot) = snapshot else {
-        return;
-    };
-    let Some(items) = result.get_mut("items").and_then(Value::as_array_mut) else {
-        return;
-    };
-    let root = snapshot
-        .environment_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."));
-    for item in items {
-        let Some(file) = item.get("file").and_then(Value::as_str) else {
-            continue;
-        };
-        let Some(line) = item.get("line").and_then(Value::as_u64) else {
-            continue;
-        };
-        let reported = Path::new(file);
-        let candidate = if reported.is_absolute() {
-            reported.to_owned()
-        } else {
-            root.join(reported)
-        };
-        let Ok(source_path) = candidate.canonicalize() else {
-            continue;
-        };
-        if !source_path.starts_with(root) {
-            continue;
-        }
-        if let Some(object) = item.as_object_mut() {
-            object.insert(
-                "source_correlation".into(),
-                json!({
-                    "match":"file_line",
-                    "path":source_path,
-                    "line":line,
-                    "state_generation":snapshot.generation,
-                    "analysis":snapshot.identity(),
-                }),
-            );
-        }
+) -> Result<ToolResult> {
+    let mut data: TracyAnalysisData<T> = serde_json::from_value(result)?;
+    let mut budget = crate::outputs::budget::Budget::default();
+    data.native.correlate(snapshot);
+    data.native.bound(&mut budget);
+    data.statistics.bound(&mut budget);
+    let mut metadata = metadata;
+    if data.native.truncated() || data.statistics.truncated() {
+        metadata.truncated = true;
+        metadata
+            .truncation_reasons
+            .push("statistics_response_limit".into());
     }
+    Ok(json_success(metadata, data.into_projection()))
 }
 
 fn hash_file(path: &Path) -> Result<String> {

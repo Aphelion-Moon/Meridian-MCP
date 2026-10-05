@@ -21,7 +21,7 @@ pub enum DmiError {
     Limit(String),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiAssetId {
     pub path: PathBuf,
     pub sha256: String,
@@ -231,20 +231,20 @@ fn read_dmi_bytes(mut reader: impl std::io::Read, limit: u64) -> Result<Vec<u8>,
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct PixelCounts {
     pub opaque: u64,
     pub translucent: u64,
     pub transparent: u64,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct AlphaBounds {
     pub min_x: u32,
     pub min_y: u32,
     pub max_x: u32,
     pub max_y: u32,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiFrameProfile {
     pub direction: i32,
     pub frame: u32,
@@ -253,7 +253,7 @@ pub struct DmiFrameProfile {
     pub pixel_counts: PixelCounts,
     pub alpha_bounds: Option<AlphaBounds>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiStateProfile {
     pub name: String,
     pub duplicate_index: u32,
@@ -265,7 +265,7 @@ pub struct DmiStateProfile {
     pub rewind: bool,
     pub frames: Vec<DmiFrameProfile>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiProfile {
     pub identity: DmiAssetId,
     pub asset_generation: u64,
@@ -278,13 +278,13 @@ pub struct DmiProfile {
     pub warnings: Vec<DmiWarning>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiWarning {
     pub code: &'static str,
     pub message: &'static str,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum IconReferenceResolution {
     Static {
@@ -296,7 +296,7 @@ pub enum IconReferenceResolution {
     },
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct IconReference {
     pub type_path: String,
     pub file: String,
@@ -359,7 +359,7 @@ pub fn profile_dmi(asset: &DecodedDmi, limits: &ServerLimits) -> Result<DmiProfi
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GeometricTransform {
     Identity,
@@ -376,7 +376,7 @@ pub struct NormalizedFrame {
     pub pixels: Vec<[u8; 4]>,
     pub alpha_bounds: Option<AlphaBounds>,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchKind {
     Exact,
@@ -386,7 +386,7 @@ pub enum MatchKind {
     Near,
     Different,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct FrameComparison {
     pub kind: MatchKind,
     pub transform: GeometricTransform,
@@ -591,13 +591,13 @@ fn transform_frame(frame: &NormalizedFrame, transform: GeometricTransform) -> No
     normalize_frame(width, height, out)
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, schemars::JsonSchema)]
 pub struct StateLocator {
     pub dmi_path: PathBuf,
     pub state: String,
     pub duplicate_index: u32,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct StateComparison {
     pub left: StateLocator,
     pub right: StateLocator,

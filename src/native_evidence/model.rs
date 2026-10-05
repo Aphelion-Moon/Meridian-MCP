@@ -97,7 +97,7 @@ pub struct NativeEvidenceRequest {
     pub phases: Vec<PhaseInput>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceSemantics {
     CumulativeSnapshot,
@@ -105,7 +105,7 @@ pub enum EvidenceSemantics {
     EventStream,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct ArtifactIdentity {
     pub relative_path: String,
     pub kind: ArtifactKind,
@@ -132,19 +132,19 @@ pub struct ParsedArtifact {
     pub unavailable_metrics: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct EvidenceWarning {
     pub code: String,
     pub message: String,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, schemars::JsonSchema)]
 pub struct RedactionSummary {
     pub values_redacted: u64,
     pub protected_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DatasetSummary {
     pub artifact: usize,
     pub semantics: EvidenceSemantics,
@@ -160,13 +160,13 @@ pub struct DatasetSummary {
     pub unavailable_metrics: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct GroupSummary {
     pub key: String,
     pub count: u64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct NativeRunIdentity {
     pub identity_verification: String,
     pub build_record_id: Option<String>,
@@ -174,7 +174,7 @@ pub struct NativeRunIdentity {
     pub workload: Option<WorkloadIdentityInput>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct NormalizedRun {
     pub schema: u32,
     pub identity: NativeRunIdentity,

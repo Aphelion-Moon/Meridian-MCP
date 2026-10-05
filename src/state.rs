@@ -14,7 +14,7 @@ pub(crate) const OUTPUT_LOG_CAPACITY: usize = 500;
 pub(crate) const OUTPUT_LINE_MAX_BYTES: usize = 16 * 1024;
 pub(crate) const OUTPUT_LOG_MAX_BYTES: usize = 1024 * 1024;
 pub(crate) const OUTPUT_TRUNCATED_SUFFIX: &str = "... [truncated]";
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 pub struct RuntimeOutputEntry {
     pub sequence: u64,
     pub monotonic_offset_ms: u64,
@@ -47,7 +47,7 @@ impl Default for RuntimeOutputBuffer {
 
 pub type OutputLog = Arc<StdMutex<RuntimeOutputBuffer>>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeKind {
     Standard,
@@ -155,7 +155,7 @@ pub struct RuntimeState {
     pub(crate) integrity_summary: Option<crate::runtime_integrity::RuntimeIntegritySummary>,
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct RuntimeStatus {
     pub runtime_id: Option<String>,
     pub analysis: Option<crate::identity::AnalysisIdentity>,

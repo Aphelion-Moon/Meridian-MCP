@@ -26,30 +26,36 @@ pub enum TraceSetError {
     OverwriteUnsupported,
     #[error("sidecar serialization failed: {0}")]
     Serialize(#[from] serde_json::Error),
-    #[error("paired output rollback failed; the newly-created trace remains at {0}")]
-    Rollback(PathBuf),
+    #[error("{source}; paired trace rollback complete: {rollback_complete}")]
+    PartialPublication {
+        #[source]
+        source: Box<AtomicOutputError>,
+        trace: OutputArtifact,
+        trace_retained: bool,
+        rollback_complete: bool,
+    },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct PromotedTraceSet {
     pub trace: OutputArtifact,
     pub sidecar: OutputArtifact,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DiagnosticTraceSet {
     pub authoritative: bool,
     pub trace: OutputArtifact,
     pub sidecar: OutputArtifact,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct RawRange {
     pub raw_begin: u64,
     pub raw_end: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct TraceMetadata {
     pub trace_sha256: String,
     pub meridian_mcp_build_id: String,
@@ -83,21 +89,21 @@ fn has_required_memory_roles(roles: &[ProcessRole]) -> bool {
             == 1
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ComparisonMode {
     SameExperimentSamePhase,
     CrossExperiment,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct IdentityMismatch {
     pub field: String,
     pub baseline: String,
     pub current: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct ComparisonCompatibility {
     pub compatible: bool,
     pub mode: ComparisonMode,
@@ -315,12 +321,15 @@ impl ReservedTraceSet {
         match self.sidecar.commit() {
             Ok(sidecar) => Ok(PromotedTraceSet { trace, sidecar }),
             Err(error) => {
-                if hash_file(&trace.path).is_ok_and(|hash| hash == trace.sha256)
-                    && std::fs::remove_file(&trace.path).is_err()
-                {
-                    return Err(TraceSetError::Rollback(trace.path));
-                }
-                Err(error.into())
+                let rollback_complete = hash_file(&trace.path)
+                    .is_ok_and(|hash| hash == trace.sha256)
+                    && std::fs::remove_file(&trace.path).is_ok();
+                Err(TraceSetError::PartialPublication {
+                    source: Box::new(error),
+                    trace,
+                    trace_retained: !rollback_complete,
+                    rollback_complete,
+                })
             }
         }
     }

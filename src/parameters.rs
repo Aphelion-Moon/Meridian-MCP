@@ -13,6 +13,7 @@ const NATIVE_EVIDENCE_COMPARE_RUNS_MIN: usize = 2;
 const NATIVE_EVIDENCE_COMPARE_RUNS_MAX: usize = 20;
 const MAX_SOURCE_LINES: u64 = crate::source::MAX_SOURCE_LINES as u64;
 const LIST_TYPES_LIMIT_MAX: u64 = 500;
+const GET_TYPE_LIMIT_MAX: u64 = crate::outputs::budget::MEMBER_WORK as u64;
 const SEARCH_SYMBOLS_LIMIT_MAX: u64 = 200;
 const SEARCH_CONTEXT_LIMIT_MAX: u64 = 50;
 const CHECK_ERRORS_FILE_PATH_MIN: usize = 1;
@@ -303,6 +304,36 @@ impl Request for NativeEvidenceCompareParams {
 pub struct GetTypeParams {
     /// The type path (e.g., '/obj/item', '/mob/living')
     pub type_path: String,
+    /// Omitted selects all existing full sections. Selection never changes scalar identity fields.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "Vec<GetTypeSection>", length(min = 1, max = 4), extend("uniqueItems" = true))]
+    pub sections: Option<Vec<GetTypeSection>>,
+    /// Optional member count; omission fills the aggregate bounded response budget.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "u64", range(min = MIN_POSITIVE_INTEGER, max = GET_TYPE_LIMIT_MAX))]
+    pub limit: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "String", length(min = 1, max = 256))]
+    pub cursor: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "DocumentSymbolsDetail")]
+    pub detail: Option<DocumentSymbolsDetail>,
     /// Optional identity expectation; a stale handle fails before work starts.
     #[serde(
         default,
@@ -315,8 +346,45 @@ pub struct GetTypeParams {
 impl Request for GetTypeParams {
     fn validate(&self) -> Result<(), InputError> {
         text("type_path", &self.type_path, 0, None)?;
+        if let Some(limit) = self.limit {
+            range(
+                "limit",
+                limit,
+                Some(MIN_POSITIVE_INTEGER),
+                Some(GET_TYPE_LIMIT_MAX),
+            )?;
+        }
+        if let Some(cursor) = &self.cursor {
+            text("cursor", cursor, 1, Some(256))?;
+        }
+        if let Some(sections) = &self.sections {
+            if sections.is_empty()
+                || sections.len() > 4
+                || sections
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    != sections.len()
+            {
+                return Err(InputError::new(
+                    "sections",
+                    "select one to four distinct type sections",
+                ));
+            }
+        }
         Ok(())
     }
+}
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Serialize, JsonSchema, Eq, Ord, PartialEq, PartialOrd,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum GetTypeSection {
+    Documentation,
+    Vars,
+    Procs,
+    Children,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]

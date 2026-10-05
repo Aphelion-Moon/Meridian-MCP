@@ -285,6 +285,7 @@ fn definition(contract: &crate::ToolContract) -> ToolDefinition {
         name: contract.name.into(),
         description: contract.summary.into(),
         input_schema: (contract.schema)(),
+        output_schema: (contract.output_schema)(),
     }
 }
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {

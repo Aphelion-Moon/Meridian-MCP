@@ -19,6 +19,7 @@ pub mod memory_evidence;
 pub mod native_evidence;
 pub mod native_memory;
 pub mod network_audit;
+pub mod outputs;
 pub mod parameters;
 pub mod path_policy;
 pub mod private_state;

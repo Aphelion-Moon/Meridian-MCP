@@ -12,7 +12,7 @@ pub async fn summary(
     state
         .run_asset_job(move || {
             let result = crate::native_evidence::summarize_run(&evidence, request)?;
-            Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+            Ok(crate::result::projection(result, true, false))
         })
         .await
 }
@@ -26,7 +26,7 @@ pub async fn compare(
     let result = state
         .run_asset_job(move || {
             let result = crate::native_evidence::compare_runs(&evidence, request.runs)?;
-            Ok(ToolResult::text(serde_json::to_string_pretty(&result)?))
+            Ok(crate::result::projection(result, true, false))
         })
         .await;
     match result {

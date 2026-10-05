@@ -12,6 +12,8 @@ pub struct ToolDefinition {
     pub description: String,
     #[serde(rename = "inputSchema")]
     pub input_schema: Value,
+    #[serde(rename = "outputSchema")]
+    pub output_schema: Value,
 }
 
 pub async fn run_server(config: ServerConfig) -> Result<()> {

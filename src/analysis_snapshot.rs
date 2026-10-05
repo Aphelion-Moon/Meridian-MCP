@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, schemars::JsonSchema)]
 pub struct DiagnosticRecord {
     pub rule: Option<String>,
     pub severity: String,
@@ -30,12 +30,12 @@ pub struct DiagnosticRecord {
     pub configured: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, schemars::JsonSchema)]
 pub struct DiagnosticNoteRecord {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, schemars::JsonSchema)]
 pub struct MacroDefinitionRecord {
     pub name: String,
     pub file: String,
@@ -100,7 +100,7 @@ pub struct AnalysisBuild {
     pub source_fingerprint: SourceFingerprint,
 }
 
-#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, schemars::JsonSchema)]
 pub struct AnalysisBuildTimings {
     pub analysis_indexes: u64,
     pub fingerprint: u64,

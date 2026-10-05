@@ -15,14 +15,17 @@ pub async fn run(
 ) -> Result<ToolResult> {
     let policy = context.policy().clone();
     let result = state
-        .run_asset_job(move || {
-            let value = match args {
-                MemoryInput::Summary(request) => {
-                    serde_json::to_value(crate::memory_evidence::summarize(&policy, request)?)?
-                }
-                MemoryInput::Compare(request) => crate::memory_evidence::compare(&policy, request)?,
-            };
-            Ok(ToolResult::text(serde_json::to_string_pretty(&value)?))
+        .run_asset_job(move || match args {
+            MemoryInput::Summary(request) => Ok(crate::result::projection(
+                crate::memory_evidence::summarize(&policy, request)?,
+                true,
+                false,
+            )),
+            MemoryInput::Compare(request) => Ok(crate::result::projection(
+                crate::memory_evidence::compare(&policy, request)?,
+                true,
+                false,
+            )),
         })
         .await;
     match result {

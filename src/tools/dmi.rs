@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use dmi::{Dir, Dirs};
 use dmm_tools::dmi::render::{IconRenderer, RenderType};
 use dmm_tools::dmi::Image;
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -10,6 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::atomic_output::{write_atomic, AtomicOutputError};
 use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
+use crate::outputs::*;
 use crate::result::{json_success, ToolMetadata};
 use crate::spaceman::dmi::{
     compare_states, discover_dmis_with_policy, profile_dmi, read_dmi, state_candidate_signatures,
@@ -152,7 +152,7 @@ pub async fn info(
     let profile = profile_dmi(&asset, &ServerLimits::default())?;
     let mut metadata = ToolMetadata::complete(None);
     metadata.asset_generation = Some(asset.asset_generation);
-    Ok(json_success(metadata, json!({ "profile": profile })))
+    Ok(json_success(metadata, DmiInfoData { profile }))
 }
 
 pub async fn compare(
@@ -173,15 +173,7 @@ pub async fn compare(
     )?;
     let mut metadata = ToolMetadata::complete(None);
     metadata.asset_generation = Some(left.asset_generation.max(right.asset_generation));
-    Ok(json_success(metadata, json!({ "comparison": comparison })))
-}
-
-#[derive(serde::Serialize)]
-struct DuplicateCluster {
-    cluster_id: String,
-    confidence: &'static str,
-    members: Vec<StateLocator>,
-    pair_evidence: Vec<crate::spaceman::dmi::StateComparison>,
+    Ok(json_success(metadata, CompareDmiStatesData { comparison }))
 }
 
 fn cluster_comparisons(
@@ -394,7 +386,11 @@ pub async fn find_duplicates(
     metadata.truncation_reasons = reasons;
     Ok(json_success(
         metadata,
-        json!({"cluster_count":clusters.len(),"candidate_comparisons":candidates,"clusters":clusters}),
+        FindDmiDuplicatesData {
+            cluster_count: clusters.len(),
+            candidate_comparisons: candidates,
+            clusters,
+        },
     ))
 }
 
@@ -438,12 +434,12 @@ pub async fn audit_icons(
                 state: icon_state,
             } => {
                 if !dmi_path.is_file() {
-                    missing_files.push(json!({
-                        "type_path": reference.type_path,
-                        "file": reference.file,
-                        "line": reference.line,
-                        "dmi_path": dmi_path,
-                    }));
+                    missing_files.push(MissingIconFile {
+                        type_path: reference.type_path.clone(),
+                        file: reference.file.clone(),
+                        line: reference.line,
+                        dmi_path: dmi_path.clone(),
+                    });
                     continue;
                 }
                 if let Some(icon_state) = icon_state {
@@ -458,13 +454,13 @@ pub async fn audit_icons(
                         .iter()
                         .any(|state| state.name == *icon_state)
                     {
-                        missing_states.push(json!({
-                            "type_path": reference.type_path,
-                            "file": reference.file,
-                            "line": reference.line,
-                            "dmi_path": asset.identity.path,
-                            "state": icon_state,
-                        }));
+                        missing_states.push(MissingIconState {
+                            type_path: reference.type_path.clone(),
+                            file: reference.file.clone(),
+                            line: reference.line,
+                            dmi_path: asset.identity.path.clone(),
+                            state: icon_state.clone(),
+                        });
                     } else {
                         referenced_states.insert((asset.identity.path.clone(), icon_state.clone()));
                     }
@@ -493,12 +489,12 @@ pub async fn audit_icons(
                 if !referenced_states
                     .contains(&(asset.identity.path.clone(), icon_state.name.clone()))
                 {
-                    unused_states.push(json!({
-                        "dmi_path": asset.identity.path,
-                        "state": icon_state.name,
-                        "duplicate_index": icon_state.duplicate_index,
-                        "best_effort": true,
-                    }));
+                    unused_states.push(UnusedIconState {
+                        dmi_path: asset.identity.path.clone(),
+                        state: icon_state.name.clone(),
+                        duplicate_index: icon_state.duplicate_index,
+                        best_effort: true,
+                    });
                 }
             }
         }
@@ -509,7 +505,16 @@ pub async fn audit_icons(
     metadata.truncation_reasons = reasons;
     Ok(json_success(
         metadata,
-        json!({"complete":complete,"missing_files":missing_files,"missing_states":missing_states,"duplicates":clusters,"unused_states":unused_states,"dynamic_references":dynamic_references,"candidate_comparisons":candidates,"unused_evidence":"best_effort"}),
+        AuditIconsData {
+            complete,
+            missing_files,
+            missing_states,
+            duplicates: clusters,
+            unused_states,
+            dynamic_references,
+            candidate_comparisons: candidates,
+            unused_evidence: "best_effort",
+        },
     ))
 }
 
@@ -617,10 +622,21 @@ pub async fn extract(
     )?;
     let mut metadata = ToolMetadata::complete(None);
     metadata.asset_generation = Some(asset.asset_generation);
+    let outcome = crate::result::MutationOutcome::installed(0, &artifact, true, None);
     Ok(json_success(
         metadata,
-        json!({"source_path":asset.identity.path,"source_sha256":asset.identity.sha256,"output":artifact,"encoder":actual,"kind":kind,"dimensions":[dimensions.0,dimensions.1],"state":state_name,"duplicate_index":duplicate}),
-    ))
+        ExtractDmiData {
+            source_path: asset.identity.path,
+            source_sha256: asset.identity.sha256,
+            output: artifact,
+            encoder: actual.into(),
+            kind: kind.into(),
+            dimensions: [dimensions.0, dimensions.1],
+            state: state_name.into(),
+            duplicate_index: duplicate,
+        },
+    )
+    .with_outcome(outcome))
 }
 
 fn extraction_dimensions(

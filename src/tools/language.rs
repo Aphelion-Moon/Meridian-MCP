@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use serde_json::{json, Map};
+use serde_json::json;
 use std::path::Path;
 
 use crate::index::{ReferenceHit, ReferenceKind, SymbolId};
@@ -81,13 +81,9 @@ pub async fn document_symbols(
         json!(["document_symbols", file]),
     )?;
     let symbols = snapshot.language_index.document_symbols(Path::new(file));
-    page.respond(
-        &snapshot,
-        "symbols",
-        symbols.iter(),
-        symbols.len(),
-        Map::new(),
-    )
+    page.respond(&snapshot, symbols.iter(), symbols.len(), |symbols, page| {
+        crate::outputs::DocumentSymbolsData { symbols, page }
+    })
 }
 
 pub async fn find_implementations(
@@ -125,10 +121,12 @@ pub async fn find_implementations(
     let count = implementations.clone().count();
     page.respond(
         &snapshot,
-        "implementations",
         implementations,
         count,
-        Map::new(),
+        |implementations, page| crate::outputs::ImplementationsData {
+            implementations,
+            page,
+        },
     )
 }
 
@@ -188,14 +186,12 @@ pub async fn find_references(
         column: reference.location.column,
     });
     let skipped_dynamic = snapshot.reference_table.skipped_dynamic();
-    page.respond(
-        &snapshot,
-        "references",
-        references,
-        count,
-        Map::from_iter([
-            ("skipped_dynamic".into(), json!(skipped_dynamic)),
-            ("skipped_dynamic_scope".into(), json!("environment")),
-        ]),
-    )
+    page.respond(&snapshot, references, count, |references, page| {
+        crate::outputs::ReferencesData {
+            references,
+            page,
+            skipped_dynamic,
+            skipped_dynamic_scope: "environment",
+        }
+    })
 }

@@ -365,7 +365,7 @@ async fn successful_replacement_installs_complete_docs_without_backups() {
         let (error, _, body) = f
             .call(json!({"output_directory":output,"overwrite":true}))
             .await;
-        assert!(!error);
+        assert!(!error, "documentation reply: {body}");
         assert_eq!(body["files"], 2);
         assert!(output.join("types/example.html").is_file());
         assert!(!output.join("old.html").exists());

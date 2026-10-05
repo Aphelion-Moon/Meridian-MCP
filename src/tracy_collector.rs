@@ -321,7 +321,7 @@ async fn bounded_line<R: AsyncBufRead + Unpin>(
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TracySessionPhase {
     ProcessStarting,

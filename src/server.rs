@@ -22,6 +22,7 @@ pub struct MeridianServer {
     execution: ToolExecutionContext,
     state: Arc<ServerState>,
     catalog: Arc<[Tool]>,
+    legacy_catalog: Arc<[Tool]>,
 }
 
 impl MeridianServer {
@@ -108,7 +109,16 @@ impl MeridianServer {
             .into_iter()
             .map(|definition| to_sdk_tool(definition, config.rift_build_access()))
             .collect::<Vec<_>>();
+        let legacy_catalog = catalog
+            .iter()
+            .cloned()
+            .map(|mut tool| {
+                tool.output_schema = None;
+                tool
+            })
+            .collect::<Vec<_>>();
         Ok(Self {
+            legacy_catalog: Arc::from(legacy_catalog),
             catalog: Arc::from(catalog),
             execution,
             state: Arc::new(ServerState::new()),
@@ -138,7 +148,14 @@ impl ServerHandler for MeridianServer {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        let result = ListToolsResult::with_all_items(self.tools());
+        let structured = context
+            .protocol_version()
+            .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2025_06_18);
+        let result = ListToolsResult::with_all_items(if structured {
+            self.tools()
+        } else {
+            self.legacy_catalog.to_vec()
+        });
         let modern = context
             .protocol_version()
             .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2026_07_28);
@@ -158,7 +175,7 @@ impl ServerHandler for MeridianServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         let result = tools::call_tool(
@@ -169,29 +186,57 @@ impl ServerHandler for MeridianServer {
         )
         .await
         .unwrap_or_else(crate::result::tool_error);
-        let result = enforce_output_limit(&request.name, result);
-        Ok(CallToolResponse::Complete(to_sdk_result(result)))
+        let structured = context
+            .protocol_version()
+            .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2025_06_18);
+        let result = enforce_output_limit(&request.name, result, structured);
+        let sdk = sdk_result_for_version(result, structured);
+        Ok(CallToolResponse::Complete(sdk))
     }
 }
 
-fn enforce_output_limit(name: &str, result: DomainToolResult) -> DomainToolResult {
+fn enforce_output_limit(
+    name: &str,
+    result: DomainToolResult,
+    structured: bool,
+) -> DomainToolResult {
     let Some(contract) = crate::all_contracts()
         .iter()
         .find(|contract| contract.name == name)
     else {
         return result;
     };
-    let output_bytes = result
-        .content
-        .iter()
-        .map(|content| match content {
-            DomainContent::Text { text } => text.len(),
-        })
-        .sum::<usize>();
+    let output_bytes = crate::result::encoded_bytes(
+        &sdk_result_for_version(result.clone(), structured),
+        usize::MAX,
+    )
+    .unwrap_or(usize::MAX);
     if output_bytes <= contract.max_output_bytes {
         return result;
     }
-
+    if let Some(outcome) = result.outcome {
+        let mut bounded = crate::result::projection(
+            crate::result::ReducedMutation {
+                outcome: *outcome,
+                truncated: true,
+                response_omissions: vec![
+                    "optional response details omitted to preserve the operation outcome".into(),
+                ],
+            },
+            false,
+            result.is_error == Some(true),
+        );
+        bounded.meta = result.meta;
+        assert!(
+            crate::result::encoded_bytes(
+                &sdk_result_for_version(bounded.clone(), structured),
+                contract.max_output_bytes
+            )
+            .is_some(),
+            "mutation core exceeds declared response budget"
+        );
+        return bounded;
+    }
     let mut bounded = structured_error(
         ToolErrorCode::LimitExceeded,
         "tool output exceeded its declared transport limit",
@@ -204,6 +249,14 @@ fn enforce_output_limit(name: &str, result: DomainToolResult) -> DomainToolResul
     );
     bounded.meta = result.meta;
     bounded
+}
+
+fn sdk_result_for_version(result: DomainToolResult, structured: bool) -> CallToolResult {
+    let mut result = to_sdk_result(result);
+    if !structured {
+        result.structured_content = None;
+    }
+    result
 }
 
 fn to_sdk_tool(definition: ToolDefinition, rift_build: crate::RiftBuildAccess) -> Tool {
@@ -230,6 +283,7 @@ fn to_sdk_tool(definition: ToolDefinition, rift_build: crate::RiftBuildAccess) -
             .open_world(external_network || contract.effects.project_behavior)
     });
     let mut tool = Tool::new(definition.name, definition.description, input_schema);
+    tool.output_schema = definition.output_schema.as_object().cloned().map(Arc::new);
     tool.annotations = annotations;
     tool
 }
@@ -247,6 +301,7 @@ fn to_sdk_result(result: DomainToolResult) -> CallToolResult {
     } else {
         CallToolResult::success(content)
     };
+    sdk.structured_content = result.structured_content;
     sdk.meta = result.meta.map(|meta| {
         serde_json::Map::from_iter([(
             "analysis".to_owned(),
@@ -301,6 +356,7 @@ mod tests {
         let limited = enforce_output_limit(
             "dm_stop",
             DomainToolResult::text("x".repeat(300000)).with_analysis(analysis.clone()),
+            true,
         );
         assert_eq!(limited.is_error, Some(true));
         assert_eq!(limited.meta.unwrap().analysis, analysis);
@@ -312,6 +368,7 @@ mod tests {
             name: "dm_stop".to_owned(),
             description: "stop".to_owned(),
             input_schema: serde_json::json!({"type": "object"}),
+            output_schema: serde_json::json!({"type":"object"}),
         };
         let tool = to_sdk_tool(definition, crate::RiftBuildAccess::Disabled);
         let annotations = tool.annotations.expect("contract annotations");
@@ -339,12 +396,66 @@ mod tests {
     #[test]
     fn oversized_tool_results_are_replaced_by_bounded_errors() {
         let oversized = DomainToolResult::text("x".repeat(300_000));
-        let bounded = enforce_output_limit("dm_stop", oversized);
+        let bounded = enforce_output_limit("dm_stop", oversized, true);
 
         assert_eq!(bounded.is_error, Some(true));
         let DomainContent::Text { text } = &bounded.content[0];
         let payload: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(payload["code"], "limit_exceeded");
         assert!(text.len() <= 262_144);
+    }
+    #[test]
+    fn sdk_body_budget_keeps_installed_batch_outcomes_with_escaping_and_duplication() {
+        let core = crate::result::MutationOutcome {
+            operation_ran: true,
+            cleanup_complete: false,
+            recovery_required: true,
+            outputs: (0..512)
+                .map(|index| crate::result::OutputMutation {
+                    request_index: index,
+                    installed: index % 2 == 0,
+                    path_preview: Some("\\u{1}".repeat(42)),
+                    sha256: Some("a".repeat(64)),
+                    cleanup_complete: false,
+                    backup_preview: Some("\\u{1}".repeat(42)),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let result = crate::result::projection(
+            serde_json::json!({"optional":"\\u{1}🛰".repeat(300000)}),
+            true,
+            true,
+        )
+        .with_outcome(core.clone());
+        let bounded = enforce_output_limit("dm_render_maps", result, true);
+        let sdk = to_sdk_result(bounded);
+        assert!(crate::result::encoded_bytes(&sdk, 1_048_576).is_some());
+        assert_eq!(sdk.is_error, Some(true));
+        let structured = sdk.structured_content.as_ref().unwrap();
+        assert_eq!(structured["outcome"], serde_json::to_value(core).unwrap());
+        let rmcp::model::ContentBlock::Text(text) = &sdk.content[0] else {
+            panic!("compatibility text")
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&text.text).unwrap(),
+            *structured
+        );
+    }
+    #[test]
+    fn legacy_body_cap_excludes_omitted_native_duplication() {
+        let projection = crate::result::projection(
+            serde_json::json!({"content":"x".repeat(600_000)}),
+            false,
+            false,
+        );
+        let legacy = enforce_output_limit("dm_get_type", projection.clone(), false);
+        assert_ne!(legacy.is_error, Some(true));
+        let sdk = sdk_result_for_version(legacy, false);
+        assert!(sdk.structured_content.is_none());
+        assert!(crate::result::encoded_bytes(&sdk, 1_048_576).is_some());
+        let modern = enforce_output_limit("dm_get_type", projection, true);
+        assert_eq!(modern.is_error, Some(true));
+        assert_eq!(modern.structured_content.unwrap()["code"], "limit_exceeded");
     }
 }

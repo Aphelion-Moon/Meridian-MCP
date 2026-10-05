@@ -15,7 +15,7 @@ const MAX_CONFIGURATION_ENTRIES: u64 = 4_096;
 const MAX_CONFIGURATION_BYTES: u64 = 64 * 1024 * 1024;
 const RESUME_AFTER_INITIALIZATIONS: &str = "RESUME_AFTER_INITIALIZATIONS";
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct RuntimeConfigurationIdentity {
     pub schema: u32,
     pub directory_sha256: String,

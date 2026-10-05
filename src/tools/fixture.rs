@@ -7,9 +7,9 @@ use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
 use serde::Serialize;
+#[cfg(test)]
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
-use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -34,23 +34,10 @@ struct FixtureIssue<'a> {
     message_truncated: Option<bool>,
 }
 
-struct JsonBudget(usize);
-
-impl Write for JsonBudget {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self.0.checked_sub(bytes.len()).ok_or_else(|| {
-            std::io::Error::other("fixture detail exceeds its serialized byte budget")
-        })?;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
+use crate::result::JsonBudget;
 
 struct Issues {
-    rows: Vec<Value>,
+    rows: Vec<crate::outputs::fixture::FixtureIssue>,
     total: usize,
     limit: usize,
     bytes: usize,
@@ -103,24 +90,27 @@ impl Issues {
         self.details_omitted |= issue.expected_arguments_omitted.is_some()
             || issue.actual_arguments_omitted.is_some()
             || issue.message_truncated == Some(true);
-        self.rows
-            .push(serde_json::to_value(issue).expect("fixture issue serialization"));
+        self.rows.push(crate::outputs::fixture::FixtureIssue {
+            code: issue.code,
+            path: issue.path.into(),
+            expected_arguments: issue.expected_arguments.map(<[String]>::to_vec),
+            actual_arguments: issue.actual_arguments.map(<[String]>::to_vec),
+            expected_arguments_omitted: issue.expected_arguments_omitted,
+            actual_arguments_omitted: issue.actual_arguments_omitted,
+            message: issue.message.map(str::to_owned),
+            message_truncated: issue.message_truncated,
+        });
     }
 
-    fn respond(self, mut metadata: Value) -> Result<ToolResult> {
-        super::build_response::bound_metadata(&mut metadata);
-        metadata["truncated"] = json!(
-            self.total != self.rows.len()
-                || self.details_omitted
-                || metadata.get("response_omissions").is_some()
-        );
-        metadata["issues_summary"] = json!({
-            "total": self.total,
-            "returned": self.rows.len(),
-            "omitted": self.total - self.rows.len(),
-        });
-        metadata["issues"] = json!(self.rows);
-        Ok(ToolResult::text(serde_json::to_string(&metadata)?))
+    fn respond(self, mut metadata: crate::outputs::FixtureSyncOutput) -> Result<ToolResult> {
+        metadata.truncated = self.total != self.rows.len() || self.details_omitted;
+        metadata.issues_summary = crate::outputs::IssuesSummary {
+            total: self.total,
+            returned: self.rows.len(),
+            omitted: self.total - self.rows.len(),
+        };
+        metadata.issues = self.rows;
+        Ok(crate::result::projection(metadata, false, false))
     }
 }
 
@@ -150,10 +140,11 @@ pub async fn check_sync(
                 message_truncated: (excerpt.len() != message.len()).then_some(true),
                 ..Default::default()
             });
-            return issues.respond(json!({
-                "classification": "invalid",
-                "validation_complete": false,
-            }));
+            return issues.respond(crate::outputs::FixtureSyncOutput {
+                classification: "invalid",
+                validation_complete: false,
+                ..Default::default()
+            });
         }
     };
 
@@ -201,18 +192,24 @@ pub async fn check_sync(
         "verified"
     };
 
-    issues.respond(json!({
-        "analysis": analysis,
-        "classification": classification,
-        "validation_complete": true,
-        "fixture_id": fixture.fixture_id,
-        "fixture_manifest_sha256": fixture.identity_sha256,
-        "environment_path": fixture.dme_path,
-        "dmb_path": fixture.dmb_path,
-        "provenance_status": provenance.as_ref().map(|decision| decision.status).unwrap_or(ProvenanceStatus::Unverified),
-        "build_record_id": provenance.as_ref().and_then(|decision| decision.record_id.as_deref()),
-        "provenance_reasons": provenance.map(|decision| decision.reasons).unwrap_or_default(),
-    }))
+    issues.respond(crate::outputs::FixtureSyncOutput {
+        analysis: Some(analysis),
+        classification,
+        validation_complete: true,
+        fixture_id: Some(fixture.fixture_id),
+        fixture_manifest_sha256: Some(fixture.identity_sha256),
+        environment_path: Some(fixture.dme_path),
+        dmb_path: Some(fixture.dmb_path),
+        provenance_status: Some(
+            provenance
+                .as_ref()
+                .map(|v| v.status)
+                .unwrap_or(ProvenanceStatus::Unverified),
+        ),
+        build_record_id: Some(provenance.as_ref().and_then(|v| v.record_id.clone())),
+        provenance_reasons: Some(provenance.map(|v| v.reasons).unwrap_or_default()),
+        ..Default::default()
+    })
 }
 
 pub(super) async fn load_manifest(

@@ -8,7 +8,7 @@ pub const MAX_ANNOTATION_VALUE_BYTES: usize = 512;
 pub const MAX_IDENTITY_VALUE_BYTES: usize = 512;
 pub const MAX_FEATURES: usize = 64;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct HelperIdentity {
     pub source_revision: String,
     pub sha256: String,
@@ -16,13 +16,13 @@ pub struct HelperIdentity {
     pub patch_sha256: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct NativeModuleIdentity {
     pub name: String,
     pub sha256: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct ExecutableIdentity {
     pub schema: u32,
     pub executable_id: String,
@@ -41,7 +41,7 @@ pub struct ExecutableIdentity {
     pub build_record_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct WorkloadInput {
     pub map: Option<String>,
     pub seed: Option<String>,
@@ -54,7 +54,7 @@ pub struct WorkloadInput {
     pub annotations: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct WorkloadIdentity {
     pub workload_id: String,
     pub map: Option<String>,
@@ -66,14 +66,14 @@ pub struct WorkloadIdentity {
     pub annotations: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct ExperimentIdentity {
     pub experiment_id: String,
     pub executable: ExecutableIdentity,
     pub workload: WorkloadIdentity,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct ExperimentLaunchManifest {
     pub schema: u32,
     pub experiment_name: Option<String>,

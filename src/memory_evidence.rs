@@ -3,7 +3,7 @@ use crate::PathPolicy;
 use anyhow::{bail, ensure, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::io::Read;
@@ -53,7 +53,7 @@ struct EvidenceDocument {
     memory_series: Vec<RoleMemorySeries>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct MetricSummary {
     pub metric_kind: String,
     pub unit: &'static str,
@@ -76,7 +76,7 @@ pub struct MetricSummary {
     pub samples_truncated: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct SeriesSummary {
     pub identity: ProcessIdentity,
     pub operating_system: String,
@@ -85,7 +85,7 @@ pub struct SeriesSummary {
     pub metrics: Vec<MetricSummary>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct MemorySummary {
     pub schema: u32,
     pub evidence_sha256: String,
@@ -313,7 +313,26 @@ fn summarize_metric(
     result
 }
 
-pub fn compare(policy: &PathPolicy, request: MemoryCompareRequest) -> Result<Value> {
+#[derive(Serialize, JsonSchema)]
+pub struct MemoryComparisonMetric {
+    pub role: crate::process_metrics::ProcessRole,
+    pub operating_system: String,
+    pub metric_kind: String,
+    pub peak_delta_bytes: i64,
+    pub last_delta_bytes: i64,
+    pub net_change_delta_bytes: String,
+    pub net_rate_delta_bytes_per_second: Option<f64>,
+}
+#[derive(Serialize, JsonSchema)]
+pub struct MemoryComparison {
+    pub schema: u32,
+    pub comparison_basis: &'static str,
+    pub baseline: MemorySummary,
+    pub current: MemorySummary,
+    pub comparisons: Vec<MemoryComparisonMetric>,
+    pub warnings: Vec<&'static str>,
+}
+pub fn compare(policy: &PathPolicy, request: MemoryCompareRequest) -> Result<MemoryComparison> {
     let baseline = summarize(policy, request.baseline)?;
     let current = summarize(policy, request.current)?;
     for field in ["executable", "workload"] {
@@ -369,16 +388,27 @@ pub fn compare(policy: &PathPolicy, request: MemoryCompareRequest) -> Result<Val
             {
                 warnings.push("unequal_observed_spans");
             }
-            comparisons.push(json!({
-                "role": left.identity.role, "operating_system": left.operating_system, "metric_kind": a.metric_kind,
-                "peak_delta_bytes": b.peak_bytes as i64 - a.peak_bytes as i64,
-                "last_delta_bytes": b.last_bytes as i64 - a.last_bytes as i64,
-                "net_change_delta_bytes": (b.net_change_bytes as i128 - a.net_change_bytes as i128).to_string(),
-                "net_rate_delta_bytes_per_second": a.net_bytes_per_second.zip(b.net_bytes_per_second).map(|(a,b)| b-a),
-            }));
+            comparisons.push(MemoryComparisonMetric {
+                role: left.identity.role,
+                operating_system: left.operating_system.clone(),
+                metric_kind: a.metric_kind.clone(),
+                peak_delta_bytes: b.peak_bytes as i64 - a.peak_bytes as i64,
+                last_delta_bytes: b.last_bytes as i64 - a.last_bytes as i64,
+                net_change_delta_bytes: (b.net_change_bytes as i128 - a.net_change_bytes as i128)
+                    .to_string(),
+                net_rate_delta_bytes_per_second: a
+                    .net_bytes_per_second
+                    .zip(b.net_bytes_per_second)
+                    .map(|(a, b)| b - a),
+            });
         }
     }
-    Ok(
-        json!({"schema": 1, "comparison_basis": "matching_recorded_identity_not_independently_verified", "baseline": baseline, "current": current, "comparisons": comparisons, "warnings": warnings}),
-    )
+    Ok(MemoryComparison {
+        schema: 1,
+        comparison_basis: "matching_recorded_identity_not_independently_verified",
+        baseline,
+        current,
+        comparisons,
+        warnings,
+    })
 }

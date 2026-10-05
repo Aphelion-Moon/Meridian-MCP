@@ -86,6 +86,14 @@ fn success_results_merge_trusted_metadata_with_existing_payload_fields() {
 }
 
 #[test]
+fn compatibility_text_and_native_structure_share_one_projection() {
+    let result = json_success(metadata(), json!({ "count": 2, "items": ["one", "two"] }));
+    let serialized = serde_json::to_value(&result).unwrap();
+    let text = payload(result);
+    assert_eq!(serialized["structuredContent"], text);
+}
+
+#[test]
 fn structured_errors_always_include_recovery_and_object_details() {
     let result = structured_error(
         ToolErrorCode::PathOutsideWorkspace,
@@ -113,4 +121,27 @@ fn non_object_success_payloads_fail_closed() {
 
     assert_eq!(value["code"], "internal");
     assert!(value["details"].is_object());
+}
+
+#[test]
+fn mutation_errors_keep_known_effects_in_text_only_compatibility() {
+    let known = meridian_mcp::result::MutationOutcome {
+        operation_ran: true,
+        process_started: true,
+        process_stopped: true,
+        runtime_id: Some("retained-runtime".into()),
+        cleanup_complete: false,
+        recovery_required: true,
+        ..Default::default()
+    };
+    let result =
+        meridian_mcp::result::ToolResult::error("lease finalization failed").with_outcome(known);
+    assert_eq!(result.is_error, Some(true));
+    let native = result.structured_content.clone().unwrap();
+    let text = payload(result);
+    assert_eq!(text, native);
+    assert_eq!(text["message"], "lease finalization failed");
+    assert_eq!(text["outcome"]["runtime_id"], "retained-runtime");
+    assert_eq!(text["outcome"]["process_stopped"], true);
+    assert_eq!(text["outcome"]["cleanup_complete"], false);
 }

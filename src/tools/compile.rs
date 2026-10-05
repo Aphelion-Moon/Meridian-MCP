@@ -390,7 +390,18 @@ pub async fn compile(
         },
         |stream, bytes| diagnostics.observe(stream, bytes),
     )
-    .await?;
+    .await
+    .map_err(|error| crate::result::OutcomeError {
+        error,
+        outcome: crate::result::MutationOutcome {
+            operation_ran: attempt.is_some(),
+            process_start_uncertain: true,
+            recovery_required: true,
+            attempt_id: attempt.as_ref().map(|attempt| attempt.attempt_id.clone()),
+            action: Some("compile_setup".into()),
+            ..Default::default()
+        },
+    })?;
 
     let stdout = &execution.stdout.text;
     let stderr = &execution.stderr.text;
@@ -400,7 +411,21 @@ pub async fn compile(
         execution.stdout.truncated_bytes == 0 && execution.stderr.truncated_bytes == 0,
     );
 
-    let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path)?;
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        process_started: execution.process_started,
+        process_stopped: execution.process_started,
+        cleanup_complete: true,
+        attempt_id: attempt.as_ref().map(|value| value.attempt_id.clone()),
+        error_count: Some(diagnostics.error_count),
+        ..Default::default()
+    };
+    let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path).map_err(|error| {
+        crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        }
+    })?;
     let process_succeeded =
         execution.termination == TerminationReason::Exited && execution.exit_code == Some(0);
     let compiler_succeeded = compile_succeeded(
@@ -413,6 +438,14 @@ pub async fn compile(
         && (!artifact_before.exists
             || artifact_before.sha256 != artifact_after.sha256
             || artifact_before.modified_unix_ms != artifact_after.modified_unix_ms);
+    essential.outputs.push(crate::result::OutputMutation {
+        request_index: 0,
+        installed: dmb_updated,
+        path_preview: Some(crate::result::path_preview(&artifact_after.path)),
+        sha256: artifact_after.sha256.clone(),
+        cleanup_complete: true,
+        backup_preview: None,
+    });
     let timed_out = execution.termination == TerminationReason::WallTimeout;
     let idle = execution.termination == TerminationReason::IdleTimeout;
     let provenance = record_compile_provenance(
@@ -439,7 +472,11 @@ pub async fn compile(
         } else {
             "compiler_failed"
         },
-    )?;
+    )
+    .map_err(|error| crate::result::OutcomeError {
+        error,
+        outcome: essential.clone(),
+    })?;
 
     let interruption = provenance["interruption"].as_str();
     let success = compiler_produced_artifact && interruption.is_none();
@@ -448,7 +485,14 @@ pub async fn compile(
         Some("request_timed_out") => TerminationReason::WallTimeout,
         _ => execution.termination,
     };
-    lease.finish()?;
+    essential.operation_succeeded = Some(success);
+    essential.provenance_status = provenance["status"].as_str().map(str::to_owned);
+    lease
+        .finish()
+        .map_err(|error| crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        })?;
     let result = json!({
         "success": success,
         "compiler_succeeded": compiler_succeeded,
@@ -488,12 +532,17 @@ pub async fn compile(
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
     });
 
-    let text = response::format(result, response)?;
-    if success {
-        Ok(ToolResult::text(text))
-    } else {
-        Ok(ToolResult::error(text))
-    }
+    let data: crate::outputs::CompileData =
+        serde_json::from_value(result).map_err(|error| crate::result::OutcomeError {
+            error: error.into(),
+            outcome: essential.clone(),
+        })?;
+    let data =
+        response::project_compile(data, response).map_err(|error| crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        })?;
+    Ok(crate::result::projection(data, false, !success).with_outcome(essential))
 }
 
 #[allow(clippy::too_many_arguments)]

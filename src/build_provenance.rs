@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ProjectBuildIdentity {
     pub root: PathBuf,
     pub repository_identity: String,
@@ -16,7 +16,7 @@ pub struct ProjectBuildIdentity {
     pub dirty: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct BuildInputIdentity {
     pub path: PathBuf,
     #[serde(default)]
@@ -67,7 +67,7 @@ impl BuildInputIdentity {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct BuildVerification {
     pub method: String,
     pub arguments: Vec<String>,
@@ -75,7 +75,7 @@ pub struct BuildVerification {
     pub absent_inputs: Vec<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct BuildRecord {
     pub schema: u32,
     pub record_id: String,
@@ -92,7 +92,7 @@ pub struct BuildRecord {
     pub created_at_unix_ms: u128,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum BuildAttemptOutcome {
     InProgress,
@@ -102,7 +102,7 @@ pub enum BuildAttemptOutcome {
     Unverified { code: String },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct BuildAttempt {
     pub schema: u32,
     pub attempt_id: String,
@@ -113,7 +113,7 @@ pub struct BuildAttempt {
     pub created_at_unix_ms: u128,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProvenanceStatus {
     Verified,
@@ -121,7 +121,7 @@ pub enum ProvenanceStatus {
     Stale,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ProvenanceReason {
     pub code: String,
     pub message: String,
@@ -129,7 +129,7 @@ pub struct ProvenanceReason {
     pub path: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct LaunchDecision {
     pub status: ProvenanceStatus,
     pub allowed: bool,
@@ -137,7 +137,7 @@ pub struct LaunchDecision {
     pub reasons: Vec<ProvenanceReason>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct LaunchProvenance {
     pub status: ProvenanceStatus,
     pub build_record_id: Option<String>,
@@ -145,7 +145,7 @@ pub struct LaunchProvenance {
     pub warnings: Vec<ProvenanceReason>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 struct ArtifactLocation {
     schema: u32,
     artifact_key: String,
@@ -153,7 +153,7 @@ struct ArtifactLocation {
 
 // A single replacement publishes the managed marker, attempt, and last build.
 // Legacy location/build/attempt records remain read-only during a quiesced upgrade.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 struct ArtifactState {
     schema: u32,
     artifact_key: String,

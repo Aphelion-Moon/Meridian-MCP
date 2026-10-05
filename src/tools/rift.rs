@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BuildEvidence {
     FreshArtifacts,
@@ -51,18 +51,18 @@ struct ControllerTimeoutPolicy {
     outer_idle_timeout: Duration,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct RiftResultArtifact {
+pub struct RiftResultArtifact {
     path: String,
     size: u64,
     sha256: String,
     freshness: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct RiftResultRecord {
+pub struct RiftResultRecord {
     schema_version: u64,
     run_id: String,
     command: String,
@@ -285,15 +285,33 @@ pub async fn compile(
                 "build_spawn_failed",
                 format!("contained process setup failed: {error}"),
                 "Check Windows Job Object support and the fixed RIFT_BUILD.cmd entry point.",
-            ));
+            )
+            .with_outcome(crate::result::MutationOutcome {
+                operation_ran: attempt.is_some(),
+                process_start_uncertain: true,
+                recovery_required: true,
+                attempt_id: attempt.as_ref().map(|attempt| attempt.attempt_id.clone()),
+                action: Some("rift_compile_setup".into()),
+                ..Default::default()
+            }));
         }
+    };
+    let executed = crate::result::MutationOutcome {
+        operation_ran: true,
+        process_started: outcome.process_started,
+        process_stopped: outcome.process_started,
+        cleanup_complete: true,
+        attempt_id: attempt.as_ref().map(|attempt| attempt.attempt_id.clone()),
+        action: Some("rift_compile".into()),
+        ..Default::default()
     };
     if state.state_generation().await != generation {
         return Ok(ToolResult::structured_error(
             "state_generation_changed",
             "The active parsed project changed while the full build was running.",
             "Reparse and retry against a stable project generation.",
-        ));
+        )
+        .with_outcome(executed));
     }
 
     if let Some(warning) = outcome.network_audit.warning.clone() {
@@ -306,7 +324,8 @@ pub async fn compile(
                 "insufficient_evidence",
                 error.to_string(),
                 "Restore canonical contained build artifacts and rerun the full build.",
-            ));
+            )
+            .with_outcome(executed));
         }
     };
     let analysis = output.finish(
@@ -332,7 +351,12 @@ pub async fn compile(
         response,
         warnings,
     )?;
-    lease.finish()?;
+    lease
+        .finish()
+        .map_err(|error| crate::result::OutcomeError {
+            error,
+            outcome: result.outcome.as_deref().cloned().unwrap_or_default(),
+        })?;
     Ok(result)
 }
 
@@ -600,6 +624,30 @@ fn classify_result(
         )
     };
 
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        process_started: outcome.process_started,
+        process_stopped: outcome.process_started,
+        cleanup_complete: true,
+        operation_succeeded: Some(failure_code.is_none()),
+        failure_code: failure_code.map(str::to_owned),
+        attempt_id: attempt.as_ref().map(|value| value.attempt_id.clone()),
+        error_count: Some(analysis.error_count),
+        ..Default::default()
+    };
+    for (index, artifact) in [&after.dmb, &after.rsc].into_iter().enumerate() {
+        essential.outputs.push(crate::result::OutputMutation {
+            request_index: index,
+            installed: artifact_changed(
+                if index == 0 { &before.dmb } else { &before.rsc },
+                artifact,
+            ),
+            path_preview: Some(crate::result::path_preview(&artifact.path)),
+            sha256: artifact.sha256.clone(),
+            cleanup_complete: true,
+            backup_preview: None,
+        });
+    }
     let provenance = record_rift_provenance(
         context,
         deadline,
@@ -608,7 +656,11 @@ fn classify_result(
         &after,
         &evidence,
         failure_code,
-    )?;
+    )
+    .map_err(|error| crate::result::OutcomeError {
+        error,
+        outcome: essential.clone(),
+    })?;
     let interruption = provenance["interruption"].as_str();
     let failure_code = interruption.or(failure_code);
     let recovery = failure_code.map(recovery_for).unwrap_or("");
@@ -668,12 +720,19 @@ fn classify_result(
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
         "attempt_id": provenance["attempt_id"],
     });
-    let text = response::format_rift(result, response)?;
-    if failure_code.is_some() {
-        Ok(ToolResult::error(text))
-    } else {
-        Ok(ToolResult::text(text))
-    }
+    let data: crate::outputs::RiftCompileData<crate::outputs::RiftDiagnosticData> =
+        serde_json::from_value(result).map_err(|error| crate::result::OutcomeError {
+            error: error.into(),
+            outcome: essential.clone(),
+        })?;
+    essential.operation_succeeded = Some(data.success);
+    essential.provenance_status = Some(data.provenance_status.clone());
+    let data =
+        response::project_rift(data, response).map_err(|error| crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        })?;
+    Ok(crate::result::projection(data, false, failure_code.is_some()).with_outcome(essential))
 }
 
 fn record_rift_provenance(

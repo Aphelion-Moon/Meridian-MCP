@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use dmm_tools::{minimap, render_passes, IconCache};
+#[cfg(test)]
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
@@ -9,7 +10,8 @@ use tracing::info;
 
 use crate::atomic_output::{write_atomic, AtomicOutputError};
 use crate::limits::ServerLimits;
-use crate::mcp::{ToolContent, ToolResult};
+use crate::mcp::ToolResult;
+use crate::outputs::*;
 use crate::result::{json_success, ToolMetadata};
 use crate::spaceman::dmm::{
     diff_maps as calculate_diff, key_counts, load_map, profile_loaded_map, render_pass_inventory,
@@ -80,6 +82,15 @@ pub async fn render_map(
     state: &ServerState,
     args: crate::parameters::RenderMapParams,
 ) -> Result<ToolResult> {
+    let data = render_map_data(execution, state, args).await?;
+    let outcome = crate::result::MutationOutcome::installed(0, &data.output, true, None);
+    Ok(crate::result::projection(data, true, false).with_outcome(outcome))
+}
+async fn render_map_data(
+    execution: &ToolExecutionContext,
+    state: &ServerState,
+    args: crate::parameters::RenderMapParams,
+) -> Result<RenderMapData> {
     let dmm_path = args.dmm_path.as_str();
     let output_path = args
         .output_path
@@ -88,7 +99,7 @@ pub async fn render_map(
         .unwrap_or_else(|| PathBuf::from(dmm_path).with_extension("png"));
     let path = PathBuf::from(dmm_path);
     if !path.exists() {
-        return Ok(ToolResult::error(format!("File not found: {dmm_path}")));
+        return Err(anyhow!("File not found: {dmm_path}"));
     }
 
     let snapshot = state.snapshot().await?;
@@ -150,23 +161,7 @@ pub async fn render_map(
         |file| file.write_all(&encoded).map_err(AtomicOutputError::from),
     )?;
 
-    Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
-        "analysis": snapshot.identity(),
-        "success": true,
-        "dmm_path": dmm_path,
-        "z_level": z_level,
-        "output": artifact,
-        "output_path": output_path.display().to_string(),
-        "dimensions_pixels": {"width": (max[0]-min[0]+1) * 32, "height": (max[1]-min[1]+1) * 32},
-        "bounds": {"min":min,"max":max},
-        "applied_passes": enabled,
-        "non_transparent_pixels": non_transparent_pixels,
-        "warning": if non_transparent_pixels == 0 {
-            Some("The renderer produced a fully transparent image. This can be expected when render passes hide every atom on the selected z-level.")
-        } else {
-            None
-        }
-    }))?))
+    Ok(RenderMapData {analysis:snapshot.identity(),success:true,dmm_path:dmm_path.into(),z_level,output:artifact,output_path:output_path.display().to_string(),dimensions_pixels:PixelDimensions {width:(max[0]-min[0]+1)*32,height:(max[1]-min[1]+1)*32},bounds:RenderBounds {min,max},applied_passes:enabled.into_iter().map(str::to_owned).collect(),non_transparent_pixels,warning:(non_transparent_pixels==0).then_some("The renderer produced a fully transparent image. This can be expected when render passes hide every atom on the selected z-level.")})
 }
 
 /// Get map dimensions and atom instance statistics.
@@ -209,21 +204,29 @@ pub async fn map_info(args: crate::parameters::MapInfoParams) -> Result<ToolResu
     let mut sorted_areas: Vec<_> = area_counts.into_iter().collect();
     sorted_areas.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
     let profile = profile_loaded_map(&path, &map, 10_000)?;
-    Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
-        "file": dmm_path,
-        "format": profile.format,
-        "dimensions": {"x": dim_x, "y": dim_y, "z": dim_z},
-        "unique_tiles": map.dictionary.len(),
-        "file_size_bytes": std::fs::metadata(&path)?.len(),
-        "top_types": sorted_types.into_iter().take(20).collect::<Vec<_>>(),
-        "top_areas": sorted_areas.into_iter().take(20).collect::<Vec<_>>(),
-        "bounds": profile.bounds,
-        "dictionary_entries": profile.dictionary_entries,
-        "unique_models": profile.unique_models,
-        "model_use_counts": profile.model_use_counts,
-        "warnings": profile.warnings,
-        "spacemandmm_revision": crate::capabilities::SPACEMANDMM_REVISION
-    }))?))
+    Ok(crate::result::projection(
+        MapInfoData {
+            file: dmm_path.into(),
+            format: profile.format,
+            dimensions: MapDimensions {
+                x: dim_x,
+                y: dim_y,
+                z: dim_z,
+            },
+            unique_tiles: map.dictionary.len(),
+            file_size_bytes: std::fs::metadata(&path)?.len(),
+            top_types: sorted_types.into_iter().take(20).collect(),
+            top_areas: sorted_areas.into_iter().take(20).collect(),
+            bounds: profile.bounds,
+            dictionary_entries: profile.dictionary_entries,
+            unique_models: profile.unique_models,
+            model_use_counts: profile.model_use_counts,
+            warnings: profile.warnings,
+            spacemandmm_revision: crate::capabilities::SPACEMANDMM_REVISION,
+        },
+        true,
+        false,
+    ))
 }
 
 pub async fn diff_maps(args: crate::parameters::DiffMapsParams) -> Result<ToolResult> {
@@ -239,13 +242,15 @@ pub async fn diff_maps(args: crate::parameters::DiffMapsParams) -> Result<ToolRe
             .truncation_reasons
             .push("map_difference_limit".into())
     }
-    Ok(json_success(metadata, json!({"difference":difference})))
+    Ok(json_success(metadata, DiffMapsData { difference }))
 }
 
 pub async fn list_render_passes() -> Result<ToolResult> {
     Ok(json_success(
         ToolMetadata::complete(None),
-        json!({"passes":render_pass_inventory()}),
+        RenderPassesData {
+            passes: render_pass_inventory(),
+        },
     ))
 }
 
@@ -304,35 +309,71 @@ pub async fn render_maps(
     let mut results = Vec::new();
     let mut completed = 0;
     let mut failed = 0;
-    for request in requests {
-        match render_map(execution, state, request.clone()).await {
-            Ok(result) if result.is_error != Some(true) => {
+    let mut outcome = crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        ..Default::default()
+    };
+    for (index, request) in requests.into_iter().enumerate() {
+        match render_map_data(execution, state, request).await {
+            Ok(data) => {
                 completed += 1;
-                results.push(json!({"success":true,"result":tool_result_payload(&result)}));
-            }
-            Ok(result) => {
-                failed += 1;
-                results.push(json!({"success":false,"result":tool_result_payload(&result)}));
+                let item =
+                    crate::result::MutationOutcome::installed(index, &data.output, true, None)
+                        .outputs
+                        .remove(0);
+                outcome.outputs.push(item.clone());
+                results.push(RenderBatchItem {
+                    request_index: index,
+                    success: true,
+                    result: Some(data),
+                    error: None,
+                    outcome: item,
+                });
             }
             Err(error) => {
                 failed += 1;
-                results.push(json!({"success":false,"error":error.to_string(),"request":request}));
+                let result = crate::result::tool_error(error);
+                let item = result
+                    .outcome
+                    .as_ref()
+                    .and_then(|o| o.outputs.first())
+                    .map(|v| {
+                        let mut v = v.clone();
+                        v.request_index = index;
+                        v
+                    })
+                    .unwrap_or(crate::result::OutputMutation {
+                        request_index: index,
+                        installed: false,
+                        path_preview: None,
+                        sha256: None,
+                        cleanup_complete: true,
+                        backup_preview: None,
+                    });
+                outcome.cleanup_complete &= item.cleanup_complete;
+                outcome.recovery_required |= !item.cleanup_complete;
+                outcome.outputs.push(item.clone());
+                let crate::mcp::ToolContent::Text { text } = &result.content[0];
+                results.push(RenderBatchItem {
+                    request_index: index,
+                    success: false,
+                    result: None,
+                    error: Some(crate::result::bounded_text(text, 4096, 4096, false).into()),
+                    outcome: item,
+                });
             }
         }
     }
     Ok(json_success(
         ToolMetadata::for_snapshot(&snapshot),
-        json!({"completed":completed,"failed":failed,"files":results}),
-    ))
-}
-
-fn tool_result_payload(result: &ToolResult) -> Value {
-    match result.content.first() {
-        Some(ToolContent::Text { text }) => {
-            serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()))
-        }
-        None => Value::Null,
-    }
+        RenderMapsData {
+            completed,
+            failed,
+            files: results,
+        },
+    )
+    .with_outcome(outcome))
 }
 
 /// Find exact type and subtype instances on a map.
@@ -366,30 +407,39 @@ pub async fn find_on_map(args: crate::parameters::FindOnMapParams) -> Result<Too
         .map(|key| map.format_key(*key).to_string())
         .collect();
     let mut coordinates = Vec::new();
+    let mut total_matches = 0;
     for (z, level) in map.iter_levels() {
         for (coordinate, key) in level.iter_top_down() {
             if let Some(matches) = matching_tiles.get(&key) {
                 for matched_type in matches {
-                    coordinates.push(json!({
-                        "x": coordinate.x,
-                        "y": coordinate.y,
-                        "z": z,
-                        "tile_key": map.format_key(key).to_string(),
-                        "matched_type": matched_type
-                    }));
+                    total_matches += 1;
+                    if coordinates.len() < 10000 {
+                        coordinates.push(MapCoordinate {
+                            x: coordinate.x,
+                            y: coordinate.y,
+                            z,
+                            tile_key: map.format_key(key).to_string(),
+                            matched_type: (*matched_type).into(),
+                        });
+                    }
                 }
             }
         }
     }
 
-    Ok(ToolResult::text(serde_json::to_string_pretty(&json!({
-        "type_path": type_path,
-        "dmm_path": dmm_path,
-        "count": coordinates.len(),
-        "matching_tile_keys": keys.len(),
-        "keys": keys,
-        "coordinates": coordinates
-    }))?))
+    Ok(crate::result::projection(
+        FindOnMapData {
+            type_path: type_path.into(),
+            dmm_path: dmm_path.into(),
+            count: total_matches,
+            matching_tile_keys: keys.len(),
+            keys,
+            truncated: total_matches > coordinates.len(),
+            coordinates,
+        },
+        true,
+        false,
+    ))
 }
 
 #[cfg(test)]

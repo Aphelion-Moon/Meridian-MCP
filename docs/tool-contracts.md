@@ -2,6 +2,8 @@
 
 Generated from `src/contracts.rs`; do not edit by hand.
 
+Max output bytes bounds the serialized SDK `CallToolResult` body, including text/structured duplication, JSON escaping, metadata and `resultType`. The client-owned JSON-RPC request ID is outside this cap. Output schemas and native structured content are advertised for MCP 2025-06-18 and newer; all versions retain compatibility text. Mutation outcomes survive optional-detail reduction.
+
 | Tool | Mode | Support | Effects | Timeout ms | Max output bytes | Summary |
 | --- | --- | --- | --- | ---: | ---: | --- |
 | `dm_audit_icons` | Analysis | Experimental | read | - | 1048576 | Audit parsed icon evidence and duplicate DMI states. |

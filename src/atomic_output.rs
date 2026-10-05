@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 const RANDOM_NAME_ATTEMPTS: usize = 32;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct OutputArtifact {
     pub path: PathBuf,
     pub bytes: u64,
@@ -33,6 +33,13 @@ pub enum AtomicOutputError {
         install: String,
         restore: String,
         backup: PathBuf,
+    },
+    #[error("output installed at {path}; post-install finalization failed: {message}", path = .artifact.path.display())]
+    Installed {
+        artifact: Box<OutputArtifact>,
+        cleanup_complete: bool,
+        backup: Option<PathBuf>,
+        message: String,
     },
 }
 
@@ -256,15 +263,35 @@ fn install_with(
     }
     temporary.disarm();
 
-    if let Some(backup) = backup {
-        std::fs::remove_file(backup)?;
-    }
-
-    Ok(OutputArtifact {
-        path: output.canonicalize()?,
+    // Promotion is the mutation boundary. Later cleanup/identity failures must
+    // retain the installed artifact rather than imply that nothing was written.
+    let mut artifact = OutputArtifact {
+        path: output,
         bytes,
         sha256,
-    })
+    };
+    if let Some(backup) = &backup {
+        if let Err(error) = std::fs::remove_file(backup) {
+            return Err(AtomicOutputError::Installed {
+                artifact: Box::new(artifact),
+                cleanup_complete: false,
+                backup: Some(backup.clone()),
+                message: error.to_string(),
+            });
+        }
+    }
+    match artifact.path.canonicalize() {
+        Ok(path) => {
+            artifact.path = path;
+            Ok(artifact)
+        }
+        Err(error) => Err(AtomicOutputError::Installed {
+            artifact: Box::new(artifact),
+            cleanup_complete: true,
+            backup: None,
+            message: error.to_string(),
+        }),
+    }
 }
 
 // Promotion and restoration must preserve a destination created after preflight.
@@ -369,6 +396,53 @@ fn hash_file(path: &Path) -> Result<String, AtomicOutputError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn post_promotion_cleanup_failure_retains_installed_identity() {
+        let root = private_path(&std::env::temp_dir(), "installed-test").unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let output = root.join("result");
+        std::fs::write(&output, "original").unwrap();
+        let (path, mut file) = create_private_file(&root, "tmp").unwrap();
+        file.write_all(b"replacement").unwrap();
+        drop(file);
+        let mut backup = None;
+        let mut calls = 0;
+        let result = install_with(
+            output.clone(),
+            TemporaryOutput { path, armed: true },
+            true,
+            |source, target| {
+                calls += 1;
+                rename_without_replace(source, target)?;
+                if calls == 1 {
+                    backup = Some(target.to_owned());
+                }
+                if calls == 2 {
+                    let backup = backup.as_ref().unwrap();
+                    std::fs::remove_file(backup)?;
+                    std::fs::create_dir(backup)?;
+                }
+                Ok(())
+            },
+        );
+        let AtomicOutputError::Installed {
+            artifact,
+            cleanup_complete,
+            backup,
+            ..
+        } = result.unwrap_err()
+        else {
+            panic!("expected installed outcome")
+        };
+        assert_eq!(artifact.path, output);
+        assert_eq!(artifact.bytes, 11);
+        assert_eq!(artifact.sha256, hash_file(&output).unwrap());
+        assert!(!cleanup_complete);
+        assert!(backup.unwrap().is_dir());
+        assert_eq!(std::fs::read_to_string(output).unwrap(), "replacement");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn restore_collision_preserves_both_late_output_and_original_backup() {

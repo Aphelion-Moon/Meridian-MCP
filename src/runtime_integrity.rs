@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 
 const MAX_RUNTIME_EVENTS: usize = 10_000;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeIntegrityStatus {
     Active,
@@ -25,7 +25,7 @@ pub enum RuntimeIntegrityStatus {
     ObservedDuringRecovery,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct RuntimeIntegrityEvent {
     #[serde(default = "source_integrity_warning_code")]
     pub code: String,
@@ -40,7 +40,7 @@ pub struct RuntimeIntegrityEvent {
     pub build_record_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct RuntimeIntegrityJournal {
     pub schema: u32,
     pub session_id: String,
@@ -53,7 +53,7 @@ pub struct RuntimeIntegrityJournal {
     pub launch_provenance: LaunchProvenance,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct RuntimeIntegritySummary {
     pub session_id: String,
     pub status: RuntimeIntegrityStatus,

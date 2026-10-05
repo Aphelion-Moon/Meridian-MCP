@@ -12,17 +12,17 @@ pub enum DmmError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct MapBounds {
     pub min: [i32; 3],
     pub max: [i32; 3],
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct ModelUseCount {
     pub model: String,
     pub count: usize,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct MapProfile {
     pub path: PathBuf,
     pub format: String,
@@ -33,7 +33,7 @@ pub struct MapProfile {
     pub model_use_counts: Vec<ModelUseCount>,
     pub warnings: Vec<String>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct CoordinateDifference {
     pub x: i32,
     pub y: i32,
@@ -41,14 +41,14 @@ pub struct CoordinateDifference {
     pub left: Option<String>,
     pub right: Option<String>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct MapDifference {
     pub coordinates: Vec<CoordinateDifference>,
     pub left_dimensions: [usize; 3],
     pub right_dimensions: [usize; 3],
     pub truncated: bool,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct RenderPassRecord {
     pub name: String,
     pub description: String,

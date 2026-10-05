@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessRole {
     MeridianMcp,
@@ -10,14 +10,14 @@ pub enum ProcessRole {
     Collector,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct ProcessIdentity {
     pub pid: u32,
     pub started_at_identity: u64,
     pub role: ProcessRole,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryMetricKind {
     WorkingSetBytes,
@@ -37,13 +37,13 @@ impl MemoryMetricKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryUnit {
     Bytes,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct MemorySample {
     pub monotonic_offset_ms: u64,
     pub aligned_tracy_offset: Option<u64>,
@@ -52,7 +52,7 @@ pub struct MemorySample {
     pub observed_value: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct RoleMemorySeries {
     pub identity: ProcessIdentity,
     pub operating_system: String,
@@ -61,14 +61,14 @@ pub struct RoleMemorySeries {
     pub missed_samples: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct MemoryMetricSummary {
     pub sample_count: u64,
     pub median_bytes: u64,
     pub maximum_bytes: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct RoleMemorySummary {
     pub identity: ProcessIdentity,
     pub metrics: BTreeMap<String, MemoryMetricSummary>,
