@@ -187,6 +187,24 @@ $licenseRoot = Join-Path $output 'helpers/licenses'
 New-Item -ItemType Directory -Force -Path $licenseRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $tracy 'LICENSE') -Destination (Join-Path $licenseRoot 'tracy-LICENSE') -Force
 Copy-Item -LiteralPath (Join-Path $byondTracy 'LICENSE') -Destination (Join-Path $licenseRoot 'byond-tracy-LICENSE') -Force
+Get-ChildItem -LiteralPath (Join-Path $build 'third-party-notices') -File | ForEach-Object {
+	Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $licenseRoot $_.Name) -Force
+}
+# These complete license-header ranges belong to the exact pinned revisions above.
+$embeddedNotices = @(
+	@{ root = $tracy; path = 'public/common/tracy_lz4.cpp'; first = 1; last = 33; name = 'tracy-lz4-NOTICE' },
+	@{ root = $tracy; path = 'public/common/tracy_lz4hc.cpp'; first = 1; last = 33; name = 'tracy-lz4hc-NOTICE' },
+	@{ root = $tracy; path = 'server/tracy_robin_hood.h'; first = 1; last = 31; name = 'tracy-robin-hood-NOTICE' },
+	@{ root = $tracy; path = 'server/tracy_xxhash.h'; first = 1; last = 34; name = 'tracy-xxhash-NOTICE' },
+	@{ root = $tracy; path = 'server/tracy_pdqsort.h'; first = 1; last = 20; name = 'tracy-pdqsort-NOTICE' },
+	@{ root = $byondTracy; path = 'prof.c'; first = 310; last = 338; name = 'byond-tracy-lz4-NOTICE' }
+)
+foreach ($notice in $embeddedNotices) {
+	$lines = @(Get-Content -LiteralPath (Join-Path $notice.root $notice.path) -TotalCount $notice.last)
+	if ($lines.Count -ne $notice.last) { throw "The pinned source notice is incomplete: $($notice.path)" }
+	$text = [string]::Join("`n", $lines[($notice.first - 1)..($notice.last - 1)]) + "`n"
+	[IO.File]::WriteAllText((Join-Path $licenseRoot $notice.name), $text, [Text.UTF8Encoding]::new($false))
+}
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $manifest) | Out-Null
 $document = [ordered]@{ schema_version = 2; helpers = $entries }

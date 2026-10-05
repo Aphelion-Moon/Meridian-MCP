@@ -313,6 +313,8 @@ Run scripts from the repository root. [TESTING.md](TESTING.md) lists exact comma
 
 Add `-EnableTracy` to both installation and configuration only when the combined manifest contains the verified Tracy helper and hook. Restart Codex after changing its MCP configuration.
 
+Keep the builders' `helpers/licenses` directory with the helper binaries and the debugger notices with each debugger package. The installer retains Meridian-MCP's root `LICENSE`, rejects missing or conflicting required notices before replacing files, and copies those notices into the installed package. A custom manifest location remains supported through its relative helper paths. See the [dependency policy](docs/dependency-policy.md) for component licenses and the separate requirements for binary distribution.
+
 ### Startup configuration
 
 The server reads immutable startup configuration:

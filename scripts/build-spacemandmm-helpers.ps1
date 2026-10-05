@@ -20,6 +20,9 @@ $destinationRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $destination = Join-Path $destinationRoot "helpers/bin/$platform/$binaryName"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
 Copy-Item -LiteralPath $source -Destination $destination -Force
+$licenseRoot = Join-Path $destinationRoot 'helpers/licenses'
+New-Item -ItemType Directory -Force -Path $licenseRoot | Out-Null
+Copy-Item -LiteralPath (Join-Path $upstream 'LICENSE') -Destination (Join-Path $licenseRoot 'SpacemanDMM-LICENSE') -Force
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash.ToLowerInvariant()
 $relative = [IO.Path]::GetRelativePath((Split-Path -Parent ([IO.Path]::GetFullPath($ManifestPath))), $destination).Replace('\', '/')
 $platformParts = $platform.Split('-', 2)

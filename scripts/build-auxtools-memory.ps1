@@ -43,6 +43,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Native memory helper build failed.' }
 $binary = Join-Path $build 'target/i686-pc-windows-msvc/release/debug_server.dll'
 Copy-Item -LiteralPath $binary -Destination (Join-Path $output 'debug_server.dll')
 Copy-Item -LiteralPath (Join-Path $overlays 'LICENSE') -Destination (Join-Path $output 'LICENSE')
+Copy-Item -LiteralPath (Join-Path $owned 'debug_server/LICENSE') -Destination (Join-Path $output 'LICENSE-debug-server')
+Copy-Item -LiteralPath (Join-Path $owned 'README.md') -Destination (Join-Path $output 'UPSTREAM-README.md')
 $patches = @('accounting.rs','mem_profiler.rs','protocol.patch') | ForEach-Object {
     @{ name=$_; patch_sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $overlays $_)).Hash.ToLowerInvariant() }
 }

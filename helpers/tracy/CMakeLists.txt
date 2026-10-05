@@ -27,6 +27,17 @@ CPMAddPackage(
 include("${TRACY_SOURCE_DIR}/cmake/vendor.cmake")
 include("${TRACY_SOURCE_DIR}/cmake/server.cmake")
 
+# Preserve notices from the same source trees used by this helper build.
+set(MERIDIAN_NOTICE_DIR "${CMAKE_BINARY_DIR}/third-party-notices")
+file(MAKE_DIRECTORY "${MERIDIAN_NOTICE_DIR}")
+configure_file("${json_SOURCE_DIR}/LICENSE.MIT" "${MERIDIAN_NOTICE_DIR}/tracy-json-LICENSE" COPYONLY)
+configure_file("${capstone_SOURCE_DIR}/LICENSES/LICENSE.TXT" "${MERIDIAN_NOTICE_DIR}/tracy-capstone-LICENSE" COPYONLY)
+configure_file("${capstone_SOURCE_DIR}/LICENSES/LICENSE_LLVM.TXT" "${MERIDIAN_NOTICE_DIR}/tracy-capstone-LLVM-LICENSE" COPYONLY)
+configure_file("${capstone_SOURCE_DIR}/LICENSES/LICENSE_BSD_3_CLAUSE.txt" "${MERIDIAN_NOTICE_DIR}/tracy-capstone-BSD-LICENSE" COPYONLY)
+configure_file("${zstd_SOURCE_DIR}/LICENSE" "${MERIDIAN_NOTICE_DIR}/tracy-zstd-LICENSE" COPYONLY)
+configure_file("${zstd_SOURCE_DIR}/COPYING" "${MERIDIAN_NOTICE_DIR}/tracy-zstd-COPYING" COPYONLY)
+configure_file("${PPQSort_SOURCE_DIR}/LICENSE" "${MERIDIAN_NOTICE_DIR}/tracy-ppqsort-LICENSE" COPYONLY)
+
 add_library(meridian_tracy_protocol STATIC
 	src/collector.cpp
 	src/protocol.cpp
