@@ -282,6 +282,16 @@ Run scripts from the repository root. [TESTING.md](TESTING.md) lists exact comma
 | `scripts/run-tracy-experiment.ps1` | Capture repeated controls and retain local evidence. |
 | `scripts/validate-tracy-evidence.ps1` | Validate existing evidence without launching BYOND. |
 
+### Authoring export
+
+The binary also runs a standalone, read-only exporter for content-authoring tools. It does not start the MCP server and needs no client registration or startup roots:
+
+```powershell
+meridian-mcp authoring-export --project C:\path\to\game --output C:\path\to\authoring.json
+```
+
+`--environment <file.dme>` selects the environment relative to the project; it defaults to `tgstation.dme`. Every input must stay inside the project. The JSON lists jobs, outfits, ID trims and items with their effective field values, physical source spans and SHA-256 hashes of each input file, so a consumer can confirm the bytes it edits. Macro-expanded, Latin-1, implicit and relative positions are reported but never marked editable. The exporter refuses to publish anything after a parse error, source drift or an include outside the project. It also never overwrites a parsed source.
+
 ### Packaging and configuration example
 
 ```powershell

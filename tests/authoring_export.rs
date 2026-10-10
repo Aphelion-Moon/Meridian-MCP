@@ -182,6 +182,64 @@ fn refuses_to_overwrite_project_sources() {
 }
 
 #[test]
+fn exports_a_named_environment_and_records_it() {
+    let fixture = Fixture::new(b"/datum/job\n");
+    std::fs::create_dir_all(fixture.0.join("env")).unwrap();
+    std::fs::write(
+        fixture.0.join("env/custom.dme"),
+        "#include \"../fixture.dm\"\n",
+    )
+    .unwrap();
+    std::fs::remove_file(fixture.0.join("tgstation.dme")).unwrap();
+    let output = fixture.0.join("export.json");
+    let result = Command::new(env!("CARGO_BIN_EXE_meridian-mcp"))
+        .args(["authoring-export", "--project"])
+        .arg(&fixture.0)
+        .args(["--environment", "env/custom.dme", "--output"])
+        .arg(&output)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let export: Value = serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
+    assert_eq!(export["environment"], "env/custom.dme");
+    definition(&export, "/datum/job");
+}
+
+#[test]
+fn rejects_environments_outside_the_project_or_without_dme_extension() {
+    let fixture = Fixture::new(b"/datum/job\n");
+    let outside = fixture.0.with_extension("outside.dme");
+    std::fs::write(&outside, "#include \"fixture.dm\"\n").unwrap();
+    let output = fixture.0.join("export.json");
+    for environment in [outside.as_os_str(), "fixture.dm".as_ref()] {
+        let result = Command::new(env!("CARGO_BIN_EXE_meridian-mcp"))
+            .args(["authoring-export", "--project"])
+            .arg(&fixture.0)
+            .arg("--environment")
+            .arg(environment)
+            .arg("--output")
+            .arg(&output)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!result.status.success(), "{environment:?} was accepted");
+        assert!(!output.exists());
+    }
+    std::fs::remove_file(outside).unwrap();
+}
+
+#[test]
+fn exports_record_the_default_environment() {
+    let export = Fixture::new(b"/datum/job\n").export();
+    assert_eq!(export["environment"], "tgstation.dme");
+}
+
+#[test]
 fn parser_errors_do_not_publish_a_writable_catalog() {
     let fixture = Fixture::new(b"/datum/job\n\tvar/title = list(\n");
     let output = fixture.0.join("export.json");

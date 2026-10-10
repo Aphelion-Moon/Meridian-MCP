@@ -980,8 +980,10 @@ fn export_constants(
     (constants, configuration)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn export_tree(
     context: &Context,
+    environment: &str,
     root: &Path,
     files: &BTreeMap<PathBuf, PhysicalFile>,
     tree: &ObjectTree,
@@ -1203,7 +1205,7 @@ fn export_tree(
         analyzer_version: format!("meridian-mcp/{}/authoring-v1", env!("CARGO_PKG_VERSION")),
         spacemandmm_revision: crate::capabilities::SPACEMANDMM_REVISION,
         spacemandmm_local_patch_sha256: crate::capabilities::SPACEMANDMM_LOCAL_PATCH_SHA256,
-        environment: "tgstation.dme".to_owned(),
+        environment: environment.to_owned(),
         configuration,
         input_files: files
             .values()
@@ -1219,13 +1221,32 @@ fn export_tree(
     })
 }
 
+pub const DEFAULT_ENVIRONMENT: &str = "tgstation.dme";
+
 pub fn export_project(project: &Path, output: &Path) -> Result<()> {
+    export_project_environment(project, Path::new(DEFAULT_ENVIRONMENT), output)
+}
+
+/// `environment` is resolved relative to `project` and must stay inside it.
+pub fn export_project_environment(project: &Path, environment: &Path, output: &Path) -> Result<()> {
     let root = project
         .canonicalize()
         .context("cannot resolve authoring project")?;
     ensure!(root.is_dir(), "authoring project must be a directory");
+    ensure!(
+        environment
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("dme")),
+        "authoring environment must be a .dme file"
+    );
     let policy = PathPolicy::new(vec![root.clone()], vec![])?;
-    let environment = policy.read_path(root.join("tgstation.dme"))?;
+    let environment = policy.read_path(root.join(environment))?;
+    let environment_name = environment
+        .strip_prefix(&root)
+        .ok()
+        .and_then(Path::to_str)
+        .ok_or_else(|| anyhow!("authoring environment must be a Unicode path inside the project"))?
+        .replace('\\', "/");
     ensure!(
         output
             .extension()
@@ -1290,6 +1311,7 @@ pub fn export_project(project: &Path, output: &Path) -> Result<()> {
         .map_err(|_| anyhow!("source capture lock poisoned"))?;
     let export = export_tree(
         &context,
+        &environment_name,
         &root,
         &files,
         &tree,
@@ -1326,6 +1348,7 @@ pub fn dispatch_cli(arguments: &[std::ffi::OsString]) -> Result<bool> {
         return Ok(false);
     }
     let mut project = None;
+    let mut environment = None;
     let mut output = None;
     let mut position = 1;
     while position < arguments.len() {
@@ -1335,13 +1358,19 @@ pub fn dispatch_cli(arguments: &[std::ffi::OsString]) -> Result<bool> {
             .ok_or_else(|| anyhow!("missing authoring-export argument value"))?;
         match name.to_str() {
             Some("--project") if project.is_none() => project = Some(PathBuf::from(value)),
+            Some("--environment") if environment.is_none() => {
+                environment = Some(PathBuf::from(value))
+            }
             Some("--output") if output.is_none() => output = Some(PathBuf::from(value)),
-            _ => bail!("expected authoring-export --project <game-root> --output <json-file>"),
+            _ => bail!(
+                "expected authoring-export --project <game-root> [--environment <file.dme>] --output <json-file>"
+            ),
         }
         position += 2;
     }
-    export_project(
+    export_project_environment(
         &project.ok_or_else(|| anyhow!("authoring-export requires --project"))?,
+        &environment.unwrap_or_else(|| PathBuf::from(DEFAULT_ENVIRONMENT)),
         &output.ok_or_else(|| anyhow!("authoring-export requires --output"))?,
     )?;
     Ok(true)

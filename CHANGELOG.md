@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `force` and `timeout_ms` arguments to `dm_parse_environment`. A parse that exceeds its timeout is abandoned with a structured error; because a blocking parse cannot be cancelled, the worker keeps running and the next parse queues behind it rather than running alongside it.
 - Added error and warning counts, parse duration, the canonical environment path, and the pinned SpacemanDMM revision to the `dm_parse_environment` result, so diagnostic volume no longer needs a second `dm_check_errors` call to discover.
 - Added cold/reuse stage timings, explicit lexical/dense readiness, deterministic schema-1 semantic chunk identities, and a checked-in relevance gate with exact MRR and natural-language recall assertions.
+- Added the read-only `authoring-export` command, which writes a content-hashed JSON projection of jobs, outfits, ID trims and items with editable physical source spans. `--environment` selects a project-relative `.dme` (default `tgstation.dme`).
+- Added immutable startup tool profiles that intersect with capability mode and helper gates.
 
 ### Changed
 
