@@ -244,8 +244,8 @@ Post-restart app-tool acceptance passed for the installed build: status identity
 
 The owned headless auxtools fixture passes all six requests, but `dm_debug_stop` takes about 30 seconds. This separate debugger protocol was not changed by the Tracy transport work.
 
-- [ ] Confirm the pinned auxtools disconnect response contract and add a nonresponsive-peer regression covering blocked send and absent acknowledgement.
-- [ ] Give debugger stop one bounded deadline independent of protocol completion; retain actual process ownership through confirmed cleanup and preserve honest failure outcomes.
+- [x] Confirm the pinned auxtools disconnect response contract and add a nonresponsive-peer regression covering blocked send and absent acknowledgement. Upstream's reader exits without acknowledging `Disconnect`; `disconnect_does_not_wait_for_an_ack_the_upstream_never_sends` and `disconnect_is_bounded_when_the_peer_stops_reading` in `src/spaceman/debugger.rs` cover both cases.
+- [x] Give debugger stop one bounded deadline independent of protocol completion; retain actual process ownership through confirmed cleanup and preserve honest failure outcomes. `DebuggerSession::stop_with_pool` bounds the disconnect send (1 s), process exit (2 s) and contained cleanup (2 s), and reports `MutationOutcome` with `recovery_required` on failure.
 - [ ] Repeat the owned debugger fixture and record stop latency, peer-failure behavior, cancellation and process cleanup. Establish the shutdown latency target before implementation.
 
-This is the next implementation item, not an applied fix. The qualification report retains the observed 30,027 ms stop call and the relevant source path.
+The bounded stop is applied, with a worst case of about 5 s against the 30,027 ms observed before. A live fixture measurement has not been recorded yet. The qualification report retains the original observation and the relevant source path.

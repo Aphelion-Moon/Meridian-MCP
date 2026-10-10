@@ -573,6 +573,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn disconnect_is_bounded_when_the_peer_stops_reading() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release, ready) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            // Hold the connection open without ever reading from it.
+            let (_stream, _) = listener.accept().await.unwrap();
+            let _ = ready.await;
+        });
+        let stream = TcpStream::connect(address).await.unwrap();
+        let mut connection = AuxConnection::new(stream, 1024, Duration::from_secs(30));
+        // Fill both socket buffers so the Disconnect frame cannot be written.
+        let filler = vec![0_u8; 64 * 1024];
+        loop {
+            match connection.stream.try_write(&filler) {
+                Ok(_) => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    // The kernel may drain into the peer's receive buffer.
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    if connection.stream.try_write(&filler).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => panic!("unexpected write failure: {error}"),
+            }
+        }
+        let started = tokio::time::Instant::now();
+        let _ = tokio::time::timeout(Duration::from_secs(3), connection.disconnect())
+            .await
+            .expect("Disconnect must stay bounded when the peer stops reading");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(matches!(
+            connection.request(AuxRequest::Pause).await,
+            Err(AuxProtocolError::Disconnected)
+        ));
+        release.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn event_wait_timeout_retains_a_partial_frame() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
