@@ -20,6 +20,7 @@ pub mod memory_evidence;
 pub mod native_evidence;
 pub mod native_memory;
 pub mod network_audit;
+pub mod outputs;
 pub mod parameters;
 pub mod path_policy;
 pub mod private_state;
@@ -29,6 +30,7 @@ pub mod process_environment;
 pub mod process_metrics;
 pub mod project;
 pub mod repository_roots;
+mod request;
 pub mod result;
 pub mod runtime_integrity;
 mod search;
@@ -53,7 +55,9 @@ pub use build_provenance::{
     BuildAttempt, BuildAttemptOutcome, BuildInputIdentity, BuildProvenanceStore, BuildRecord,
     LaunchDecision, LaunchProvenance, ProjectBuildIdentity, ProvenanceReason, ProvenanceStatus,
 };
-pub use config::{CapabilityMode, DebuggerAccess, RiftBuildAccess, ServerConfig, TracyAccess};
+pub use config::{
+    CapabilityMode, DebuggerAccess, RiftBuildAccess, ServerConfig, ToolProfile, TracyAccess,
+};
 pub use contracts::{
     all_contracts, contracts_for, contracts_for_configuration, render_tool_reference, SupportLevel,
     ToolContract, ToolEffects,

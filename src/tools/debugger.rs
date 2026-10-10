@@ -1,5 +1,6 @@
 use crate::limits::ServerLimits;
 use crate::mcp::ToolResult;
+use crate::outputs::*;
 use crate::process::ProcessContainment;
 use crate::result::{json_success, ToolMetadata};
 use crate::spaceman::debugger::{
@@ -10,6 +11,7 @@ use crate::spaceman::debugger::{
 use crate::state::ServerState;
 use crate::tools::ToolExecutionContext;
 use anyhow::{anyhow, Result};
+#[cfg(test)]
 use serde_json::json;
 use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
@@ -43,6 +45,7 @@ pub async fn launch(
     let require_verified = args.require_verified_provenance.unwrap_or(false);
     let mut lease = match context
         .execution_lease(
+            state,
             &dmb_path,
             dmb_path
                 .parent()
@@ -56,7 +59,9 @@ pub async fn launch(
         Err(result) => return Ok(result),
     };
     let launch_provenance =
-        match super::require_launchable_artifact(context, &dmb_path, require_verified) {
+        match super::require_launchable_artifact_owned(context, state, &dmb_path, require_verified)
+            .await?
+        {
             Ok(provenance) => provenance,
             Err(result) => return Ok(result),
         };
@@ -94,9 +99,19 @@ pub async fn launch(
         .as_ref()
         .map_or(&installation.dll_sha256, |helper| &helper.sha256);
     let mut command = Command::new(debugger_host);
+    if host_mode == "headless" {
+        // DreamDaemon needs its server startup arguments; DreamSeeker's launch
+        // form can leave the headless host waiting before world initialization.
+        command.args(super::runtime::build_dreamdaemon_args(
+            &dmb_spawn_path,
+            &working_directory,
+            0,
+            &[],
+        ));
+    } else {
+        command.arg(dmb_spawn_path).arg("-trusted");
+    }
     command
-        .arg(dmb_spawn_path)
-        .arg("-trusted")
         .current_dir(working_directory)
         .env_clear()
         .envs(dreamseeker_environment())
@@ -107,14 +122,25 @@ pub async fn launch(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    context.checkpoint()?;
+    context.progress(crate::request::Stage::Execution);
     lease.mark_writer_started();
     let (mut process, containment) = crate::process::spawn_runtime_process(&mut command)?;
     let mut startup = DebuggerStartup {
         containment: std::sync::Arc::clone(&containment),
         lease: Some(lease),
     };
-    let limits = ServerLimits::default();
-    let accepted = tokio::time::timeout(
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        process_started: true,
+        runtime_id: Some(runtime_id.clone()),
+        action: Some("debug_launch".into()),
+        recovery_required: true,
+        ..Default::default()
+    };
+    let handshake = async {
+        let limits = ServerLimits::default();
+        let accepted = tokio::time::timeout(
         Duration::from_millis(args.startup_timeout_ms.unwrap_or(limits.max_debug_startup_ms)),
         async {
             tokio::select! {
@@ -124,51 +150,92 @@ pub async fn launch(
         },
     )
     .await;
-    let (stream, peer) = match accepted {
-        Ok(Ok(value)) if value.1.ip().is_loopback() => value,
-        Ok(Ok(_)) => {
-            let _ = process.kill().await;
-            return Err(anyhow!("debugger rejected a non-loopback connection"));
-        }
-        Ok(Err(error)) => {
-            let _ = process.kill().await;
-            return Err(error);
-        }
-        Err(_) => {
-            let _ = process.kill().await;
-            return Err(anyhow!("debugger startup timed out"));
-        }
-    };
-    let _ = peer;
-    let mut connection = AuxConnection::new(
-        stream,
-        limits.max_debug_message_bytes,
-        Duration::from_millis(limits.max_debug_request_ms),
-    );
-    let stddef_source = match connection.request(AuxRequest::StdDef).await? {
-        AuxResponse::StdDef(source) => source,
-        response => return Err(anyhow!("unexpected StdDef response: {response:?}")),
-    };
-    if !matches!(
-        connection.request(AuxRequest::Configured).await?,
-        AuxResponse::Ack
-    ) {
-        let _ = process.kill().await;
-        return Err(anyhow!("debugger configuration was not acknowledged"));
-    }
-    if memory_profile {
-        let response = connection
-            .request(AuxRequest::Eval {
-                frame_id: None,
-                command: "#meridian_memory_v1 {\"action\":\"status\"}".into(),
-                context: Some("repl".into()),
-            })
-            .await?;
-        let AuxResponse::Eval(response) = response else {
-            return Err(anyhow!("Native memory capability handshake failed"));
+        let (stream, peer) = match accepted {
+            Ok(Ok(value)) if value.1.ip().is_loopback() => value,
+            Ok(Ok(_)) => {
+                let _ = process.kill().await;
+                return Err(anyhow!("debugger rejected a non-loopback connection"));
+            }
+            Ok(Err(error)) => {
+                let _ = process.kill().await;
+                return Err(error);
+            }
+            Err(_) => {
+                let _ = process.kill().await;
+                return Err(anyhow!("debugger startup timed out"));
+            }
         };
-        crate::native_memory::parse_response(&response.value)?;
-    }
+        let _ = peer;
+        let mut connection = AuxConnection::new(
+            stream,
+            limits.max_debug_message_bytes,
+            Duration::from_millis(limits.max_debug_request_ms),
+        );
+        let stddef_source = match connection.request(AuxRequest::StdDef).await? {
+            AuxResponse::StdDef(source) => source,
+            response => return Err(anyhow!("unexpected StdDef response: {response:?}")),
+        };
+        if !matches!(
+            connection.request(AuxRequest::Configured).await?,
+            AuxResponse::Ack
+        ) {
+            let _ = process.kill().await;
+            return Err(anyhow!("debugger configuration was not acknowledged"));
+        }
+        if memory_profile {
+            let response = connection
+                .request(AuxRequest::Eval {
+                    frame_id: None,
+                    command: "#meridian_memory_v1 {\"action\":\"status\"}".into(),
+                    context: Some("repl".into()),
+                })
+                .await?;
+            let AuxResponse::Eval(response) = response else {
+                return Err(anyhow!("Native memory capability handshake failed"));
+            };
+            crate::native_memory::parse_response(&response.value)?;
+        }
+        Ok::<_, anyhow::Error>((connection, stddef_source))
+    };
+    let handshake = context.admit(handshake).await;
+    let (connection, stddef_source) = match handshake {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = containment.request_termination();
+            essential.process_stopped = matches!(
+                tokio::time::timeout(Duration::from_secs(2), process.wait()).await,
+                Ok(Ok(_))
+            );
+            essential.cleanup_complete =
+                crate::process::wait_for_cleanup(&containment).await.is_ok();
+            if essential.cleanup_complete {
+                if let Some(mut lease) = startup.lease.take() {
+                    let (result, lease) = state
+                        .run_blocking_job(move || Ok((lease.finish(), lease)))
+                        .await
+                        .map_err(|error| {
+                            let mut outcome = essential.clone();
+                            outcome.cleanup_complete = false;
+                            outcome.recovery_required = true;
+                            crate::result::OutcomeError { error, outcome }
+                        })?;
+                    essential.cleanup_complete = result.is_ok();
+                    if result.is_err() {
+                        startup.lease = Some(lease);
+                    }
+                }
+                if essential.cleanup_complete {
+                    startup.lease = None;
+                }
+            }
+            essential.recovery_required = !essential.cleanup_complete;
+            return Err(crate::result::OutcomeError {
+                error,
+                outcome: essential,
+            }
+            .into());
+        }
+    };
     *slot = Some(DebuggerSession {
         runtime_id: runtime_id.clone(),
         analysis: analysis.clone(),
@@ -190,9 +257,25 @@ pub async fn launch(
         execution_lease: startup.lease.take(),
     });
     Ok(json_success(
-        session_metadata(generation, Some(runtime_id), analysis),
-        json!({"lifecycle":"running","host_mode":host_mode,"port":port,"dmb_path":dmb_path,"dll_sha256":dll_sha256,"memory_profile":memory_profile,"launch_provenance":launch_provenance}),
-    ))
+        session_metadata(generation, Some(runtime_id.clone()), analysis),
+        DebugLaunchData {
+            lifecycle: "running",
+            host_mode: host_mode.into(),
+            port,
+            dmb_path,
+            dll_sha256: dll_sha256.clone(),
+            memory_profile,
+            launch_provenance,
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        process_started: true,
+        runtime_id: Some(runtime_id),
+        action: Some("launch".into()),
+        ..Default::default()
+    }))
 }
 
 fn debugger_host_executable(
@@ -255,13 +338,25 @@ pub(super) async fn stop_with_lifecycle(state: &ServerState) -> Result<ToolResul
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     let launch_provenance = session.launch_provenance.clone();
+    let runtime_id = session.runtime_id.clone();
     let metadata = debugger_metadata(session);
-    session.stop().await?;
+    session.stop_with_pool(Some(state.blocking_pool())).await?;
     *slot = None;
     Ok(json_success(
         metadata,
-        json!({"lifecycle":"stopped","launch_provenance":launch_provenance}),
-    ))
+        DebugStopData {
+            lifecycle: "stopped",
+            launch_provenance,
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        process_stopped: true,
+        runtime_id: Some(runtime_id),
+        action: Some("stop".into()),
+        ..Default::default()
+    }))
 }
 
 struct DebuggerStartup {
@@ -298,20 +393,43 @@ fn debugger_metadata(session: &DebuggerSession) -> ToolMetadata {
 }
 
 async fn request(state: &ServerState, request: AuxRequest) -> Result<(ToolMetadata, AuxResponse)> {
-    let mut slot = state.debugger_checked().await?;
+    request_controlled(None, state, request).await
+}
+
+async fn request_controlled(
+    context: Option<&ToolExecutionContext>,
+    state: &ServerState,
+    request: AuxRequest,
+) -> Result<(ToolMetadata, AuxResponse)> {
+    let mut slot = match context {
+        Some(context) => context.admit(state.debugger_checked()).await?,
+        None => state.debugger_checked().await?,
+    };
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
+    if let Some(context) = context {
+        context.checkpoint()?;
+    }
     let response = session.connection.request(request).await?;
     Ok((debugger_metadata(session), response))
 }
 
 pub async fn threads(state: &ServerState) -> Result<ToolResult> {
     let (generation, response) = request(state, AuxRequest::Stacks).await?;
-    let AuxResponse::Stacks { stacks } = response else {
+    let AuxResponse::Stacks { mut stacks } = response else {
         return Err(anyhow!("unexpected stacks response"));
     };
-    Ok(json_success(generation, json!({"threads":stacks})))
+    let mut budget = crate::outputs::budget::Budget::default();
+    let mut omissions = crate::outputs::Omissions::default();
+    stacks.truncate(10000);
+    for row in &mut stacks {
+        row.name = budget.text(&row.name, 4096, "threads.name", &mut omissions);
+    }
+    Ok(json_success(
+        generation,
+        DebugThreadsData { threads: stacks },
+    ))
 }
 
 pub async fn stack_trace(
@@ -347,7 +465,10 @@ pub async fn stack_trace(
     }
     Ok(json_success(
         metadata,
-        json!({"frames":frames,"total_count":total_count}),
+        DebugStackTraceData {
+            frames,
+            total_count,
+        },
     ))
 }
 
@@ -372,7 +493,11 @@ pub async fn scopes(
     };
     Ok(json_success(
         generation,
-        json!({"arguments":arguments,"locals":locals,"globals":globals}),
+        DebugScopesData {
+            arguments,
+            locals,
+            globals,
+        },
     ))
 }
 
@@ -401,10 +526,26 @@ pub async fn variables(
             .truncation_reasons
             .push("debug_variable_limit".into());
     }
-    Ok(json_success(metadata, json!({"variables":vars})))
+    let mut budget = crate::outputs::budget::Budget::default();
+    let mut omissions = crate::outputs::Omissions::default();
+    let mut retained = 0;
+    for row in &mut vars {
+        if retained > 0 && budget.bytes < 256 {
+            break;
+        }
+        row.name = budget.text(&row.name, 4096, "variables.name", &mut omissions);
+        row.value = budget.text(&row.value, 8192, "variables.value", &mut omissions);
+        retained += 1;
+    }
+    vars.truncate(retained);
+    Ok(json_success(
+        metadata,
+        DebugVariablesData { variables: vars },
+    ))
 }
 
 pub async fn evaluate(
+    execution: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugEvaluateParams,
 ) -> Result<ToolResult> {
@@ -421,7 +562,8 @@ pub async fn evaluate(
     {
         return Err(anyhow!("unknown evaluation context"));
     }
-    let (generation, response) = request(
+    let (generation, response) = request_controlled(
+        Some(execution),
         state,
         AuxRequest::Eval {
             frame_id: args.frame_id.map(|v| v as u32),
@@ -430,10 +572,28 @@ pub async fn evaluate(
         },
     )
     .await?;
-    let AuxResponse::Eval(result) = response else {
+    let AuxResponse::Eval(mut result) = response else {
         return Err(anyhow!("unexpected evaluation response"));
     };
-    Ok(json_success(generation, json!({"result":result})))
+    let original_bytes = result.value.len();
+    result.value = crate::result::bounded_text(&result.value, 128 * 1024, 128 * 1024, false).into();
+    let mut generation = generation;
+    if result.value.len() < original_bytes {
+        generation.truncated = true;
+        generation
+            .truncation_reasons
+            .push("evaluation_value_bytes".into());
+    }
+    Ok(
+        json_success(generation, DebugEvaluateData { result }).with_outcome(
+            crate::result::MutationOutcome {
+                operation_ran: true,
+                cleanup_complete: true,
+                action: Some("evaluate".into()),
+                ..Default::default()
+            },
+        ),
+    )
 }
 
 fn validate_expression(expression: &str) -> Result<()> {
@@ -444,17 +604,19 @@ fn validate_expression(expression: &str) -> Result<()> {
 }
 
 pub async fn memory(
+    execution: &ToolExecutionContext,
     state: &ServerState,
     args: crate::native_memory::MemoryControl,
 ) -> Result<ToolResult> {
     let control = args;
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = execution.admit(state.debugger_checked()).await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("No debugger session is active"))?;
     let hash = session.memory_helper_sha256.clone().ok_or_else(|| {
         anyhow!("Launch the debugger with memory_profile: true before using native memory controls")
     })?;
+    execution.checkpoint()?;
     let response = session
         .connection
         .request(AuxRequest::Eval {
@@ -466,38 +628,63 @@ pub async fn memory(
     let AuxResponse::Eval(response) = response else {
         return Err(anyhow!("Unexpected native memory response"));
     };
-    let evidence = crate::native_memory::parse_response(&response.value)?;
+    let mut evidence: NativeMemoryEnvelope =
+        serde_json::from_value(crate::native_memory::parse_response(&response.value)?)?;
     let mut metadata = debugger_metadata(session);
-    for (key, reason) in [
-        ("rows_truncated", "native_memory_row_limit"),
-        ("capacity_exceeded", "native_memory_record_limit"),
-    ] {
-        if evidence["evidence"]["result"][key] == true {
+    if let NativeMemoryResult::Stop(stop) = &mut evidence.evidence.result {
+        let mut bytes = crate::outputs::budget::DETAIL_BYTES;
+        let mut retained = 0;
+        let mut clipped = false;
+        for row in &mut stop.procedures {
+            if let Some(path) = &mut row.proc_path {
+                let bounded = crate::result::bounded_text(path, 256, 256, false);
+                if bounded.len() < path.len() {
+                    row.proc_path_truncated = true;
+                    clipped = true;
+                }
+                *path = bounded.into();
+            }
+            let size = crate::result::encoded_bytes(row, usize::MAX).unwrap_or(usize::MAX);
+            if size > bytes {
+                break;
+            }
+            bytes -= size;
+            retained += 1;
+        }
+        if retained < stop.procedures.len() || clipped {
+            stop.rows_truncated = true;
             metadata.truncated = true;
-            metadata.truncation_reasons.push(reason.into());
+            metadata
+                .truncation_reasons
+                .push("native_memory_response_bytes".into());
+        }
+        stop.procedures.truncate(retained);
+
+        for (present, reason) in [
+            (stop.rows_truncated, "native_memory_row_limit"),
+            (stop.capacity_exceeded, "native_memory_record_limit"),
+        ] {
+            if present {
+                metadata.truncated = true;
+                metadata.truncation_reasons.push(reason.into());
+            }
         }
     }
-    Ok(json_success(
-        metadata,
-        json!({
-            "native_memory": evidence, "helper_sha256": hash,
-            "helper_source_revision": crate::native_memory::SOURCE_REVISION,
-            "launch_provenance":session.launch_provenance,
-            "warning":"Observed requested allocation bytes are not retained-object sizes or proof of a leak. Cross-thread frees are not observed."
-        }),
-    ))
+    Ok(json_success(metadata,DebugMemoryData {native_memory:evidence,helper_sha256:hash,helper_source_revision:crate::native_memory::SOURCE_REVISION,launch_provenance:session.launch_provenance.clone(),warning:"Observed requested allocation bytes are not retained-object sizes or proof of a leak. Cross-thread frees are not observed."}).with_outcome(crate::result::MutationOutcome {operation_ran:true,cleanup_complete:true,action:Some("memory".into()),..Default::default()}))
 }
 
 pub async fn set_exception_breakpoints(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugSetExceptionBreakpointsParams,
 ) -> Result<ToolResult> {
     let enabled = args.break_on_runtimes;
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = context.admit(state.debugger_checked()).await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     let generation = debugger_metadata(session);
+    context.checkpoint()?;
     session
         .connection
         .send(AuxRequest::CatchRuntimes {
@@ -506,11 +693,20 @@ pub async fn set_exception_breakpoints(
         .await?;
     Ok(json_success(
         generation,
-        json!({"break_on_runtimes":enabled}),
-    ))
+        DebugExceptionBreakpointsData {
+            break_on_runtimes: enabled,
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        action: Some("exception_breakpoints".into()),
+        ..Default::default()
+    }))
 }
 
 pub async fn control(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugControlParams,
 ) -> Result<ToolResult> {
@@ -538,14 +734,27 @@ pub async fn control(
         },
         _ => return Err(anyhow!("unknown debugger control action")),
     };
-    let (generation, response) = request(state, request_value).await?;
+    context.checkpoint()?;
+    let (generation, response) = request_controlled(Some(context), state, request_value).await?;
     if !matches!(response, AuxResponse::Ack) {
         return Err(anyhow!("debugger control was not acknowledged"));
     }
-    Ok(json_success(generation, json!({"action":action})))
+    Ok(json_success(
+        generation,
+        DebugControlData {
+            action: action.into(),
+        },
+    )
+    .with_outcome(crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        action: Some(action.into()),
+        ..Default::default()
+    }))
 }
 
 pub async fn set_function_breakpoints(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugSetFunctionBreakpointsParams,
 ) -> Result<ToolResult> {
@@ -571,10 +780,11 @@ pub async fn set_function_breakpoints(
             condition,
         ));
     }
-    replace_breakpoints(state, desired).await
+    replace_breakpoints_controlled(Some(context), state, desired).await
 }
 
 pub async fn set_breakpoints(
+    context: &ToolExecutionContext,
     state: &ServerState,
     args: crate::parameters::DebugSetBreakpointsParams,
 ) -> Result<ToolResult> {
@@ -584,7 +794,7 @@ pub async fn set_breakpoints(
     if breakpoints.len() > 10_000 {
         return Err(anyhow!("breakpoint limit exceeded"));
     }
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = context.admit(state.debugger_checked()).await?;
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
@@ -598,6 +808,7 @@ pub async fn set_breakpoints(
     }
     let mut desired = Vec::new();
     for breakpoint in breakpoints {
+        context.checkpoint()?;
         let line = breakpoint.line as u32;
         let symbol = snapshot
             .language_index
@@ -633,14 +844,18 @@ pub async fn set_breakpoints(
             breakpoint.condition.clone(),
         ));
     }
-    replace_breakpoints_in_session(session, desired).await
+    replace_breakpoints_in_session(Some(context), session, desired).await
 }
 
-async fn replace_breakpoints(
+async fn replace_breakpoints_controlled(
+    context: Option<&ToolExecutionContext>,
     state: &ServerState,
     desired: Vec<(InstructionRef, Option<String>)>,
 ) -> Result<ToolResult> {
-    let mut slot = state.debugger_checked().await?;
+    let mut slot = match context {
+        Some(context) => context.admit(state.debugger_checked()).await?,
+        None => state.debugger_checked().await?,
+    };
     let session = slot
         .as_mut()
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
@@ -662,10 +877,14 @@ async fn replace_breakpoints(
             .into());
         }
     }
-    replace_breakpoints_in_session(session, desired).await
+    if let Some(context) = context {
+        context.checkpoint()?;
+    }
+    replace_breakpoints_in_session(context, session, desired).await
 }
 
 async fn replace_breakpoints_in_session(
+    context: Option<&ToolExecutionContext>,
     session: &mut DebuggerSession,
     desired: Vec<(InstructionRef, Option<String>)>,
 ) -> Result<ToolResult> {
@@ -678,25 +897,65 @@ async fn replace_breakpoints_in_session(
         .difference(&desired_set)
         .cloned()
         .collect::<Vec<_>>();
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        cleanup_complete: true,
+        action: Some("replace_breakpoints".into()),
+        runtime_id: Some(session.runtime_id.clone()),
+        ..Default::default()
+    };
     for instruction in removed {
+        if let Some(context) = context {
+            context
+                .checkpoint()
+                .map_err(|error| crate::result::OutcomeError {
+                    error,
+                    outcome: essential.clone(),
+                })?;
+        }
         let response = session
             .connection
-            .request(AuxRequest::BreakpointUnset { instruction })
-            .await?;
+            .request(AuxRequest::BreakpointUnset {
+                instruction: instruction.clone(),
+            })
+            .await
+            .map_err(|error| crate::result::OutcomeError {
+                error: error.into(),
+                outcome: essential.clone(),
+            })?;
         if !matches!(response, AuxResponse::BreakpointUnset { success: true }) {
-            return Err(anyhow!("auxtools failed to remove a stale breakpoint"));
+            essential.recovery_required = true;
+            return Err(crate::result::OutcomeError {
+                error: anyhow!("auxtools failed to remove a stale breakpoint"),
+                outcome: essential,
+            }
+            .into());
         }
+        session.active_breakpoints.remove(&instruction);
+        essential.removed_breakpoints += 1;
     }
     let mut results = Vec::new();
-    let mut installed = HashSet::new();
-    for (instruction, condition) in desired {
+    for (index, (instruction, condition)) in desired.into_iter().enumerate() {
+        essential.failed_request_index = Some(index);
+        if let Some(context) = context {
+            context
+                .checkpoint()
+                .map_err(|error| crate::result::OutcomeError {
+                    error,
+                    outcome: essential.clone(),
+                })?;
+        }
         let response = session
             .connection
             .request(AuxRequest::BreakpointSet {
                 instruction: instruction.clone(),
                 condition,
             })
-            .await?;
+            .await
+            .map_err(|error| crate::result::OutcomeError {
+                error: error.into(),
+                outcome: essential.clone(),
+            })?;
         let verified = matches!(
             response,
             AuxResponse::BreakpointSet {
@@ -704,15 +963,24 @@ async fn replace_breakpoints_in_session(
             }
         );
         if verified {
-            installed.insert(instruction.clone());
+            session.active_breakpoints.insert(instruction.clone());
+            essential.verified_request_indices.push(index);
+        } else {
+            essential.unverified_request_indices.push(index);
         }
-        results.push(json!({"instruction":instruction,"verified":verified}));
+        results.push(DebugBreakpoint {
+            instruction,
+            verified,
+        });
     }
-    session.active_breakpoints = installed;
+    essential.failed_request_index = None;
     Ok(json_success(
         debugger_metadata(session),
-        json!({"breakpoints":results}),
-    ))
+        DebugBreakpointsData {
+            breakpoints: results,
+        },
+    )
+    .with_outcome(essential))
 }
 
 pub async fn exception_info(state: &ServerState) -> Result<ToolResult> {
@@ -722,7 +990,10 @@ pub async fn exception_info(state: &ServerState) -> Result<ToolResult> {
         .ok_or_else(|| anyhow!("no debugger session is active"))?;
     Ok(json_success(
         debugger_metadata(session),
-        json!({"message":session.last_exception,"sequence":session.event_sequence}),
+        DebugExceptionInfoData {
+            message: session.last_exception.clone(),
+            sequence: session.event_sequence,
+        },
     ))
 }
 
@@ -743,7 +1014,12 @@ pub async fn source(
     }
     Ok(json_success(
         debugger_metadata(session),
-        json!({"source_reference":1,"name":"stddef.dm","content":source,"source_origin":"native_debugger_stddef"}),
+        DebugSourceData {
+            source_reference: 1,
+            name: "stddef.dm",
+            content: crate::result::bounded_text(source, 128 * 1024, 128 * 1024, false).into(),
+            source_origin: "native_debugger_stddef",
+        },
     ))
 }
 
@@ -842,7 +1118,13 @@ fn event_result(
 ) -> Result<ToolResult> {
     Ok(json_success(
         debugger_metadata(session),
-        json!({"event":event,"timed_out":timed_out,"dropped_events":session.dropped_events.saturating_add(session.connection.dropped_events())}),
+        DebugEventData {
+            event,
+            timed_out,
+            dropped_events: session
+                .dropped_events
+                .saturating_add(session.connection.dropped_events()),
+        },
     ))
 }
 
@@ -955,6 +1237,7 @@ mod tests {
         assert_eq!(stale.meta.unwrap().analysis, snapshot.identity());
         let bound = state.for_request(None, Some(Some(first)));
         assert!(control(
+            &context,
             &bound,
             crate::parameters::decode(json!({"action":"pause"})).unwrap()
         )

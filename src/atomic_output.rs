@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 const RANDOM_NAME_ATTEMPTS: usize = 32;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct OutputArtifact {
     pub path: PathBuf,
     pub bytes: u64,
@@ -34,6 +34,13 @@ pub enum AtomicOutputError {
         restore: String,
         backup: PathBuf,
     },
+    #[error("output installed at {path}; post-install finalization failed: {message}", path = .artifact.path.display())]
+    Installed {
+        artifact: Box<OutputArtifact>,
+        cleanup_complete: bool,
+        backup: Option<PathBuf>,
+        message: String,
+    },
 }
 
 impl AtomicOutputError {
@@ -46,6 +53,12 @@ impl AtomicOutputError {
             Self::Policy(error) => Some(error.code()),
             _ => None,
         }
+    }
+}
+
+impl From<anyhow::Error> for AtomicOutputError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::writer(error.to_string())
     }
 }
 
@@ -70,6 +83,13 @@ impl ReservedExternalOutput {
     }
 
     pub fn commit(self) -> Result<OutputArtifact, AtomicOutputError> {
+        self.commit_checked(|| Ok(()))
+    }
+
+    pub(crate) fn commit_checked(
+        self,
+        checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+    ) -> Result<OutputArtifact, AtomicOutputError> {
         let metadata = std::fs::symlink_metadata(&self.temporary.path)?;
         if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
             return Err(AtomicOutputError::InvalidOutputType(
@@ -80,7 +100,7 @@ impl ReservedExternalOutput {
             .write(true)
             .open(&self.temporary.path)?
             .sync_all()?;
-        install_temporary(self.output, self.temporary, self.overwrite)
+        install_temporary_checked(self.output, self.temporary, self.overwrite, checkpoint)
     }
 }
 
@@ -107,6 +127,20 @@ pub fn write_atomic<F>(
 where
     F: FnOnce(&mut File) -> Result<(), AtomicOutputError>,
 {
+    write_atomic_checked(policy, output, overwrite, write, || Ok(()))
+}
+
+pub(crate) fn write_atomic_checked<F>(
+    policy: &PathPolicy,
+    output: &Path,
+    overwrite: bool,
+    write: F,
+    checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+) -> Result<OutputArtifact, AtomicOutputError>
+where
+    F: FnOnce(&mut File) -> Result<(), AtomicOutputError>,
+{
+    checkpoint()?;
     let output = policy.output_path(output, overwrite)?;
     if output.exists() && !output.is_file() {
         return Err(AtomicOutputError::InvalidOutputType(output));
@@ -127,8 +161,8 @@ where
     temporary_file.flush()?;
     temporary_file.sync_all()?;
     drop(temporary_file);
-
-    install_temporary(output, temporary, overwrite)
+    checkpoint()?;
+    install_temporary_checked(output, temporary, overwrite, checkpoint)
 }
 
 pub fn promote_external_atomic<F>(
@@ -205,11 +239,36 @@ fn install_temporary(
     install_with(output, temporary, overwrite, rename_without_replace)
 }
 
+fn install_temporary_checked(
+    output: PathBuf,
+    temporary: TemporaryOutput,
+    overwrite: bool,
+    checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+) -> Result<OutputArtifact, AtomicOutputError> {
+    install_with_checked(
+        output,
+        temporary,
+        overwrite,
+        rename_without_replace,
+        checkpoint,
+    )
+}
+
 fn install_with(
+    output: PathBuf,
+    temporary: TemporaryOutput,
+    overwrite: bool,
+    rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+) -> Result<OutputArtifact, AtomicOutputError> {
+    install_with_checked(output, temporary, overwrite, rename, || Ok(()))
+}
+
+fn install_with_checked(
     output: PathBuf,
     mut temporary: TemporaryOutput,
     overwrite: bool,
     mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+    checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
 ) -> Result<OutputArtifact, AtomicOutputError> {
     let parent = output.parent().ok_or_else(|| {
         AtomicOutputError::Io(std::io::Error::new(
@@ -219,7 +278,7 @@ fn install_with(
     })?;
 
     let bytes = std::fs::metadata(&temporary.path)?.len();
-    let sha256 = hash_file(&temporary.path)?;
+    let sha256 = hash_file_checked(&temporary.path, &checkpoint)?;
     let exists = match std::fs::symlink_metadata(&output) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => true,
         Ok(_) => return Err(AtomicOutputError::InvalidOutputType(output)),
@@ -233,6 +292,7 @@ fn install_with(
         )
         .into());
     }
+    checkpoint()?;
     let backup = if exists {
         let backup = private_available_path(parent, "backup")?;
         rename(&output, &backup)?;
@@ -256,15 +316,35 @@ fn install_with(
     }
     temporary.disarm();
 
-    if let Some(backup) = backup {
-        std::fs::remove_file(backup)?;
-    }
-
-    Ok(OutputArtifact {
-        path: output.canonicalize()?,
+    // Promotion is the mutation boundary. Later cleanup/identity failures must
+    // retain the installed artifact rather than imply that nothing was written.
+    let mut artifact = OutputArtifact {
+        path: output,
         bytes,
         sha256,
-    })
+    };
+    if let Some(backup) = &backup {
+        if let Err(error) = std::fs::remove_file(backup) {
+            return Err(AtomicOutputError::Installed {
+                artifact: Box::new(artifact),
+                cleanup_complete: false,
+                backup: Some(backup.clone()),
+                message: error.to_string(),
+            });
+        }
+    }
+    match artifact.path.canonicalize() {
+        Ok(path) => {
+            artifact.path = path;
+            Ok(artifact)
+        }
+        Err(error) => Err(AtomicOutputError::Installed {
+            artifact: Box::new(artifact),
+            cleanup_complete: true,
+            backup: None,
+            message: error.to_string(),
+        }),
+    }
 }
 
 // Promotion and restoration must preserve a destination created after preflight.
@@ -352,23 +432,107 @@ fn private_path(parent: &Path, purpose: &str) -> Result<PathBuf, AtomicOutputErr
     Ok(parent.join(format!(".meridian-mcp-{suffix}.{purpose}")))
 }
 
+#[cfg(test)]
 fn hash_file(path: &Path) -> Result<String, AtomicOutputError> {
+    hash_file_checked(path, &|| Ok(()))
+}
+
+fn hash_file_checked(
+    path: &Path,
+    checkpoint: &impl Fn() -> Result<(), AtomicOutputError>,
+) -> Result<String, AtomicOutputError> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
+        checkpoint()?;
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
     }
+    checkpoint()?;
     Ok(format!("{:x}", hasher.finalize()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interrupted_final_checkpoint_preserves_existing_output_and_cleans_staging() {
+        let root = private_path(&std::env::temp_dir(), "interrupted-output").unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let output = root.join("result");
+        std::fs::write(&output, "original").unwrap();
+        let policy = PathPolicy::new(vec![root.clone()], vec![]).unwrap();
+        let checkpoints = std::cell::Cell::new(0);
+        let result = write_atomic_checked(
+            &policy,
+            &output,
+            true,
+            |file| file.write_all(b"late").map_err(Into::into),
+            || {
+                checkpoints.set(checkpoints.get() + 1);
+                if checkpoints.get() == 3 {
+                    return Err(AtomicOutputError::writer("request_cancelled"));
+                }
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), b"original");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn post_promotion_cleanup_failure_retains_installed_identity() {
+        let root = private_path(&std::env::temp_dir(), "installed-test").unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let output = root.join("result");
+        std::fs::write(&output, "original").unwrap();
+        let (path, mut file) = create_private_file(&root, "tmp").unwrap();
+        file.write_all(b"replacement").unwrap();
+        drop(file);
+        let mut backup = None;
+        let mut calls = 0;
+        let result = install_with(
+            output.clone(),
+            TemporaryOutput { path, armed: true },
+            true,
+            |source, target| {
+                calls += 1;
+                rename_without_replace(source, target)?;
+                if calls == 1 {
+                    backup = Some(target.to_owned());
+                }
+                if calls == 2 {
+                    let backup = backup.as_ref().unwrap();
+                    std::fs::remove_file(backup)?;
+                    std::fs::create_dir(backup)?;
+                }
+                Ok(())
+            },
+        );
+        let AtomicOutputError::Installed {
+            artifact,
+            cleanup_complete,
+            backup,
+            ..
+        } = result.unwrap_err()
+        else {
+            panic!("expected installed outcome")
+        };
+        assert_eq!(artifact.path, output);
+        assert_eq!(artifact.bytes, 11);
+        assert_eq!(artifact.sha256, hash_file(&output).unwrap());
+        assert!(!cleanup_complete);
+        assert!(backup.unwrap().is_dir());
+        assert_eq!(std::fs::read_to_string(output).unwrap(), "replacement");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn restore_collision_preserves_both_late_output_and_original_backup() {

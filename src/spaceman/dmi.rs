@@ -21,7 +21,7 @@ pub enum DmiError {
     Limit(String),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiAssetId {
     pub path: PathBuf,
     pub sha256: String,
@@ -85,9 +85,22 @@ impl DmiCache {
         limits: &ServerLimits,
         remaining_decoded_bytes: usize,
     ) -> Result<DecodedDmi, DmiError> {
+        self.load_input_checked(input, limits, remaining_decoded_bytes, || {
+            Ok::<_, DmiError>(())
+        })
+    }
+
+    pub(crate) fn load_input_checked<E: From<DmiError>>(
+        &mut self,
+        input: DmiInput,
+        limits: &ServerLimits,
+        remaining_decoded_bytes: usize,
+        checkpoint: impl Fn() -> Result<(), E>,
+    ) -> Result<DecodedDmi, E> {
+        checkpoint()?;
         let (_, _, decoded_bytes) = decode::dimensions(&input.bytes, limits)?;
         if decoded_bytes > remaining_decoded_bytes {
-            return Err(DmiError::Limit("max_dmi_scan_decoded_bytes".into()));
+            return Err(DmiError::Limit("max_dmi_scan_decoded_bytes".into()).into());
         }
         if let Some(entry) = self.entries.get_mut(&input.identity.path) {
             if entry.asset.identity.sha256 == input.identity.sha256 {
@@ -98,14 +111,16 @@ impl DmiCache {
                     limits,
                 )?;
                 if entry.metadata_bytes > limits.max_dmi_metadata_bytes {
-                    return Err(DmiError::Limit("max_dmi_metadata_bytes".into()));
+                    return Err(DmiError::Limit("max_dmi_metadata_bytes".into()).into());
                 }
+                checkpoint()?;
                 self.clock = self.clock.saturating_add(1);
                 entry.last_use = self.clock;
                 return Ok(entry.asset.clone());
             }
         }
         let prepared = prepare_input(input, limits, || self.decode_count += 1)?;
+        checkpoint()?;
         Ok(self.install(prepared, limits))
     }
 
@@ -231,20 +246,20 @@ fn read_dmi_bytes(mut reader: impl std::io::Read, limit: u64) -> Result<Vec<u8>,
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct PixelCounts {
     pub opaque: u64,
     pub translucent: u64,
     pub transparent: u64,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct AlphaBounds {
     pub min_x: u32,
     pub min_y: u32,
     pub max_x: u32,
     pub max_y: u32,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiFrameProfile {
     pub direction: i32,
     pub frame: u32,
@@ -253,7 +268,7 @@ pub struct DmiFrameProfile {
     pub pixel_counts: PixelCounts,
     pub alpha_bounds: Option<AlphaBounds>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiStateProfile {
     pub name: String,
     pub duplicate_index: u32,
@@ -265,7 +280,7 @@ pub struct DmiStateProfile {
     pub rewind: bool,
     pub frames: Vec<DmiFrameProfile>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiProfile {
     pub identity: DmiAssetId,
     pub asset_generation: u64,
@@ -278,13 +293,13 @@ pub struct DmiProfile {
     pub warnings: Vec<DmiWarning>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DmiWarning {
     pub code: &'static str,
     pub message: &'static str,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum IconReferenceResolution {
     Static {
@@ -296,7 +311,7 @@ pub enum IconReferenceResolution {
     },
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct IconReference {
     pub type_path: String,
     pub file: String,
@@ -359,7 +374,7 @@ pub fn profile_dmi(asset: &DecodedDmi, limits: &ServerLimits) -> Result<DmiProfi
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GeometricTransform {
     Identity,
@@ -376,7 +391,7 @@ pub struct NormalizedFrame {
     pub pixels: Vec<[u8; 4]>,
     pub alpha_bounds: Option<AlphaBounds>,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchKind {
     Exact,
@@ -386,7 +401,7 @@ pub enum MatchKind {
     Near,
     Different,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct FrameComparison {
     pub kind: MatchKind,
     pub transform: GeometricTransform,
@@ -591,13 +606,13 @@ fn transform_frame(frame: &NormalizedFrame, transform: GeometricTransform) -> No
     normalize_frame(width, height, out)
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, schemars::JsonSchema)]
 pub struct StateLocator {
     pub dmi_path: PathBuf,
     pub state: String,
     pub duplicate_index: u32,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct StateComparison {
     pub left: StateLocator,
     pub right: StateLocator,
@@ -1004,6 +1019,48 @@ fn hex_sha256(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interrupted_decode_does_not_install_or_advance_cache_generation() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.add_text_chunk("Description".into(), "# BEGIN DMI\nversion = 4.0\n\twidth = 1\n\theight = 1\nstate = \"late\"\n\tdirs = 1\n\tframes = 1\n# END DMI\n".into()).unwrap();
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&[1, 2, 3, 255])
+                .unwrap();
+        }
+        let input = || DmiInput {
+            identity: DmiAssetId {
+                path: "late.dmi".into(),
+                sha256: hex_sha256(&bytes),
+                size: bytes.len() as u64,
+                modified: None,
+            },
+            bytes: bytes.clone(),
+        };
+        let mut cache = DmiCache::default();
+        let checks = std::cell::Cell::new(0);
+        let result =
+            cache.load_input_checked(input(), &ServerLimits::default(), usize::MAX, || {
+                checks.set(checks.get() + 1);
+                anyhow::ensure!(checks.get() < 2, "request_cancelled");
+                Ok::<_, anyhow::Error>(())
+            });
+        assert!(result.is_err());
+        assert_eq!(cache.decode_count, 1);
+        assert!(cache.entries.is_empty());
+        assert_eq!(cache.next_generation, 0);
+        let installed = cache
+            .load_input(input(), &ServerLimits::default(), usize::MAX)
+            .unwrap();
+        assert_eq!(installed.asset_generation, 1);
+        assert_eq!(cache.decode_count, 2);
+    }
 
     #[test]
     fn bounded_reader_never_consumes_past_detection_byte() {

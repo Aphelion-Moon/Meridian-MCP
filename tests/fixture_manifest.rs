@@ -129,7 +129,7 @@ async fn fixture_sync_and_compile_enforce_server_input_limits() {
     let root = checked_fixture();
     let context = ToolExecutionContext::new(
         CapabilityMode::Development,
-        PathPolicy::new(vec![root.clone()], Vec::new()).unwrap(),
+        PathPolicy::new(vec![root.clone()], vec![root.join("native_module.bin")]).unwrap(),
     );
     let state = ServerState::with_limits(meridian_mcp::limits::ServerLimits {
         max_fixture_text_file_bytes: 1,
@@ -633,8 +633,16 @@ async fn fixture_sync_rejects_invalid_issue_limits() {
             "dm_check_fixture_sync",
             json!({"fixture_manifest_path": root.join("fixture-manifest.json"), "issue_limit": limit}),
         )
-        .await;
-        assert!(result.is_err(), "invalid limit accepted: {limit}");
+        .await
+        .expect("invalid arguments should return a tool error");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "invalid limit accepted: {limit}"
+        );
+        let value = payload(&result);
+        assert_eq!(value["code"], "invalid_input", "{value}");
+        assert_eq!(value["details"]["field"], "issue_limit", "{value}");
     }
 }
 

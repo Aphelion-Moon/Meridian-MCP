@@ -251,6 +251,55 @@ fn actual_byond_version_is_checked_against_the_verified_hook_range() {
     assert!(installation.validate_byond_version("unknown").is_err());
 }
 
+#[test]
+fn native_collector_status_and_capture_preserve_textual_build_identity() {
+    use meridian_mcp::outputs::tracy::{CollectorCapture, CollectorStatus};
+    use serde_json::json;
+
+    // Match the pinned helper's session_status_json and capture_result_json projections.
+    for byond_build in ["1687", "516.1687"] {
+        let queue = json!({
+            "capacity": 65536, "depth": 0, "high_water": 4,
+            "tail_refresh_count": 3, "saturation_count": 0, "dropped_events": 0,
+            "produced_events": 10, "consumed_events": 10, "last_producer_progress_raw": 100,
+            "hook_installed": true, "prologue_validated": true,
+            "byond_build": byond_build, "offset_table_identity": "fixture-offsets"
+        });
+        let status = json!({
+            "state": "draining", "worker_generation": 1, "producer_progress": 100,
+            "capture_count": 1, "worker_attached": true, "worker_purpose": "drain",
+            "transition_retry_count": 0, "last_transition_error": null,
+            "recovery_required": false, "queue_health": queue
+        });
+        let decoded: CollectorStatus = serde_json::from_value(status.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), status);
+        let capture = json!({
+            "frame_count": 2, "zone_count": 2, "span_ns": 1000000000,
+            "uncompressed_bytes": 200, "compressed_bytes": 100,
+            "validation": {
+                "valid": true, "raw_begin": 0, "raw_end": 100,
+                "trace_begin_ns": 0, "trace_end_ns": 1000000000,
+                "nanoseconds_per_tick": 10000000.0, "wall_span_seconds": 1.0,
+                "requested_wall_seconds": 1.0, "measured_wall_seconds": 1.0,
+                "wall_tolerance_seconds": 0.1, "producer_progress_shortfall_seconds": 0.0,
+                "complete_frames": 2, "partial_frames": 0, "zones": 2, "source_files": 1,
+                "queue": queue, "error_codes": [], "warning_codes": []
+            },
+            "phase": "steady_state", "phase_iteration": 1, "session": status
+        });
+        let decoded: CollectorCapture = serde_json::from_value(capture.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), capture);
+        let stopped = json!({
+            "state": "stopped", "worker_generation": 1, "producer_progress": 100,
+            "capture_count": 1, "worker_attached": false, "worker_purpose": null,
+            "transition_retry_count": 0, "last_transition_error": null,
+            "recovery_required": false, "queue_health": null
+        });
+        let decoded: CollectorStatus = serde_json::from_value(stopped.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), stopped);
+    }
+}
+
 #[tokio::test]
 async fn prepare_is_hash_verified_atomic_and_idempotent() {
     let (root, context) = fixture();

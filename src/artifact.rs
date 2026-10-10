@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ArtifactSnapshot {
     pub path: PathBuf,
     pub exists: bool,
@@ -15,7 +15,7 @@ pub struct ArtifactSnapshot {
     pub sha256: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct FileIdentity {
     pub path: PathBuf,
     pub size: u64,
@@ -24,6 +24,14 @@ pub struct FileIdentity {
 
 impl FileIdentity {
     pub fn capture(path: &Path) -> Result<Self> {
+        Self::capture_checked(path, || Ok(()))
+    }
+
+    pub(crate) fn capture_checked(
+        path: &Path,
+        checkpoint: impl Fn() -> Result<()>,
+    ) -> Result<Self> {
+        checkpoint()?;
         let metadata = std::fs::symlink_metadata(path)
             .with_context(|| format!("cannot inspect file identity: {}", path.display()))?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -36,13 +44,43 @@ impl FileIdentity {
         Ok(Self {
             path: path.clone(),
             size: metadata.len(),
-            sha256: hash_file(&path)?,
+            sha256: hash_file(&path, &checkpoint)?,
         })
     }
 }
 
 impl ArtifactSnapshot {
     pub fn capture(project_root: &Path, artifact_path: &Path) -> Result<Self> {
+        Self::capture_checked(project_root, artifact_path, || Ok(()))
+    }
+
+    pub(crate) fn capture_checked(
+        project_root: &Path,
+        artifact_path: &Path,
+        checkpoint: impl Fn() -> Result<()>,
+    ) -> Result<Self> {
+        Self::capture_inner(project_root, artifact_path, checkpoint, false)
+    }
+
+    // Metadata records physical compiler effects even when useful evidence
+    // hashing has been interrupted. An incomplete digest is never accepted.
+    pub(crate) fn capture_after(
+        project_root: &Path,
+        artifact_path: &Path,
+        checkpoint: impl Fn() -> Result<()>,
+    ) -> Result<Self> {
+        Self::capture_inner(project_root, artifact_path, checkpoint, true)
+    }
+
+    fn capture_inner(
+        project_root: &Path,
+        artifact_path: &Path,
+        checkpoint: impl Fn() -> Result<()>,
+        retain_effects: bool,
+    ) -> Result<Self> {
+        if !retain_effects {
+            checkpoint()?;
+        }
         let project_root = project_root.canonicalize().with_context(|| {
             format!(
                 "cannot canonicalize project root: {}",
@@ -70,12 +108,17 @@ impl ArtifactSnapshot {
                 .ok()
                 .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_millis());
+            let sha256 = match hash_file(&path, &checkpoint) {
+                Ok(hash) => Some(hash),
+                Err(_) if retain_effects && checkpoint().is_err() => None,
+                Err(error) => return Err(error),
+            };
             return Ok(Self {
                 path: path.clone(),
                 exists: true,
                 size: Some(metadata.len()),
                 modified_unix_ms,
-                sha256: Some(hash_file(&path)?),
+                sha256,
             });
         }
 
@@ -120,12 +163,13 @@ fn normalize_missing_path(path: &Path) -> Result<PathBuf> {
     Ok(normalized)
 }
 
-fn hash_file(path: &Path) -> Result<String> {
+fn hash_file(path: &Path, checkpoint: &impl Fn() -> Result<()>) -> Result<String> {
     let mut file =
         File::open(path).with_context(|| format!("cannot open artifact: {}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
+        checkpoint()?;
         let count = file
             .read(&mut buffer)
             .with_context(|| format!("cannot read artifact: {}", path.display()))?;
@@ -134,5 +178,6 @@ fn hash_file(path: &Path) -> Result<String> {
         }
         hasher.update(&buffer[..count]);
     }
+    checkpoint()?;
     Ok(format!("{:x}", hasher.finalize()))
 }

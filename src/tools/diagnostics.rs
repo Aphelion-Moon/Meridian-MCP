@@ -1,5 +1,4 @@
 use anyhow::Result;
-use serde::Serialize;
 use serde_json::json;
 use std::collections::BTreeMap;
 use tracing::info;
@@ -22,16 +21,10 @@ struct DiagnosticQuery {
     limit: usize,
 }
 
-#[derive(Debug, Serialize)]
-struct DiagnosticSummary {
-    total: usize,
-    by_severity: BTreeMap<String, usize>,
-    by_component: BTreeMap<String, usize>,
-    by_rule: BTreeMap<String, usize>,
-    configured: usize,
-    unconfigured: usize,
-}
-
+use crate::outputs::{
+    CheckErrorsData, DiagnosticFilters, DiagnosticRow, DiagnosticSummary, LegacyPagination,
+    Omissions,
+};
 struct DiagnosticQueryResult<'a> {
     diagnostics: Vec<&'a DiagnosticRecord>,
     summary: DiagnosticSummary,
@@ -79,44 +72,75 @@ pub async fn check_errors(
         .next_cursor
         .as_ref()
         .map(|offset| codec.encode(offset.parse().expect("internal diagnostic offset")));
-    let has_more = page.next_cursor.is_some();
-    let count = page.diagnostics.len();
+    let mut budget = crate::outputs::budget::Budget::default();
+    let mut diagnostics = Vec::new();
+    for row in page.diagnostics {
+        if !diagnostics.is_empty() && budget.bytes < 256 {
+            break;
+        }
+        let mut fields = Omissions::default();
+        let message = budget.text(&row.message, 4096, "message", &mut fields);
+        let mut notes = Vec::new();
+        for note in &row.notes {
+            if budget.bytes < 256 {
+                fields
+                    .fields
+                    .insert("notes".into(), "aggregate byte limit".into());
+                break;
+            }
+            notes.push(crate::analysis_snapshot::DiagnosticNoteRecord {
+                message: budget.text(&note.message, 4096, "notes", &mut fields),
+            });
+        }
+        let file = budget.text(&row.file, 4096, "file", &mut fields);
+        diagnostics.push(DiagnosticRow {
+            diagnostic: DiagnosticRecord {
+                rule: row.rule.clone(),
+                severity: row.severity.clone(),
+                component: row.component.clone(),
+                message,
+                file,
+                line: row.line,
+                column: row.column,
+                notes,
+                configured: row.configured,
+            },
+            field_omissions: fields,
+        });
+    }
+    let count = diagnostics.len();
+    let end = cursor + count;
+    let has_more = end < page.total_count;
+    let next_cursor = has_more.then(|| codec.encode(end));
     let mut metadata = ToolMetadata::for_snapshot(&snapshot);
+    metadata.truncated = has_more;
     if has_more {
-        metadata.truncated = true;
         metadata
             .truncation_reasons
-            .push("diagnostic_page_limit".to_owned());
+            .push("diagnostic_page_limit".into());
     }
-
-    let result = json!({
-        "analysis": {
-            "source": "cached_snapshot",
-            "environment": snapshot.environment_path,
-            "state_generation": snapshot.generation,
-            "recomputed": false,
-            "refresh_with": "dm_parse_environment"
+    Ok(json_success(
+        metadata,
+        CheckErrorsData {
+            filters: DiagnosticFilters {
+                file_path: query.file_path,
+                severity: query.severity,
+                component: query.component,
+                rule: query.rule,
+                configured: query.configured,
+            },
+            summary: page.summary,
+            count,
+            total_count: page.total_count,
+            diagnostics,
+            pagination: LegacyPagination {
+                cursor: cursor.to_string(),
+                limit: query.limit,
+                next_cursor,
+                has_more,
+            },
         },
-        "filters": {
-            "file_path": query.file_path,
-            "severity": query.severity,
-            "component": query.component,
-            "rule": query.rule,
-            "configured": query.configured
-        },
-        "summary": page.summary,
-        "count": count,
-        "total_count": page.total_count,
-        "diagnostics": page.diagnostics,
-        "pagination": {
-            "cursor": query.cursor.to_string(),
-            "limit": query.limit,
-            "next_cursor": page.next_cursor,
-            "has_more": has_more
-        }
-    });
-
-    Ok(json_success(metadata, result))
+    ))
 }
 
 fn query_diagnostics<'a>(

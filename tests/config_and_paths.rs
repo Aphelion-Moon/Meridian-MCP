@@ -1,7 +1,49 @@
-use meridian_mcp::{CapabilityMode, PathPolicy, RiftBuildAccess, ServerConfig, TracyAccess};
+use meridian_mcp::{
+    CapabilityMode, MeridianServer, PathPolicy, RiftBuildAccess, ServerConfig, ToolProfile,
+    TracyAccess,
+};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[test]
+fn startup_tool_profiles_are_strict_and_default_to_the_existing_catalog() {
+    let root = fixture();
+    let config = ServerConfig::from_values(None, vec![root.clone()], vec![]).unwrap();
+    assert_eq!(config.tool_profile(), ToolProfile::All);
+    let default_names = MeridianServer::new(config.clone()).unwrap().tool_names();
+    let explicit_all = MeridianServer::new(config.clone().with_tool_profile(ToolProfile::All))
+        .unwrap()
+        .tool_names();
+    assert_eq!(default_names, explicit_all);
+    assert_eq!(default_names.len(), 26);
+    for (value, profile, count) in [
+        ("all", ToolProfile::All, 26),
+        ("code", ToolProfile::Code, 14),
+        ("assets", ToolProfile::Assets, 10),
+        ("runtime", ToolProfile::Runtime, 6),
+    ] {
+        assert_eq!(value.parse::<ToolProfile>().unwrap(), profile);
+        let selected = config.clone().with_tool_profile(profile);
+        assert_eq!(selected.mode(), CapabilityMode::Analysis);
+        let names = MeridianServer::new(selected).unwrap().tool_names();
+        assert_eq!(names.len(), count, "{value}");
+        assert!(names.iter().any(|name| name == "dm_server_status"));
+        assert!(names.iter().any(|name| name == "dm_parse_environment"));
+        let positions: Vec<_> = names
+            .iter()
+            .map(|name| default_names.iter().position(|item| item == name).unwrap())
+            .collect();
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+    for invalid in ["", "ALL", "asset", "code,runtime", " code", "runtime "] {
+        assert!(
+            invalid.parse::<ToolProfile>().is_err(),
+            "accepted {invalid:?}"
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
 
 fn fixture() -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!(

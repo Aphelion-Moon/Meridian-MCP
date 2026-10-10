@@ -22,16 +22,19 @@ pub struct MeridianServer {
     execution: ToolExecutionContext,
     state: Arc<ServerState>,
     catalog: Arc<[Tool]>,
+    legacy_catalog: Arc<[Tool]>,
 }
 
 impl MeridianServer {
     /// Finalize the owned runtime after transport shutdown, with a bounded wait.
     pub async fn shutdown(&self) -> Result<()> {
-        self.execution.cancel_owned_requests();
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let owners = self.execution.drain_owned_requests(deadline).await;
+        let cleanup = self.execution.for_cleanup();
+        let sessions = tokio::time::timeout_at(deadline, async {
             if self.state.debugger().await.is_some() {
                 tools::call_tool(
-                    &self.execution,
+                    &cleanup,
                     &self.state,
                     "dm_debug_stop",
                     serde_json::json!({}),
@@ -48,7 +51,7 @@ impl MeridianServer {
                 || self.state.tracy_capture().await.integrity_journal.is_some();
             if tracy_active {
                 tools::call_tool(
-                    &self.execution,
+                    &cleanup,
                     &self.state,
                     "dm_tracy_stop",
                     serde_json::json!({}),
@@ -63,7 +66,11 @@ impl MeridianServer {
             anyhow::anyhow!(
                 "runtime shutdown exceeded five seconds; process-owner containment remains active"
             )
-        })?
+        });
+        let workers = self.state.drain_blocking_jobs(deadline).await;
+        owners?;
+        sessions??;
+        workers
     }
 
     pub fn new(config: ServerConfig) -> Result<Self> {
@@ -102,13 +109,23 @@ impl MeridianServer {
             debugger,
             tracy,
             private_state,
-        );
+        )
+        .with_tool_profile(config.tool_profile());
         let catalog = execution
             .definitions()
             .into_iter()
             .map(|definition| to_sdk_tool(definition, config.rift_build_access()))
             .collect::<Vec<_>>();
+        let legacy_catalog = catalog
+            .iter()
+            .cloned()
+            .map(|mut tool| {
+                tool.output_schema = None;
+                tool
+            })
+            .collect::<Vec<_>>();
         Ok(Self {
+            legacy_catalog: Arc::from(legacy_catalog),
             catalog: Arc::from(catalog),
             execution,
             state: Arc::new(ServerState::new()),
@@ -138,7 +155,14 @@ impl ServerHandler for MeridianServer {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        let result = ListToolsResult::with_all_items(self.tools());
+        let structured = context
+            .protocol_version()
+            .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2025_06_18);
+        let result = ListToolsResult::with_all_items(if structured {
+            self.tools()
+        } else {
+            self.legacy_catalog.to_vec()
+        });
         let modern = context
             .protocol_version()
             .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2026_07_28);
@@ -158,40 +182,122 @@ impl ServerHandler for MeridianServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
+        let started = tokio::time::Instant::now();
+        let (progress, progress_task) = if let Some(token) = context.meta.get_progress_token() {
+            let (sender, mut receiver) =
+                tokio::sync::watch::channel(crate::request::Stage::Admission);
+            let peer = context.peer.clone();
+            let task = tokio::spawn(async move {
+                let mut last = None;
+                loop {
+                    let stage = *receiver.borrow_and_update();
+                    if last != Some(stage) {
+                        let notification = rmcp::model::ProgressNotificationParam::new(
+                            token.clone(),
+                            stage.step(),
+                        )
+                        .with_message(stage.message());
+                        if !matches!(
+                            tokio::time::timeout(
+                                std::time::Duration::from_millis(150),
+                                peer.notify_progress(notification)
+                            )
+                            .await,
+                            Ok(Ok(()))
+                        ) {
+                            break;
+                        }
+                        last = Some(stage);
+                    }
+                    if receiver.changed().await.is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            });
+            (Some(sender), Some(task))
+        } else {
+            (None, None)
+        };
+        struct ProgressTask(Option<tokio::task::JoinHandle<()>>);
+        impl Drop for ProgressTask {
+            fn drop(&mut self) {
+                if let Some(task) = &self.0 {
+                    task.abort();
+                }
+            }
+        }
+        let _progress_task = ProgressTask(progress_task);
+        let cancellation = context.ct.clone();
+        let execution = self.execution.for_request(
+            started,
+            format!("{}", context.id),
+            Arc::new(move || cancellation.is_cancelled()),
+            progress,
+        );
         let arguments = Value::Object(request.arguments.unwrap_or_default());
-        let result = tools::call_tool(
-            &self.execution,
-            self.state.as_ref(),
-            &request.name,
-            arguments,
-        )
-        .await
+        let call = tools::call_tool(&execution, self.state.as_ref(), &request.name, arguments);
+        let result = tokio::select! {
+            biased;
+            _ = context.ct.cancelled() => Ok(DomainToolResult::structured_error("request_cancelled", "request was cancelled", "Retry after owned cleanup completes.")),
+            result = call => result,
+        }
         .unwrap_or_else(crate::result::tool_error);
-        let result = enforce_output_limit(&request.name, result);
-        Ok(CallToolResponse::Complete(to_sdk_result(result)))
+        let structured = context
+            .protocol_version()
+            .is_some_and(|version| version >= rmcp::model::ProtocolVersion::V_2025_06_18);
+        let result = enforce_output_limit(&request.name, result, structured);
+        let result = tools::checked_result(&execution, result);
+        let sdk = sdk_result_for_version(result, structured);
+        execution.progress(crate::request::Stage::Complete);
+        Ok(CallToolResponse::Complete(sdk))
     }
 }
 
-fn enforce_output_limit(name: &str, result: DomainToolResult) -> DomainToolResult {
+fn enforce_output_limit(
+    name: &str,
+    result: DomainToolResult,
+    structured: bool,
+) -> DomainToolResult {
     let Some(contract) = crate::all_contracts()
         .iter()
         .find(|contract| contract.name == name)
     else {
         return result;
     };
-    let output_bytes = result
-        .content
-        .iter()
-        .map(|content| match content {
-            DomainContent::Text { text } => text.len(),
-        })
-        .sum::<usize>();
+    let output_bytes = crate::result::encoded_bytes(
+        &sdk_result_for_version(result.clone(), structured),
+        usize::MAX,
+    )
+    .unwrap_or(usize::MAX);
     if output_bytes <= contract.max_output_bytes {
         return result;
     }
-
+    if let Some(outcome) = result.outcome {
+        let mut bounded = crate::result::projection(
+            crate::result::ReducedMutation {
+                outcome: *outcome,
+                truncated: true,
+                response_omissions: vec![
+                    "optional response details omitted to preserve the operation outcome".into(),
+                ],
+            },
+            false,
+            result.is_error == Some(true),
+        );
+        bounded.meta = result.meta;
+        assert!(
+            crate::result::encoded_bytes(
+                &sdk_result_for_version(bounded.clone(), structured),
+                contract.max_output_bytes
+            )
+            .is_some(),
+            "mutation core exceeds declared response budget"
+        );
+        return bounded;
+    }
     let mut bounded = structured_error(
         ToolErrorCode::LimitExceeded,
         "tool output exceeded its declared transport limit",
@@ -204,6 +310,14 @@ fn enforce_output_limit(name: &str, result: DomainToolResult) -> DomainToolResul
     );
     bounded.meta = result.meta;
     bounded
+}
+
+fn sdk_result_for_version(result: DomainToolResult, structured: bool) -> CallToolResult {
+    let mut result = to_sdk_result(result);
+    if !structured {
+        result.structured_content = None;
+    }
+    result
 }
 
 fn to_sdk_tool(definition: ToolDefinition, rift_build: crate::RiftBuildAccess) -> Tool {
@@ -230,6 +344,7 @@ fn to_sdk_tool(definition: ToolDefinition, rift_build: crate::RiftBuildAccess) -
             .open_world(external_network || contract.effects.project_behavior)
     });
     let mut tool = Tool::new(definition.name, definition.description, input_schema);
+    tool.output_schema = definition.output_schema.as_object().cloned().map(Arc::new);
     tool.annotations = annotations;
     tool
 }
@@ -247,6 +362,7 @@ fn to_sdk_result(result: DomainToolResult) -> CallToolResult {
     } else {
         CallToolResult::success(content)
     };
+    sdk.structured_content = result.structured_content;
     sdk.meta = result.meta.map(|meta| {
         serde_json::Map::from_iter([(
             "analysis".to_owned(),
@@ -260,6 +376,113 @@ fn to_sdk_result(result: DomainToolResult) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sdk_cancellation_discards_a_live_parser_result() {
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/language/fixture.dme");
+        let server = MeridianServer::new(
+            crate::ServerConfig::from_values(
+                Some("analysis"),
+                vec![fixture.parent().unwrap().to_owned()],
+                vec![],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let observer = server.clone();
+        let worker = server.state.parse_worker_test.clone();
+        struct Release(Arc<crate::state::ParseWorkerTestControl>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                self.0.release();
+            }
+        }
+        worker.pause();
+        let release = Release(worker.clone());
+        let (client, transport) = tokio::io::duplex(8192);
+        let running = tokio::spawn(crate::mcp::run_transport(
+            server,
+            tokio::io::split(transport),
+        ));
+        let (reader, mut writer) = tokio::io::split(client);
+        let mut reader = tokio::io::BufReader::new(reader);
+        writer.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"fixture\",\"version\":\"1\"}}}\n").await.unwrap();
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        writer
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+            .await
+            .unwrap();
+        let request = serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"dm_parse_environment","arguments":{"dme_path":fixture},"_meta":{"progressToken":"first"}}});
+        writer
+            .write_all(format!("{request}\n").as_bytes())
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while worker.started.load(Ordering::SeqCst) == 0 {
+                worker.changed.notified().await;
+            }
+        })
+        .await
+        .unwrap();
+        let second = serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"dm_parse_environment","arguments":{"dme_path":fixture},"_meta":{"progressToken":"second"}}});
+        writer
+            .write_all(format!("{second}\n").as_bytes())
+            .await
+            .unwrap();
+        let mut progress = std::collections::BTreeMap::new();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while progress.len() < 2 {
+                line.clear();
+                reader.read_line(&mut line).await.unwrap();
+                let message: Value = serde_json::from_str(&line).unwrap();
+                if message["method"] == "notifications/progress" {
+                    let token = message["params"]["progressToken"].as_str().unwrap();
+                    assert!(matches!(token, "first" | "second"));
+                    let step = message["params"]["progress"].as_f64().unwrap();
+                    assert!((1.0..=6.0).contains(&step));
+                    if let Some(previous) = progress.insert(token.to_owned(), step) {
+                        assert!(step > previous);
+                    }
+                    assert!(!message["params"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("fixture"));
+                }
+            }
+        })
+        .await
+        .unwrap();
+        writer.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":2,\"reason\":\"fixture\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":4,\"reason\":\"fixture\"}}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}\n").await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                line.clear();
+                reader.read_line(&mut line).await.unwrap();
+                if serde_json::from_str::<Value>(&line).unwrap()["id"] == 3 {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        // The SDK cancelled the request while its handler/worker remained alive.
+        drop(release);
+        let _finished = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            observer.state.parse_permit(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            observer.state.active_snapshot().await.is_none(),
+            "cancelled SDK request published its late parser result"
+        );
+        writer.shutdown().await.unwrap();
+        running.await.unwrap().unwrap();
+    }
 
     #[tokio::test]
     async fn semantic_error_identity_survives_sdk_conversion_and_output_replacement() {
@@ -301,6 +524,7 @@ mod tests {
         let limited = enforce_output_limit(
             "dm_stop",
             DomainToolResult::text("x".repeat(300000)).with_analysis(analysis.clone()),
+            true,
         );
         assert_eq!(limited.is_error, Some(true));
         assert_eq!(limited.meta.unwrap().analysis, analysis);
@@ -312,6 +536,7 @@ mod tests {
             name: "dm_stop".to_owned(),
             description: "stop".to_owned(),
             input_schema: serde_json::json!({"type": "object"}),
+            output_schema: serde_json::json!({"type":"object"}),
         };
         let tool = to_sdk_tool(definition, crate::RiftBuildAccess::Disabled);
         let annotations = tool.annotations.expect("contract annotations");
@@ -339,12 +564,66 @@ mod tests {
     #[test]
     fn oversized_tool_results_are_replaced_by_bounded_errors() {
         let oversized = DomainToolResult::text("x".repeat(300_000));
-        let bounded = enforce_output_limit("dm_stop", oversized);
+        let bounded = enforce_output_limit("dm_stop", oversized, true);
 
         assert_eq!(bounded.is_error, Some(true));
         let DomainContent::Text { text } = &bounded.content[0];
         let payload: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(payload["code"], "limit_exceeded");
         assert!(text.len() <= 262_144);
+    }
+    #[test]
+    fn sdk_body_budget_keeps_installed_batch_outcomes_with_escaping_and_duplication() {
+        let core = crate::result::MutationOutcome {
+            operation_ran: true,
+            cleanup_complete: false,
+            recovery_required: true,
+            outputs: (0..512)
+                .map(|index| crate::result::OutputMutation {
+                    request_index: index,
+                    installed: index % 2 == 0,
+                    path_preview: Some("\\u{1}".repeat(42)),
+                    sha256: Some("a".repeat(64)),
+                    cleanup_complete: false,
+                    backup_preview: Some("\\u{1}".repeat(42)),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let result = crate::result::projection(
+            serde_json::json!({"optional":"\\u{1}🛰".repeat(300000)}),
+            true,
+            true,
+        )
+        .with_outcome(core.clone());
+        let bounded = enforce_output_limit("dm_render_maps", result, true);
+        let sdk = to_sdk_result(bounded);
+        assert!(crate::result::encoded_bytes(&sdk, 1_048_576).is_some());
+        assert_eq!(sdk.is_error, Some(true));
+        let structured = sdk.structured_content.as_ref().unwrap();
+        assert_eq!(structured["outcome"], serde_json::to_value(core).unwrap());
+        let rmcp::model::ContentBlock::Text(text) = &sdk.content[0] else {
+            panic!("compatibility text")
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&text.text).unwrap(),
+            *structured
+        );
+    }
+    #[test]
+    fn legacy_body_cap_excludes_omitted_native_duplication() {
+        let projection = crate::result::projection(
+            serde_json::json!({"content":"x".repeat(600_000)}),
+            false,
+            false,
+        );
+        let legacy = enforce_output_limit("dm_get_type", projection.clone(), false);
+        assert_ne!(legacy.is_error, Some(true));
+        let sdk = sdk_result_for_version(legacy, false);
+        assert!(sdk.structured_content.is_none());
+        assert!(crate::result::encoded_bytes(&sdk, 1_048_576).is_some());
+        let modern = enforce_output_limit("dm_get_type", projection, true);
+        assert_eq!(modern.is_error, Some(true));
+        assert_eq!(modern.structured_content.unwrap()["code"], "limit_exceeded");
     }
 }

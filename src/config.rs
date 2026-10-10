@@ -9,6 +9,30 @@ pub enum CapabilityMode {
     Development,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolProfile {
+    #[default]
+    All,
+    Code,
+    Assets,
+    Runtime,
+}
+
+impl std::str::FromStr for ToolProfile {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "all" => Ok(Self::All),
+            "code" => Ok(Self::Code),
+            "assets" => Ok(Self::Assets),
+            "runtime" => Ok(Self::Runtime),
+            _ => Err(anyhow!("unknown MERIDIAN_MCP_TOOL_PROFILE value: {value}")),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RiftBuildAccess {
     Disabled,
@@ -31,6 +55,7 @@ pub enum TracyAccess {
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     mode: CapabilityMode,
+    tool_profile: ToolProfile,
     workspace_roots: Vec<PathBuf>,
     effective_roots: Vec<EffectiveRoot>,
     compiler_allowlist: Vec<PathBuf>,
@@ -43,6 +68,11 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     pub fn from_env() -> Result<Self> {
+        let tool_profile = match std::env::var("MERIDIAN_MCP_TOOL_PROFILE") {
+            Ok(value) => value.parse()?,
+            Err(std::env::VarError::NotPresent) => ToolProfile::All,
+            Err(error) => return Err(error).context("MERIDIAN_MCP_TOOL_PROFILE must be Unicode"),
+        };
         let mode = std::env::var("MERIDIAN_MCP_MODE").ok();
         let roots = std::env::var_os("MERIDIAN_MCP_ROOTS").ok_or_else(|| {
             anyhow!("MERIDIAN_MCP_ROOTS must contain at least one workspace root")
@@ -81,7 +111,7 @@ impl ServerConfig {
             }
             Some(value) => return Err(anyhow!("unknown MERIDIAN_MCP_DEBUGGER value: {value}")),
         };
-        Ok(config)
+        Ok(config.with_tool_profile(tool_profile))
     }
 
     pub fn from_values(
@@ -286,6 +316,7 @@ impl ServerConfig {
             .collect();
         Ok(Self {
             mode,
+            tool_profile: ToolProfile::All,
             workspace_roots,
             effective_roots,
             compiler_allowlist: canonicalize_all(compiler_allowlist, "compiler")?,
@@ -305,6 +336,13 @@ impl ServerConfig {
 
     pub fn mode(&self) -> CapabilityMode {
         self.mode
+    }
+    pub fn tool_profile(&self) -> ToolProfile {
+        self.tool_profile
+    }
+    pub fn with_tool_profile(mut self, profile: ToolProfile) -> Self {
+        self.tool_profile = profile;
+        self
     }
     pub fn workspace_roots(&self) -> &[PathBuf] {
         &self.workspace_roots

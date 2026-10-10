@@ -44,6 +44,7 @@ impl SourceExcerpt {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn render(&self, max_lines: usize) -> String {
         self.text
             .split('\n')

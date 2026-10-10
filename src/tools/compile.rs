@@ -234,6 +234,28 @@ fn compiler_environment() -> Vec<(OsString, OsString)> {
         .collect()
 }
 
+pub(super) fn select_compiler<'a>(
+    context: &'a ToolExecutionContext,
+    requested: Option<&'a str>,
+) -> Result<&'a Path, ToolResult> {
+    if let Some(compiler) = requested {
+        return Ok(Path::new(compiler));
+    }
+    match context.policy().compiler_allowlist() {
+        [] => Err(ToolResult::structured_error(
+            "compiler_not_configured",
+            "dm_compile requires a startup-allowlisted DreamMaker compiler when compiler_path is omitted.",
+            "Restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS, or supply an explicitly allowlisted compiler_path.",
+        )),
+        [compiler] => Ok(compiler),
+        _ => Err(ToolResult::structured_error(
+            "compiler_ambiguous",
+            "dm_compile cannot select among multiple startup-allowlisted compilers when compiler_path is omitted.",
+            "Supply compiler_path naming one allowlisted compiler, or restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS.",
+        )),
+    }
+}
+
 /// Compile a DreamMaker environment
 pub async fn compile(
     context: &ToolExecutionContext,
@@ -276,44 +298,18 @@ pub async fn compile(
         }
     }
 
-    let compiler = if let Some(compiler) = compiler_path {
-        match context.policy().executable(compiler) {
-            Ok(compiler) => compiler,
-            Err(error) => {
-                return Ok(ToolResult::structured_error(
-                    error.code(),
-                    error.to_string(),
-                    "Configure an existing DreamMaker executable in MERIDIAN_MCP_COMPILERS.",
-                ));
-            }
-        }
-    } else {
-        let configured = match context.policy().compiler_allowlist() {
-            [] => {
-                return Ok(ToolResult::structured_error(
-                    "compiler_not_configured",
-                    "dm_compile requires a startup-allowlisted DreamMaker compiler when compiler_path is omitted.",
-                    "Restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS, or supply an explicitly allowlisted compiler_path.",
-                ));
-            }
-            [compiler] => compiler,
-            _ => {
-                return Ok(ToolResult::structured_error(
-                    "compiler_ambiguous",
-                    "dm_compile cannot select among multiple startup-allowlisted compilers when compiler_path is omitted.",
-                    "Supply compiler_path naming one allowlisted compiler, or restart Meridian-MCP with exactly one intended compiler in MERIDIAN_MCP_COMPILERS.",
-                ));
-            }
-        };
-        match context.policy().executable(configured) {
-            Ok(compiler) => compiler,
-            Err(error) => {
-                return Ok(ToolResult::structured_error(
-                    error.code(),
-                    error.to_string(),
-                    "Configure an existing DreamMaker executable in MERIDIAN_MCP_COMPILERS.",
-                ));
-            }
+    let selected = match select_compiler(context, compiler_path.as_deref()) {
+        Ok(compiler) => compiler,
+        Err(error) => return Ok(error),
+    };
+    let compiler = match context.policy().executable(selected) {
+        Ok(compiler) => compiler,
+        Err(error) => {
+            return Ok(ToolResult::structured_error(
+                error.code(),
+                error.to_string(),
+                "Configure an existing DreamMaker executable in MERIDIAN_MCP_COMPILERS.",
+            ));
         }
     };
 
@@ -346,35 +342,105 @@ pub async fn compile(
         .chain(std::iter::once(OsString::from(&dme_argument)))
         .collect();
     let dmb_path = path.with_extension("dmb");
-    let project_root = path
-        .parent()
-        .ok_or_else(|| anyhow!("DreamMaker environment has no project root"))?;
+    anyhow::ensure!(
+        path.parent().is_some(),
+        "DreamMaker environment has no project root"
+    );
     let deadline = context.deadline(timeout_ms);
-    let mut lease = match context
-        .execution_lease(&dmb_path, compiler_working_directory, "compile", deadline)
+    let lease = match context
+        .execution_lease(
+            state,
+            &dmb_path,
+            compiler_working_directory,
+            "compile",
+            deadline,
+        )
         .await?
     {
         Ok(lease) => lease,
         Err(result) => return Ok(result),
     };
-    let artifact_before = ArtifactSnapshot::capture(project_root, &dmb_path)?;
-    let prepared = PreparedBuild::capture(
-        context.policy(),
-        snapshot.as_deref(),
-        fixture.as_ref(),
-        &path,
-        &compiler,
-        arguments
-            .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect(),
-        compiler_working_directory.to_owned(),
-    )?;
+    let compiler_working_directory = compiler_working_directory.to_owned();
+    let initial_context = context.clone();
+    let initial_path = path.clone();
+    let initial_compiler = compiler.clone();
+    let initial_fixture = fixture.clone();
+    let initial_working = compiler_working_directory.clone();
+    let initial_dmb = dmb_path.clone();
+    let initial_arguments = arguments
+        .iter()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect();
+    let (mut lease, artifact_before, prepared, attempt) = state
+        .run_mutation_job(context, move || {
+            let checkpoint = || initial_context.checkpoint();
+            initial_context.progress(crate::request::Stage::Capture);
+            let root = initial_path.parent().expect("environment parent");
+            let artifact_before =
+                ArtifactSnapshot::capture_checked(root, &initial_dmb, checkpoint)?;
+            let prepared = PreparedBuild::capture_checked(
+                initial_context.policy(),
+                snapshot.as_deref(),
+                initial_fixture.as_ref(),
+                &initial_path,
+                &initial_compiler,
+                initial_arguments,
+                initial_working,
+                checkpoint,
+            )?;
+            let attempt = initial_context
+                .build_provenance()
+                .map(|store| {
+                    store.begin_attempt_checked(&initial_dmb, prepared.inputs.clone(), checkpoint)
+                })
+                .transpose()?;
+            Ok((lease, artifact_before, prepared, attempt))
+        })
+        .await?;
     let mut diagnostics = diagnostics::CompilerDiagnostics::new(response.diagnostic_limit());
-    let attempt = context
-        .build_provenance()
-        .map(|store| store.begin_attempt(&dmb_path, prepared.inputs.clone()))
-        .transpose()?;
+    if let Some(code) = context.finalization_reason(deadline) {
+        let control = context.clone();
+        return state
+            .run_blocking_job(move || {
+                let mut essential = crate::result::MutationOutcome {
+                    operation_ran: attempt.is_some(),
+                    operation_succeeded: Some(false),
+                    failure_code: Some(code.to_owned()),
+                    attempt_id: attempt.as_ref().map(|attempt| attempt.attempt_id.clone()),
+                    action: Some("compile_pre_spawn".into()),
+                    cleanup_complete: true,
+                    ..Default::default()
+                };
+                let cleanup = (|| -> Result<()> {
+                    if let (Some(store), Some(mut attempt)) = (control.build_provenance(), attempt)
+                    {
+                        attempt.outcome = BuildAttemptOutcome::Interrupted {
+                            code: code.to_owned(),
+                        };
+                        store.finish_attempt(&attempt, None)?;
+                    }
+                    lease.finish()?;
+                    Ok(())
+                })();
+                if let Err(error) = cleanup {
+                    essential.cleanup_complete = false;
+                    essential.recovery_required = true;
+                    return Err(crate::result::OutcomeError {
+                        error,
+                        outcome: essential,
+                    }
+                    .into());
+                }
+                Ok(ToolResult::structured_error(
+                    code,
+                    "compilation ended before process spawn",
+                    "Retry after cleanup.",
+                )
+                .with_outcome(essential))
+            })
+            .await;
+    }
+    context.progress(crate::request::Stage::Execution);
     lease.mark_writer_started();
     let execution = run_owned_process_observed(
         ProcessSpec {
@@ -390,8 +456,23 @@ pub async fn compile(
         },
         |stream, bytes| diagnostics.observe(stream, bytes),
     )
-    .await?;
+    .await
+    .map_err(|error| crate::result::OutcomeError {
+        error,
+        outcome: crate::result::MutationOutcome {
+            operation_ran: attempt.is_some(),
+            process_start_uncertain: true,
+            recovery_required: true,
+            attempt_id: attempt.as_ref().map(|attempt| attempt.attempt_id.clone()),
+            action: Some("compile_setup".into()),
+            ..Default::default()
+        },
+    })?;
 
+    let context = context.clone();
+    state.run_blocking_job(move || {
+    context.progress(crate::request::Stage::Evidence);
+    let project_root = path.parent().expect("environment parent");
     let stdout = &execution.stdout.text;
     let stderr = &execution.stderr.text;
 
@@ -400,7 +481,22 @@ pub async fn compile(
         execution.stdout.truncated_bytes == 0 && execution.stderr.truncated_bytes == 0,
     );
 
-    let artifact_after = ArtifactSnapshot::capture(project_root, &dmb_path)?;
+    let mut essential = crate::result::MutationOutcome {
+        operation_ran: true,
+        process_started: execution.process_started,
+        process_stopped: execution.process_started,
+        cleanup_complete: false,
+        recovery_required: true,
+        attempt_id: attempt.as_ref().map(|value| value.attempt_id.clone()),
+        error_count: Some(diagnostics.error_count),
+        ..Default::default()
+    };
+    let artifact_after = ArtifactSnapshot::capture_after(project_root, &dmb_path, || context.checkpoint()).map_err(|error| {
+        crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        }
+    })?;
     let process_succeeded =
         execution.termination == TerminationReason::Exited && execution.exit_code == Some(0);
     let compiler_succeeded = compile_succeeded(
@@ -411,12 +507,21 @@ pub async fn compile(
     let compiler_produced_artifact = compiler_succeeded && dmb_exists;
     let dmb_updated = artifact_after.exists
         && (!artifact_before.exists
-            || artifact_before.sha256 != artifact_after.sha256
+            || (artifact_after.sha256.is_some() && artifact_before.sha256 != artifact_after.sha256)
+            || artifact_before.size != artifact_after.size
             || artifact_before.modified_unix_ms != artifact_after.modified_unix_ms);
+    essential.outputs.push(crate::result::OutputMutation {
+        request_index: 0,
+        installed: dmb_updated,
+        path_preview: Some(crate::result::path_preview(&artifact_after.path)),
+        sha256: artifact_after.sha256.clone(),
+        cleanup_complete: true,
+        backup_preview: None,
+    });
     let timed_out = execution.termination == TerminationReason::WallTimeout;
     let idle = execution.termination == TerminationReason::IdleTimeout;
     let provenance = record_compile_provenance(
-        context,
+        &context,
         attempt,
         &prepared,
         fixture.as_ref(),
@@ -439,7 +544,11 @@ pub async fn compile(
         } else {
             "compiler_failed"
         },
-    )?;
+    )
+    .map_err(|error| crate::result::OutcomeError {
+        error,
+        outcome: essential.clone(),
+    })?;
 
     let interruption = provenance["interruption"].as_str();
     let success = compiler_produced_artifact && interruption.is_none();
@@ -448,7 +557,17 @@ pub async fn compile(
         Some("request_timed_out") => TerminationReason::WallTimeout,
         _ => execution.termination,
     };
-    lease.finish()?;
+    essential.operation_succeeded = Some(success);
+    essential.provenance_status = provenance["status"].as_str().map(str::to_owned);
+    context.progress(crate::request::Stage::Publication);
+    lease
+        .finish()
+        .map_err(|error| crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        })?;
+    essential.cleanup_complete = true;
+    essential.recovery_required = false;
     let result = json!({
         "success": success,
         "compiler_succeeded": compiler_succeeded,
@@ -488,12 +607,18 @@ pub async fn compile(
         "retained_dmb_sha256": provenance["retained_dmb_sha256"],
     });
 
-    let text = response::format(result, response)?;
-    if success {
-        Ok(ToolResult::text(text))
-    } else {
-        Ok(ToolResult::error(text))
-    }
+    let data: crate::outputs::CompileData =
+        serde_json::from_value(result).map_err(|error| crate::result::OutcomeError {
+            error: error.into(),
+            outcome: essential.clone(),
+        })?;
+    let data =
+        response::project_compile(data, response).map_err(|error| crate::result::OutcomeError {
+            error,
+            outcome: essential.clone(),
+        })?;
+    Ok(crate::result::projection(data, false, !success).with_outcome(essential))
+    }).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -524,18 +649,35 @@ fn record_compile_provenance(
         .and_then(|fixture| fixture.rsc_path.clone())
         .unwrap_or_else(|| dme_path.with_extension("rsc"));
     let checkpoint = || context.finalization_reason(deadline);
-    let verification_reason = prepared.finish_reason_checked(checkpoint).or_else(|| {
+    let mut verification_reason = prepared.finish_reason_checked(checkpoint).or_else(|| {
         (fixture.is_some_and(|fixture| fixture.rsc_path.is_some()) && !rsc_path.is_file())
             .then_some("required_rsc_missing")
     });
     let artifact_key = store.artifact_key(dmb_path)?;
     let created_at_unix_ms = unix_ms();
 
-    if success && dmb_updated && verification_reason.is_none() && artifact_after.exists {
-        let dmb = FileIdentity::capture(dmb_path)?;
-        let rsc = (checkpoint().is_none() && rsc_path.exists())
-            .then(|| FileIdentity::capture(&rsc_path))
-            .transpose()?;
+    let identities =
+        if success && dmb_updated && verification_reason.is_none() && artifact_after.exists {
+            let captured = (|| -> Result<_> {
+                let dmb = FileIdentity::capture_checked(dmb_path, || context.checkpoint())?;
+                let rsc = rsc_path
+                    .exists()
+                    .then(|| FileIdentity::capture_checked(&rsc_path, || context.checkpoint()))
+                    .transpose()?;
+                Ok((dmb, rsc))
+            })();
+            match captured {
+                Ok(identities) => Some(identities),
+                Err(_) if checkpoint().is_some() => {
+                    verification_reason = checkpoint();
+                    None
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            None
+        };
+    if let Some((dmb, rsc)) = identities {
         inputs.sort_by(|left, right| {
             (&left.role, &left.relative_path).cmp(&(&right.role, &right.relative_path))
         });
@@ -560,6 +702,7 @@ fn record_compile_provenance(
         let interruption = store.finish_attempt_checked(&attempt, Some(&record), checkpoint)?;
         if let Some(code) = interruption {
             return compile_provenance_decision(
+                context,
                 store,
                 dmb_path,
                 &attempt,
@@ -596,6 +739,7 @@ fn record_compile_provenance(
         attempt.retained_dmb_sha256 = artifact_after.sha256.clone();
         let interruption = store.finish_attempt_checked(&attempt, None, checkpoint)?;
         return compile_provenance_decision(
+            context,
             store,
             dmb_path,
             &attempt,
@@ -614,6 +758,7 @@ fn record_compile_provenance(
 }
 
 fn compile_provenance_decision(
+    context: &ToolExecutionContext,
     store: &crate::BuildProvenanceStore,
     dmb_path: &Path,
     attempt: &BuildAttempt,
@@ -621,7 +766,20 @@ fn compile_provenance_decision(
     code: &str,
     interruption: Option<&str>,
 ) -> Result<Value> {
-    let mut decision = store.evaluate_launch(dmb_path, false)?;
+    let evaluated = store.evaluate_launch_checked(dmb_path, false, || context.checkpoint());
+    let interruption =
+        interruption.or_else(|| context.finalization_reason(context.total_deadline()));
+    let mut decision = match evaluated {
+        Ok(decision) => decision,
+        Err(_) if interruption.is_some() => {
+            return Ok(json!({
+                "status":"unverified", "record_id":null, "attempt_id":attempt.attempt_id,
+                "reasons":[{"code":interruption}], "retained_dmb_sha256":artifact_after.sha256,
+                "interruption":interruption,
+            }))
+        }
+        Err(error) => return Err(error),
+    };
     decision
         .reasons
         .push(crate::build_provenance::ProvenanceReason {

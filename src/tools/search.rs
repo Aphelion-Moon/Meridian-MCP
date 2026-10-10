@@ -1,9 +1,7 @@
 use anyhow::Result;
-use serde_json::{json, Map, Value};
 
 use crate::mcp::ToolResult;
 use crate::search::{SearchIndex, SearchRequest, SymbolKind};
-use crate::source::SourceExcerpt;
 use crate::state::ServerState;
 
 const DEFAULT_RESULT_LIMIT: usize = 10;
@@ -49,96 +47,80 @@ pub(crate) async fn search_context(
         limit,
     };
     let execution = index.search(&request);
-    let results: Vec<Value> = execution
-        .hits
-        .iter()
-        .map(|hit| {
-            let document = hit.document;
-            let mut result = Map::from_iter([
-                (
-                    "score".to_string(),
-                    json!((hit.score * 1_000.0).round() / 1_000.0),
-                ),
-                ("kind".to_string(), json!(document.kind.as_str())),
-                ("symbol".to_string(), json!(document.symbol)),
-                ("name".to_string(), json!(document.name)),
-                ("type_path".to_string(), json!(document.type_path)),
-                (
-                    "implementation_owner".to_string(),
-                    json!(document.implementation_owner),
-                ),
-                (
-                    "declaration_owner".to_string(),
-                    json!(document.declaration_owner),
-                ),
-                ("parent".to_string(), json!(document.parent)),
-                ("file".to_string(), json!(document.file)),
-                ("line".to_string(), json!(document.line)),
-                ("column".to_string(), json!(document.column)),
-                ("docs".to_string(), json!(document.docs)),
-                ("parameters".to_string(), json!(document.parameters)),
-                ("override_index".to_string(), json!(document.override_index)),
-                ("override_count".to_string(), json!(document.override_count)),
-            ]);
-
-            if include_source {
-                add_source_fields(&mut result, document.source.as_ref(), max_source_lines);
+    let mut budget = crate::outputs::budget::Budget::default();
+    let mut results = Vec::new();
+    let mut complete = true;
+    for hit in &execution.hits {
+        if budget.bytes < 256 {
+            complete = false;
+            break;
+        }
+        let document = hit.document;
+        let mut omissions = crate::outputs::Omissions::default();
+        let docs = budget.document(Some(&document.docs), "docs", &mut omissions);
+        let mut parameters = Vec::new();
+        for parameter in document
+            .parameters
+            .iter()
+            .take(crate::outputs::budget::MEMBER_WORK)
+        {
+            if budget.bytes < 64 {
+                break;
             }
-
-            Value::Object(result)
-        })
-        .collect();
-
-    let response = json!({
-        "query": query,
-        "query_terms": SearchIndex::query_terms(query),
-        "indexed_documents": index.len(),
-        "count": results.len(),
-        "results": results,
-        "state_generation": snapshot.generation,
-        "source_origin": "analysis_snapshot",
-        "source_line_limit": max_source_lines,
-        "retrieval": {
-            "mode": "lexical",
-            "algorithm": "bm25",
-            "candidates_considered": execution.candidates_considered,
-            "documents_scored": execution.documents_scored,
+            budget.bytes = budget.bytes.saturating_sub(16);
+            parameters.push(budget.text(parameter, 4096, "parameters", &mut omissions));
+        }
+        if parameters.len() < document.parameters.len() {
+            omissions
+                .fields
+                .insert("parameters".into(), "aggregate response/work limit".into());
+        }
+        let source = if include_source {
+            budget.source(document.source.as_ref(), max_source_lines)
+        } else {
+            crate::outputs::SourceFields::default()
+        };
+        results.push(crate::outputs::SearchHit {
+            score: (hit.score * 1000.0).round() / 1000.0,
+            kind: document.kind.as_str(),
+            symbol: document.symbol.clone(),
+            name: document.name.clone(),
+            type_path: document.type_path.clone(),
+            implementation_owner: document.implementation_owner.clone(),
+            declaration_owner: document.declaration_owner.clone(),
+            parent: document.parent.clone(),
+            file: document.file.clone(),
+            line: document.line,
+            column: document.column,
+            docs,
+            parameters,
+            override_index: document.override_index,
+            override_count: document.override_count,
+            source,
+            field_omissions: omissions,
+        });
+    }
+    let count = results.len();
+    crate::result::analysis_text(
+        &snapshot,
+        crate::outputs::SearchContextData {
+            query: query.into(),
+            query_terms: SearchIndex::query_terms(query),
+            indexed_documents: index.len(),
+            count,
+            results,
+            state_generation: snapshot.generation,
+            source_origin: "analysis_snapshot",
+            source_line_limit: max_source_lines,
+            retrieval: crate::outputs::RetrievalStats {
+                mode: "lexical",
+                algorithm: "bm25",
+                candidates_considered: execution.candidates_considered,
+                documents_scored: execution.documents_scored,
+            },
+            evaluation_complete: complete,
         },
-    });
-    crate::result::analysis_text(&snapshot, response)
-}
-
-pub(super) fn add_source_fields(
-    result: &mut Map<String, Value>,
-    source: Option<&SourceExcerpt>,
-    maximum: usize,
-) {
-    result.extend(Map::from_iter([
-        (
-            "source".into(),
-            json!(source.map(|source| source.render(maximum))),
-        ),
-        (
-            "source_start_line".into(),
-            json!(source.map(|source| source.start_line)),
-        ),
-        (
-            "source_start_column".into(),
-            json!(source.map(|source| source.start_column)),
-        ),
-        (
-            "source_total_lines".into(),
-            json!(source.map(|source| source.total_lines)),
-        ),
-        (
-            "source_truncated".into(),
-            json!(source.map(|source| source.truncated(maximum))),
-        ),
-        (
-            "source_boundary".into(),
-            json!(source.map(|source| source.boundary)),
-        ),
-    ]));
+    )
 }
 
 #[cfg(test)]

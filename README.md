@@ -55,6 +55,8 @@ Use the installer and configuration updater to validate the binary, helpers, aut
 
 The complete packaging example is in [Operator and contributor reference](#operator-and-contributor-reference). At minimum, development configuration sets `MERIDIAN_MCP_MODE=development`, supplies one or more roots, allowlists the compiler, and points `MERIDIAN_MCP_STATE_DIR` to an existing writable directory outside every workspace root. Restart the MCP client after changing startup authorization.
 
+Set optional `MERIDIAN_MCP_TOOL_PROFILE` to narrow the advertised tools for a workflow. `all` is the default and preserves the complete configured catalog; `code` selects source analysis, fixture checks, documentation and builds; `assets` selects DMI and map tools; `runtime` selects builds, runtime controls, debugging, profiling and runtime evidence. Every profile includes status and parsing. Profiles preserve mode, helper and authorization requirements; selecting `runtime` in analysis mode does not enable active controls. The profile is fixed at startup, reported as `tool_profile` by `dm_server_status`, and applies to both discovery and invocation. Restart after changing it. Per-tool membership appears in the [tool contracts](docs/tool-contracts.md).
+
 ### Verify a Codex installation
 
 Fully quit and reopen Codex after installing a binary or changing MCP settings. Closing a task alone does not restart the server.
@@ -81,11 +83,15 @@ Use text search for literal names, file discovery and questions spanning DM and 
 
 An unchanged environment reuses its snapshot. Reuse checks file paths, sizes and modification times, not content hashes; use `force: true` when you need a full reparse. Responses report timings and the active generation. Performance depends on the project and machine.
 
+Tool outputs use generated, named schemas. Clients negotiating MCP 2025-06-18 or newer receive `outputSchema` and native `structuredContent`; every supported version retains compatibility text from the same projection. Earlier initialized clients receive text only. The declared output limit counts the serialized SDK result body, including duplicated structured/text content, JSON escaping, metadata and `resultType`; the client-owned JSON-RPC ID is outside that limit. Under final output pressure, mutation replies retain the operation outcome, installed output hashes, per-item status and cleanup/recovery facts while marking optional details omitted.
+
 Semantic responses identify the captured snapshot in `analysis` and MCP `_meta.analysis`; legacy plain-text errors retain their text and carry the identity in `_meta.analysis`. The block includes `snapshot_id`, generation, environment, cached source and completeness. `disk_state: "unknown"` makes no claim that current files still match. Optional `expected_snapshot` rejects stale handles before semantic work; each accepted call uses one captured snapshot even if another parse finishes meanwhile. Reuse keeps the ID, a successful replacement changes it, and a server restart invalidates prior IDs. Failed parses retain the active identity and report `details.requested_environment` separately.
 
 Search uses lexical BM25 ranking; embeddings and vector search are not configured. For a known symbol, use exact lookup. Procedure results distinguish the **implementation owner** (executable body) from the **declaration owner** (declaration metadata).
 
-To reduce response size, set `include_source: false` on `dm_get_proc` or `dm_search_context`. Otherwise, `max_source_lines` accepts 1–200 lines (defaults: 80 for inspection, 40 for search). Excerpts report their snapshot boundaries and truncation; see the [source-excerpt audit](docs/audits/2026-09-06-source-excerpts/README.md).
+To reduce response size, set `include_source: false` on `dm_get_proc` or `dm_search_context`. Otherwise, `max_source_lines` accepts 1–200 lines (defaults: 80 for inspection, 40 for search). Source lines and encoded bytes are shared across the returned procedures or search hits, with at most 200 lines in one response. Documentation, constant previews and member work also share bounded budgets. Excerpts report their snapshot boundaries and truncation; see the [source-excerpt audit](docs/audits/2026-09-06-source-excerpts/README.md).
+
+`dm_get_type` keeps its default full-detail fields for small types. To select sections, pass `sections` containing `documentation`, `vars`, `procs` or `children`; `detail: "compact"` omits constant previews. Large types expose `pagination.next_cursor` over the selected variables, procedures and children, in that order. Follow it with the same type, section selection and detail; `limit` may change. A large individual field reports `field_omissions`, and a byte-limited page still advances. Type listings likewise reduce the row count when needed to retain complete paths and a continuation cursor.
 
 Implementation listings cover the requested type and its semantic descendants. Use `dm_get_proc` to inspect an inherited body outside that subtree, or query its declaration owner for the wider implementation family.
 
@@ -309,11 +315,14 @@ Run scripts from the repository root. [TESTING.md](TESTING.md) lists exact comma
 
 Add `-EnableTracy` to both installation and configuration only when the combined manifest contains the verified Tracy helper and hook. Restart Codex after changing its MCP configuration.
 
+Keep the builders' `helpers/licenses` directory with the helper binaries and the debugger notices with each debugger package. The installer retains Meridian-MCP's root `LICENSE`, rejects missing or conflicting required notices before replacing files, and copies those notices into the installed package. A custom manifest location remains supported through its relative helper paths. See the [dependency policy](docs/dependency-policy.md) for component licenses and the separate requirements for binary distribution.
+
 ### Startup configuration
 
 The server reads immutable startup configuration:
 
 - `MERIDIAN_MCP_MODE`: `analysis` (default) or `development`.
+- `MERIDIAN_MCP_TOOL_PROFILE`: `all` (default), `code`, `assets`, or `runtime`. Unknown values are rejected. Narrows the configured catalog without granting capabilities or changing parser behavior.
 - `MERIDIAN_MCP_ROOTS`: semicolon-separated workspace roots on Windows; platform path-list syntax elsewhere.
 - `MERIDIAN_MCP_REPOSITORIES`: optional path list of explicitly authorized local Git working trees. At startup, Meridian-MCP discovers and verifies their linked worktrees using fixed local Git commands, then adds those exact canonical paths to the effective roots.
 - `MERIDIAN_MCP_COMPILERS`: allowlisted DreamMaker executables.

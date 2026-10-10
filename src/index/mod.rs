@@ -8,7 +8,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SymbolId {
     Type {
@@ -30,7 +30,7 @@ pub enum SymbolId {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SymbolKind {
     Type,
@@ -39,7 +39,7 @@ pub enum SymbolKind {
     Macro,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct DocumentSymbol {
     pub id: SymbolId,
     pub name: Arc<str>,
@@ -52,7 +52,7 @@ pub struct DocumentSymbol {
     pub column: u16,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceKind {
     Call,
@@ -63,7 +63,7 @@ pub enum ReferenceKind {
     Declaration,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ReferenceHit {
     pub symbol: SymbolId,
     pub kind: ReferenceKind,
@@ -72,7 +72,7 @@ pub struct ReferenceHit {
     pub column: u16,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ImplementationHit {
     pub symbol: SymbolId,
     pub declared_in: Arc<str>,

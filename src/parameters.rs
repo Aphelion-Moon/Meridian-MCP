@@ -13,6 +13,7 @@ const NATIVE_EVIDENCE_COMPARE_RUNS_MIN: usize = 2;
 const NATIVE_EVIDENCE_COMPARE_RUNS_MAX: usize = 20;
 const MAX_SOURCE_LINES: u64 = crate::source::MAX_SOURCE_LINES as u64;
 const LIST_TYPES_LIMIT_MAX: u64 = 500;
+const GET_TYPE_LIMIT_MAX: u64 = crate::outputs::budget::MEMBER_WORK as u64;
 const SEARCH_SYMBOLS_LIMIT_MAX: u64 = 200;
 const SEARCH_CONTEXT_LIMIT_MAX: u64 = 50;
 const CHECK_ERRORS_FILE_PATH_MIN: usize = 1;
@@ -132,8 +133,17 @@ impl InputError {
         self.result_with_code("invalid_input")
     }
     pub fn result_with_code(&self, code: &str) -> crate::mcp::ToolResult {
-        crate::mcp::ToolResult::error(serde_json::json!({"code":code,"message":self.reason,
-            "recovery":"Use the advertised fields, types and bounds.","details":{"field":self.field}}).to_string())
+        crate::result::projection(
+            crate::result::ToolFailure {
+                code: code.to_owned(),
+                message: self.reason.to_owned(),
+                recovery: Some("Use the advertised fields, types and bounds.".to_owned()),
+                details: BTreeMap::from([("field".to_owned(), Value::String(self.field.clone()))]),
+                path: None,
+            },
+            false,
+            true,
+        )
     }
 }
 impl std::fmt::Display for InputError {
@@ -303,6 +313,36 @@ impl Request for NativeEvidenceCompareParams {
 pub struct GetTypeParams {
     /// The type path (e.g., '/obj/item', '/mob/living')
     pub type_path: String,
+    /// Omitted selects all existing full sections. Selection never changes scalar identity fields.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "Vec<GetTypeSection>", length(min = 1, max = 4), extend("uniqueItems" = true))]
+    pub sections: Option<Vec<GetTypeSection>>,
+    /// Optional member count; omission fills the aggregate bounded response budget.
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "u64", range(min = MIN_POSITIVE_INTEGER, max = GET_TYPE_LIMIT_MAX))]
+    pub limit: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "String", length(min = 1, max = 256))]
+    pub cursor: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "DocumentSymbolsDetail")]
+    pub detail: Option<DocumentSymbolsDetail>,
     /// Optional identity expectation; a stale handle fails before work starts.
     #[serde(
         default,
@@ -315,8 +355,45 @@ pub struct GetTypeParams {
 impl Request for GetTypeParams {
     fn validate(&self) -> Result<(), InputError> {
         text("type_path", &self.type_path, 0, None)?;
+        if let Some(limit) = self.limit {
+            range(
+                "limit",
+                limit,
+                Some(MIN_POSITIVE_INTEGER),
+                Some(GET_TYPE_LIMIT_MAX),
+            )?;
+        }
+        if let Some(cursor) = &self.cursor {
+            text("cursor", cursor, 1, Some(256))?;
+        }
+        if let Some(sections) = &self.sections {
+            if sections.is_empty()
+                || sections.len() > 4
+                || sections
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    != sections.len()
+            {
+                return Err(InputError::new(
+                    "sections",
+                    "select one to four distinct type sections",
+                ));
+            }
+        }
         Ok(())
     }
+}
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Serialize, JsonSchema, Eq, Ord, PartialEq, PartialOrd,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum GetTypeSection {
+    Documentation,
+    Vars,
+    Procs,
+    Children,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -4154,6 +4231,61 @@ pub(crate) enum ToolRequest {
 }
 
 impl ToolRequest {
+    /// Wait limits of zero remain immediate probes; they never create a zero
+    /// ingress budget. All useful work shares the original request start.
+    pub(crate) fn total_budget_ms(&self, default_budget_ms: u64) -> u64 {
+        match self {
+            Self::ParseEnvironment(args) => args.timeout_ms.unwrap_or(600_000),
+            Self::Compile(args) => args.timeout_ms.unwrap_or(600_000),
+            Self::RiftCompile(args) => args.timeout_ms.unwrap_or(RIFT_DEFAULT_TIMEOUT_MS),
+            Self::DebugLaunch(args) => args.startup_timeout_ms.unwrap_or(60_000),
+            Self::Run(args) => args.startup_timeout_ms.unwrap_or(300_000),
+            Self::TracyLaunch(args) => args
+                .startup_timeout_ms
+                .unwrap_or(60_000)
+                .saturating_add(args.initialization_timeout_ms.unwrap_or(180_000)),
+            Self::TracyCapture(args) => args.duration_ms.saturating_add(60_000),
+            Self::Topic(args) => args.timeout_ms.unwrap_or(5_000),
+            Self::GenerateDocs(_) => crate::limits::ServerLimits::default().max_docs_duration_ms,
+            _ => default_budget_ms,
+        }
+    }
+
+    pub(crate) fn needs_path_admission(&self) -> bool {
+        use ToolRequest::*;
+        matches!(
+            self,
+            ParseEnvironment(_)
+                | CheckFixtureSync(_)
+                | MemorySummary(_)
+                | MemoryCompare(_)
+                | NativeEvidenceSummary(_)
+                | NativeEvidenceCompare(_)
+                | DocumentSymbols(_)
+                | DmiInfo(_)
+                | CompareDmiStates(_)
+                | FindDmiDuplicates(_)
+                | AuditIcons(_)
+                | ExtractDmi(_)
+                | GenerateDocs(_)
+                | RenderMap(_)
+                | MapInfo(_)
+                | FindOnMap(_)
+                | DiffMaps(_)
+                | Compile(_)
+                | RiftCompile(_)
+                | Run(_)
+                | DebugLaunch(_)
+                | DebugSetBreakpoints(_)
+                | TracyPrepare(_)
+                | TracyLaunch(_)
+                | TracyHotspots(_)
+                | TracyZone(_)
+                | TracyFrameStats(_)
+                | TracyCompare(_)
+        )
+    }
+
     pub(crate) fn snapshot_expectation(&self) -> Option<Option<&str>> {
         match self {
             Self::GetType(args) => Some(args.expected_snapshot.as_deref()),

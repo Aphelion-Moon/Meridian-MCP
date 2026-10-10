@@ -1,4 +1,5 @@
 use anyhow::Result;
+#[cfg(test)]
 use serde_json::json;
 
 use crate::analysis_snapshot::AnalysisContext;
@@ -16,102 +17,100 @@ pub async fn get_definition(
     args: crate::parameters::GetDefinitionParams,
 ) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let objtree = &snapshot.objtree;
-    let context = &snapshot.context;
-
-    let type_path = args.type_path.as_str();
-
-    let member_name = args.member_name.as_deref();
-
-    match objtree.find(type_path) {
-        Some(ty) => {
-            if let Some(member) = member_name {
-                let mut current = Some(ty);
-                let mut variable = None;
-                while let Some(t) = current {
-                    if let Some(var) = t.vars.get(member) {
-                        if var.declaration.is_some() {
-                            variable = Some((
-                                t.path.to_string(),
-                                get_file_path(context, var.value.location.file),
-                                var.value.location.line,
-                                var.value.location.column,
-                            ));
-                            break;
-                        }
-                    }
-                    current = t.parent_type();
-                }
-
-                let procedure = snapshot.proc_resolver().resolve(type_path, member).ok();
-                if variable.is_some() && procedure.is_some() {
-                    return Ok(ToolResult::error(format!(
-                        "Ambiguous member {type_path}/{member}: both variable and procedure declarations exist"
-                    )));
-                }
-                if let Some(resolution) = procedure {
-                    let first = resolution
-                        .implementations
-                        .first()
-                        .expect("a resolved procedure has an implementation");
-                    let result = json!({
-                        "kind": "proc",
-                        "name": member,
-                        "type_path": type_path,
-                        "defined_in": resolution.implementation_owner,
-                        "file": first.location.file,
-                        "line": first.location.line,
-                        "column": first.location.column,
-                        "declaration_kind": "proc",
-                        "resolved_type_owner": resolution.implementation_owner,
-                        "implementation_owner": resolution.implementation_owner,
-                        "declaration_owner": resolution.declaration_owner,
-                        "resolution_kind": resolution.resolution_kind,
-                        "resolution_diagnostics": resolution.diagnostics(),
-                        "state_generation": snapshot.generation,
-                        "spacemandmm_revision": snapshot.spacemandmm_revision,
-                    });
-                    return crate::result::analysis_text(&snapshot, result);
-                }
-                if let Some((owner, file_path, line, column)) = variable {
-                    let result = json!({
-                        "kind": "var",
-                        "name": member,
-                        "type_path": type_path,
-                        "defined_in": owner,
-                        "file": file_path,
-                        "line": line,
-                        "column": column,
-                        "declaration_kind": "var",
-                        "resolved_type_owner": owner,
-                        "state_generation": snapshot.generation,
-                        "spacemandmm_revision": snapshot.spacemandmm_revision,
-                    });
-                    return crate::result::analysis_text(&snapshot, result);
-                }
-
-                Ok(ToolResult::error(format!(
-                    "Member not found: {type_path}/{member}"
-                )))
-            } else {
-                // Just get the type definition
-                let file_path = get_file_path(context, ty.location.file);
-                let result = json!({
-                    "kind": "type",
-                    "path": ty.path,
-                    "file": file_path,
-                    "line": ty.location.line,
-                    "column": ty.location.column
-                    ,"declaration_kind": "type",
-                    "resolved_type_owner": ty.path,
-                    "state_generation": snapshot.generation,
-                    "spacemandmm_revision": snapshot.spacemandmm_revision
-                });
-                crate::result::analysis_text(&snapshot, result)
+    let Some(ty) = snapshot.objtree.find(&args.type_path) else {
+        return Ok(ToolResult::error(format!(
+            "Type not found: {}",
+            args.type_path
+        )));
+    };
+    let mut data = crate::outputs::DefinitionData {
+        kind: "type",
+        name: None,
+        type_path: None,
+        path: Some(ty.path.to_string()),
+        defined_in: None,
+        file: get_file_path(&snapshot.context, ty.location.file),
+        line: ty.location.line,
+        column: ty.location.column,
+        declaration_kind: "type",
+        resolved_type_owner: ty.path.to_string(),
+        implementation_owner: None,
+        declaration_owner: None,
+        resolution_kind: None,
+        resolution_diagnostics: None,
+        state_generation: snapshot.generation,
+        spacemandmm_revision: snapshot.spacemandmm_revision,
+    };
+    if let Some(member) = args.member_name.as_deref() {
+        let variable = ty.iter_parent_types().find_map(|owner| {
+            owner
+                .get()
+                .vars
+                .get(member)
+                .filter(|v| v.declaration.is_some())
+                .map(|v| (owner, v))
+        });
+        let procedure = match snapshot.proc_resolver().view(&args.type_path, member) {
+            Ok(view) => Some(view),
+            Err(error @ crate::proc_resolution::ProcResolutionError::HierarchyLimit) => {
+                return Ok(crate::result::structured_error(
+                    crate::result::ToolErrorCode::LimitExceeded,
+                    error.to_string(),
+                    None,
+                    serde_json::to_value(error)?,
+                ))
             }
+            Err(_) => None,
+        };
+        if variable.is_some() && procedure.is_some() {
+            return Ok(ToolResult::error(format!(
+                "Ambiguous member {}/{member}: both variable and procedure declarations exist",
+                args.type_path
+            )));
         }
-        None => Ok(ToolResult::error(format!("Type not found: {type_path}"))),
+        data.name = Some(member.into());
+        data.type_path = Some(args.type_path.clone());
+        data.path = None;
+        if let Some(mut procedure) = procedure {
+            let first = procedure
+                .implementations
+                .next()
+                .expect("resolved implementation");
+            data.kind = "proc";
+            data.declaration_kind = "proc";
+            data.defined_in = Some(procedure.implementation_owner.into());
+            data.resolved_type_owner = procedure.implementation_owner.into();
+            data.implementation_owner = Some(procedure.implementation_owner.into());
+            data.declaration_owner = Some(procedure.declaration_owner.into());
+            data.resolution_kind = Some(procedure.resolution_kind);
+            data.resolution_diagnostics =
+                Some(if procedure.implementation_owner == args.type_path {
+                    Vec::new()
+                } else {
+                    vec![format!(
+                        "requested type inherits the implementation from {}",
+                        procedure.implementation_owner
+                    )]
+                });
+            data.file = first.location.file.clone();
+            data.line = first.location.line;
+            data.column = first.location.column;
+        } else if let Some((owner, var)) = variable {
+            data.kind = "var";
+            data.declaration_kind = "var";
+            data.defined_in = Some(owner.path.to_string());
+            data.resolved_type_owner = owner.path.to_string();
+            data.file = get_file_path(&snapshot.context, var.value.location.file);
+            data.line = var.value.location.line;
+            data.column = var.value.location.column;
+        } else {
+            return Ok(ToolResult::error(format!(
+                "Member not found: {}/{member}",
+                args.type_path
+            )));
+        }
     }
+    crate::result::analysis_text(&snapshot, data)
 }
 
 #[cfg(test)]

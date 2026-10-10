@@ -5,14 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SAME_NAME_CANDIDATES: usize = 32;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct SourceLocation {
     pub file: String,
     pub line: u32,
     pub column: u16,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcResolutionKind {
     LocalImplementation,
@@ -20,7 +20,7 @@ pub enum ProcResolutionKind {
     NotFound,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ResolvedProcImplementation {
     pub owner: String,
     pub override_index: usize,
@@ -29,7 +29,7 @@ pub struct ResolvedProcImplementation {
     pub parameters: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ProcResolution {
     pub requested_type_path: String,
     pub proc_name: String,
@@ -52,9 +52,11 @@ impl ProcResolution {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, thiserror::Error, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProcResolutionError {
+    #[error("Procedure ancestry exceeds the bounded query work limit")]
+    HierarchyLimit,
     #[error("Type not found: {requested_type_path}")]
     TypeNotFound { requested_type_path: String },
     #[error("Proc not found: {requested_type_path}/{proc_name}")]
@@ -75,7 +77,116 @@ pub struct ProcResolver {
     canonical_resolutions: Vec<ProcResolution>,
 }
 
+/// A query borrows implementations; it does not clone every override merely to
+/// discard it after applying the response budget.
+pub(crate) struct ProcView<'a> {
+    pub implementation_owner: &'a str,
+    pub declaration_owner: &'a str,
+    pub resolution_kind: ProcResolutionKind,
+    pub implementations: ProcImplementations<'a>,
+}
+#[derive(Clone)]
+pub(crate) struct ProcImplementations<'a> {
+    resolver: &'a ProcResolver,
+    owner: Option<&'a str>,
+    name: &'a str,
+    local: std::slice::Iter<'a, ResolvedProcImplementation>,
+    ancestors: usize,
+}
+impl<'a> Iterator for ProcImplementations<'a> {
+    type Item = &'a ResolvedProcImplementation;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(value) = self.local.next() {
+                return Some(value);
+            }
+            let owner = self.owner?;
+            if self.ancestors == 4096 {
+                return None;
+            }
+            self.ancestors += 1;
+            self.owner = self.resolver.parents.get(owner).and_then(|v| v.as_deref());
+            self.local = self
+                .resolver
+                .local_implementations
+                .get(owner)
+                .and_then(|procs| procs.get(self.name))
+                .map(|rows| rows.as_slice())
+                .unwrap_or(&[])
+                .iter();
+        }
+    }
+}
+
 impl ProcResolver {
+    pub(crate) fn view<'a>(
+        &'a self,
+        requested: &'a str,
+        name: &'a str,
+    ) -> Result<ProcView<'a>, ProcResolutionError> {
+        if !self.parents.contains_key(requested) {
+            return Err(ProcResolutionError::TypeNotFound {
+                requested_type_path: requested.into(),
+            });
+        }
+        let mut owner = Some(requested);
+        let mut implementation_owner = None;
+        let mut declaration_owner = None;
+        let mut searched = Vec::new();
+        while let Some(current) = owner {
+            if searched.len() == 4096 {
+                return Err(ProcResolutionError::HierarchyLimit);
+            }
+            searched.push(current.to_owned());
+            if declaration_owner.is_none()
+                && self
+                    .declarations
+                    .get(current)
+                    .is_some_and(|names| names.contains(name))
+            {
+                declaration_owner = Some(current);
+            }
+            if implementation_owner.is_none()
+                && self
+                    .local_implementations
+                    .get(current)
+                    .is_some_and(|procs| procs.contains_key(name))
+            {
+                implementation_owner = Some(current);
+            }
+            owner = self.parents.get(current).and_then(|v| v.as_deref());
+        }
+        let implementation_owner =
+            implementation_owner.ok_or_else(|| ProcResolutionError::NotFound {
+                requested_type_path: requested.into(),
+                proc_name: name.into(),
+                searched_type_chain: searched,
+                same_name_candidates: self
+                    .owners_by_proc_name
+                    .get(name)
+                    .into_iter()
+                    .flatten()
+                    .take(MAX_SAME_NAME_CANDIDATES)
+                    .cloned()
+                    .collect(),
+            })?;
+        Ok(ProcView {
+            implementation_owner,
+            declaration_owner: declaration_owner.unwrap_or(implementation_owner),
+            resolution_kind: if implementation_owner == requested {
+                ProcResolutionKind::LocalImplementation
+            } else {
+                ProcResolutionKind::InheritedImplementation
+            },
+            implementations: ProcImplementations {
+                resolver: self,
+                owner: Some(requested),
+                name,
+                local: [].iter(),
+                ancestors: 0,
+            },
+        })
+    }
     pub fn build(context: &AnalysisContext, objtree: &ObjectTree) -> Self {
         let mut resolver = Self::default();
         for ty in objtree.iter_types() {

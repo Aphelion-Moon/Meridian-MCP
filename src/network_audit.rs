@@ -5,14 +5,16 @@ use std::collections::HashMap;
 
 pub const MAX_NETWORK_OBSERVATIONS: usize = 256;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum EndpointProtocol {
     Tcp,
     Udp,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct EndpointObservation {
     pub protocol: EndpointProtocol,
     pub process_id: u32,
@@ -22,7 +24,7 @@ pub struct EndpointObservation {
     pub last_seen_ms: u128,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct NetworkAuditReport {
     pub requested: bool,
     pub available: bool,
@@ -32,7 +34,7 @@ pub struct NetworkAuditReport {
     pub warning: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct OwnedEndpointObservation {
     pub owner: ProcessIdentity,
     pub protocol: EndpointProtocol,
@@ -42,7 +44,7 @@ pub struct OwnedEndpointObservation {
     pub last_seen_ms: u128,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct NetworkEvidence {
     pub mode: String,
     pub network_isolation_confirmed: bool,

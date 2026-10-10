@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct DistributionSummary {
     pub sample_count: u64,
     pub minimum: f64,
@@ -10,7 +10,7 @@ pub struct DistributionSummary {
     pub sample_stddev: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct NoiseEnvelope {
     pub frame_cv: f64,
     pub frame_range_ns: u64,

@@ -32,6 +32,7 @@ $evidence = [ordered]@{
 	assertions = @()
 	timings_ms = [ordered]@{}
 	builds = [ordered]@{}
+	rift_failures = [ordered]@{}
 	negative_sessions = @()
 	warnings = @()
 }
@@ -199,6 +200,56 @@ function Assert-True {
 	param([Parameter(Mandatory)][bool]$Condition, [Parameter(Mandatory)][string]$Message)
 	if (-not $Condition) {
 		throw $Message
+	}
+}
+
+function Get-RiftFailureEvidence {
+	param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$RunId)
+	if ($RunId -cnotmatch '^\d{8}T\d{6}Z-[0-9a-f]{8}$') {
+		throw 'Rift failure evidence has an invalid run ID.'
+	}
+	$path = (Resolve-Path -LiteralPath $Root).Path
+	foreach ($component in @('data', 'rift-runs', $RunId, 'summary.json')) {
+		$path = Join-Path $path $component
+		$item = Get-Item -LiteralPath $path -Force
+		if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+			throw 'Rift failure evidence must not follow a reparse point.'
+		}
+	}
+	if ($item.PSIsContainer) { throw 'Rift failure summary is not a regular file.' }
+	$stream = [IO.File]::OpenRead($path)
+	try {
+		$buffer = [byte[]]::new(1048577)
+		$count = 0
+		while ($count -lt $buffer.Length) {
+			$read = $stream.Read($buffer, $count, $buffer.Length - $count)
+			if ($read -eq 0) { break }
+			$count += $read
+		}
+		if ($count -gt 1048576) { throw 'Rift failure summary exceeds the 1 MiB evidence limit.' }
+		$summary = [Text.Encoding]::UTF8.GetString($buffer, 0, $count) | ConvertFrom-Json
+	} finally {
+		$stream.Dispose()
+	}
+	if ($summary.schema_version -ne 1 -or $summary.run_id -cne $RunId -or $summary.command -cne 'compile') {
+		throw 'Rift failure summary does not match the completed compile request.'
+	}
+	$failures = @($summary.failures)
+	$truncated = $failures.Count -gt 8
+	$selected = @(foreach ($failure in ($failures | Select-Object -First 8)) {
+		$truncated = $truncated -or ([string]$failure.code).Length -gt 128 -or ([string]$failure.stage).Length -gt 128 -or ([string]$failure.message).Length -gt 4096
+		[ordered]@{
+			code = Limit-CapturedText ([string]$failure.code) 128
+			stage = Limit-CapturedText ([string]$failure.stage) 128
+			message = Limit-CapturedText ([string]$failure.message) 4096
+		}
+	})
+	return [ordered]@{
+		run_id = $RunId
+		status = [string]$summary.status
+		exit_code = $summary.exit_code
+		failures = $selected
+		truncated = $truncated
 	}
 }
 
@@ -378,6 +429,20 @@ try {
 		param($request, $response)
 		$idProperty = $request.PSObject.Properties['id']
 		if ($null -eq $idProperty) { return }
+		$buildNames = @{ 1000 = 'direct'; 1001 = 'rift_network'; 1002 = 'rift_offline' }
+		$buildName = $buildNames[[int]$idProperty.Value]
+		if ($null -ne $buildName) {
+			# Retain each completed build even if a later assertion or callback fails.
+			$payload = Get-ToolPayload -Responses @($response) -Id ([int]$idProperty.Value) -Stage $buildName -AllowToolError
+			$evidence.builds[$buildName] = $payload
+			if ($payload._tool_error -and $payload.PSObject.Properties['rift_result'] -and $null -ne $payload.rift_result) {
+				try {
+					$evidence.rift_failures[$buildName] = Get-RiftFailureEvidence -Root $MeridianRiftRoot -RunId $payload.rift_result.run_id
+				} catch {
+					$evidence.warnings += "Unable to retain $buildName failure details: $($_.Exception.Message)"
+				}
+			}
+		}
 		switch ([int]$idProperty.Value) {
 			$lastAnalysisId { Remove-CompilerArtifacts -Root $MeridianRiftRoot }
 			1000 { Remove-CompilerArtifacts -Root $MeridianRiftRoot }
@@ -413,7 +478,7 @@ try {
 	Assert-True ($toolNames -contains 'rift_compile') 'rift_compile was not advertised under the network development ceiling.'
 	$riftTool = @($toolsResponse.result.tools | Where-Object { $_.name -eq 'rift_compile' })[0]
 	$riftProperties = @($riftTool.inputSchema.properties.PSObject.Properties.Name | Sort-Object)
-	$expectedRiftProperties = @('capture_network', 'fixture_manifest_path', 'force_rebuild', 'idle_timeout_ms', 'network_mode', 'timeout_ms')
+	$expectedRiftProperties = @('capture_network', 'diagnostic_limit', 'fixture_manifest_path', 'force_rebuild', 'idle_timeout_ms', 'include_output', 'network_mode', 'output_max_bytes', 'timeout_ms')
 	Assert-True ([string]::Join(',', $riftProperties) -eq [string]::Join(',', $expectedRiftProperties)) 'rift_compile advertised an unexpected schema.'
 
 	$parsePayload = Get-ToolPayload -Responses $session.Responses -Id 3 -Stage 'dm_parse_environment'
@@ -543,18 +608,21 @@ try {
 	$evidence.first_failing_stage = $_.Exception.Message
 	throw
 } finally {
-	foreach ($temporaryFile in $temporaryFiles) {
-		if (Test-Path -LiteralPath $temporaryFile -PathType Leaf) {
-			Remove-Item -LiteralPath $temporaryFile -Force
-		} elseif (Test-Path -LiteralPath $temporaryFile -PathType Container) {
-			Remove-Item -LiteralPath $temporaryFile -Recurse -Force
+	try {
+		foreach ($temporaryFile in $temporaryFiles) {
+			if (Test-Path -LiteralPath $temporaryFile -PathType Leaf) {
+				Remove-Item -LiteralPath $temporaryFile -Force
+			} elseif (Test-Path -LiteralPath $temporaryFile -PathType Container) {
+				Remove-Item -LiteralPath $temporaryFile -Recurse -Force
+			}
 		}
+	} finally {
+		$evidence.finished_at_utc = [DateTime]::UtcNow.ToString('o')
+		$evidenceDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($EvidencePath))
+		if (-not (Test-Path -LiteralPath $evidenceDirectory -PathType Container)) {
+			New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+		}
+		Assert-NoSensitiveEvidenceKeys -Value $evidence
+		$evidence | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 	}
-	$evidence.finished_at_utc = [DateTime]::UtcNow.ToString('o')
-	$evidenceDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($EvidencePath))
-	if (-not (Test-Path -LiteralPath $evidenceDirectory -PathType Container)) {
-		New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
-	}
-	Assert-NoSensitiveEvidenceKeys -Value $evidence
-	$evidence | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
 }

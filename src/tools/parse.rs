@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use serde_json::json;
+#[cfg(test)]
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -12,6 +14,8 @@ use crate::analysis_snapshot::{
     AnalysisSnapshot,
 };
 use crate::mcp::ToolResult;
+use crate::outputs::budget::{Budget, MEMBER_WORK};
+use crate::outputs::*;
 use crate::result::{json_success, structured_error, ToolErrorCode, ToolMetadata};
 use crate::search::SearchDocuments;
 use crate::semantic::SEMANTIC_CHUNK_SCHEMA_VERSION;
@@ -93,17 +97,35 @@ enum ParseOutcome {
     Built(Box<ParsedEnvironment>),
 }
 
+#[cfg(test)]
 pub(crate) async fn parse_environment_with_policy(
     state: &ServerState,
     args: crate::parameters::ParseEnvironmentParams,
     policy: &PathPolicy,
 ) -> Result<ToolResult> {
-    let request_started = Instant::now();
+    let context = super::ToolExecutionContext::new(crate::CapabilityMode::Analysis, policy.clone());
+    parse_environment_controlled(&context, state, args).await
+}
+
+pub(crate) async fn parse_environment_controlled(
+    control: &super::ToolExecutionContext,
+    state: &ServerState,
+    args: crate::parameters::ParseEnvironmentParams,
+) -> Result<ToolResult> {
+    let request_started = control
+        .request_started
+        .unwrap_or_else(tokio::time::Instant::now)
+        .into_std();
     let dme_path = args.dme_path.as_str();
     let scoped_state = state.for_parse(PathBuf::from(dme_path));
     let state = &scoped_state;
     let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(DEFAULT_PARSE_TIMEOUT_MS));
-    let deadline = tokio::time::Instant::from_std(request_started + timeout);
+    let deadline = control.deadline(timeout.as_millis() as u64);
+    let policy = control.policy();
+    if control.finalization_reason(deadline).is_some() {
+        return parse_timeout(state, timeout).await;
+    }
+    control.progress(crate::request::Stage::Admission);
     let path = PathBuf::from(dme_path);
     let force = args.force.unwrap_or(false);
 
@@ -117,6 +139,9 @@ pub(crate) async fn parse_environment_with_policy(
         Ok(candidate) => candidate,
         Err(_) => return parse_timeout(state, timeout).await,
     };
+    if control.finalization_reason(deadline).is_some() {
+        return parse_timeout(state, timeout).await;
+    }
     let policy = policy.clone();
     // Reuse validation includes blocking-pool scheduling; full build stage
     // timings measure work inside the worker and exclude that scheduling delay.
@@ -126,43 +151,54 @@ pub(crate) async fn parse_environment_with_policy(
     // Capture admission before spawning. Dropping any caller future or join
     // handle cannot release it while this non-abortable job is queued/running.
     // Returning it with the result also covers the snapshot-installation await.
-    let handle = tokio::task::spawn_blocking(move || {
-        let outcome = (|| -> Result<ParseOutcome> {
-            #[cfg(test)]
-            let _worker_test = worker_test.enter();
-            anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
-                "parse deadline expired"
-            );
-            if !path.is_file() {
-                let reason = if path.is_dir() {
-                    format!(
-                        "Not a file (expected a .dme environment): {}",
-                        path.display()
-                    )
-                } else {
-                    format!("File not found: {}", path.display())
-                };
-                return Err(anyhow!(reason));
-            }
-            if !force {
-                if let Some(reused) = reusable_snapshot(candidate, &path) {
-                    return Ok(ParseOutcome::Reused(reused));
-                }
-            } else {
-                drop(candidate);
-            }
-            anyhow::ensure!(
-                tokio::time::Instant::now() < deadline,
-                "parse deadline expired"
-            );
-            info!("Parsing environment: {}", path.display());
-            build_environment(path, policy).map(|build| ParseOutcome::Built(Box::new(build)))
-        })();
-        (outcome, permit)
-    });
+    let worker_control = control.clone();
+    let work_state = state.clone();
+    let handle = async move {
+        work_state
+            .run_blocking_job(move || {
+                let outcome = (|| -> Result<ParseOutcome> {
+                    #[cfg(test)]
+                    let _worker_test = worker_test.enter();
+                    anyhow::ensure!(
+                        worker_control.finalization_reason(deadline).is_none(),
+                        "parse deadline expired"
+                    );
+                    if !path.is_file() {
+                        let reason = if path.is_dir() {
+                            format!(
+                                "Not a file (expected a .dme environment): {}",
+                                path.display()
+                            )
+                        } else {
+                            format!("File not found: {}", path.display())
+                        };
+                        return Err(anyhow!(reason));
+                    }
+                    if !force {
+                        if let Some(reused) = reusable_snapshot(candidate, &path) {
+                            anyhow::ensure!(
+                                worker_control.finalization_reason(deadline).is_none(),
+                                "parse request ended"
+                            );
+                            return Ok(ParseOutcome::Reused(reused));
+                        }
+                    } else {
+                        drop(candidate);
+                    }
+                    anyhow::ensure!(
+                        worker_control.finalization_reason(deadline).is_none(),
+                        "parse deadline expired"
+                    );
+                    info!("Parsing environment: {}", path.display());
+                    build_environment_checked(path, policy, &worker_control, deadline)
+                        .map(|build| ParseOutcome::Built(Box::new(build)))
+                })();
+                Ok((outcome, permit))
+            })
+            .await
+    };
     let (outcome, _permit) = match tokio::time::timeout_at(deadline, handle).await {
-        Ok(Ok(result)) if tokio::time::Instant::now() < deadline => result,
+        Ok(Ok(result)) if control.finalization_reason(deadline).is_none() => result,
         Ok(Err(error)) => {
             return parse_failure(
                 state,
@@ -178,10 +214,13 @@ pub(crate) async fn parse_environment_with_policy(
         Ok(ParseOutcome::Reused(snapshot)) => (
             snapshot,
             true,
-            json!({
-                "queue_wait": queue_wait,
-                "reuse_validation": reuse_started.elapsed().as_millis() as u64,
-            }),
+            std::collections::BTreeMap::from([
+                ("queue_wait".into(), queue_wait),
+                (
+                    "reuse_validation".into(),
+                    reuse_started.elapsed().as_millis() as u64,
+                ),
+            ]),
         ),
         Ok(ParseOutcome::Built(parsed)) => {
             let ParsedEnvironment {
@@ -192,7 +231,9 @@ pub(crate) async fn parse_environment_with_policy(
                 build_timings,
             } = *parsed;
             let Some(snapshot) = state
-                .install_analysis_before_deadline(snapshot, deadline)
+                .install_analysis_checked(snapshot, deadline, || {
+                    control.finalization_reason(deadline).is_none()
+                })
                 .await?
             else {
                 return parse_timeout(state, timeout).await;
@@ -200,14 +241,14 @@ pub(crate) async fn parse_environment_with_policy(
             (
                 snapshot,
                 false,
-                json!({
-                    "queue_wait": queue_wait,
-                    "preprocess_parse": preprocess_parse,
-                    "dreamchecker": dreamchecker,
-                    "search_documents": search_documents_ms,
-                    "analysis_indexes": build_timings.analysis_indexes,
-                    "fingerprint": build_timings.fingerprint,
-                }),
+                std::collections::BTreeMap::from([
+                    ("queue_wait".into(), queue_wait),
+                    ("preprocess_parse".into(), preprocess_parse),
+                    ("dreamchecker".into(), dreamchecker),
+                    ("search_documents".into(), search_documents_ms),
+                    ("analysis_indexes".into(), build_timings.analysis_indexes),
+                    ("fingerprint".into(), build_timings.fingerprint),
+                ]),
             )
         }
         Err(error) => {
@@ -224,31 +265,40 @@ pub(crate) async fn parse_environment_with_policy(
         }
     };
     let total = request_started.elapsed().as_millis() as u64;
-    timings["total"] = json!(total);
-    let (errors, warnings) = snapshot.diagnostic_counts();
-    let mut result = json!({
-        "success": true,
-        "reused": reused,
-        "environment": display_path(&snapshot.environment_path),
-        "total_types": snapshot.total_types,
-        "indexed_symbols": snapshot.indexed_symbol_count(),
-        "error_count": errors,
-        "warning_count": warnings,
-        "state_generation": snapshot.generation,
-        "spacemandmm_revision": snapshot.spacemandmm_revision,
-        "spacemandmm_local_patch": crate::capabilities::SPACEMANDMM_LOCAL_PATCH,
-        "spacemandmm_local_patch_sha256": crate::capabilities::SPACEMANDMM_LOCAL_PATCH_SHA256,
-        "retrieval": {
-            "lexical": {"status":"ready", "algorithm":"bm25", "documents":snapshot.indexed_symbol_count()},
-            "dense": {"status":"not_configured"},
-            "semantic_chunk_schema_version": SEMANTIC_CHUNK_SCHEMA_VERSION,
-        },
-        "timings_ms": timings,
-    });
-    if !reused {
-        result["duration_ms"] = json!(total);
+    if control.finalization_reason(deadline).is_some() {
+        return parse_timeout(state, timeout).await;
     }
-    crate::result::analysis_text(&snapshot, result)
+    timings.insert("total".into(), total);
+    let (errors, warnings) = snapshot.diagnostic_counts();
+    crate::result::analysis_text(
+        &snapshot,
+        ParseEnvironmentData {
+            success: true,
+            reused,
+            environment: display_path(&snapshot.environment_path),
+            total_types: snapshot.total_types,
+            indexed_symbols: snapshot.indexed_symbol_count(),
+            error_count: errors,
+            warning_count: warnings,
+            state_generation: snapshot.generation,
+            spacemandmm_revision: snapshot.spacemandmm_revision,
+            spacemandmm_local_patch: crate::capabilities::SPACEMANDMM_LOCAL_PATCH,
+            spacemandmm_local_patch_sha256: crate::capabilities::SPACEMANDMM_LOCAL_PATCH_SHA256,
+            retrieval: RetrievalCapabilities {
+                lexical: LexicalCapability {
+                    status: "ready",
+                    algorithm: "bm25",
+                    documents: snapshot.indexed_symbol_count(),
+                },
+                dense: DenseCapability {
+                    status: "not_configured",
+                },
+                semantic_chunk_schema_version: SEMANTIC_CHUNK_SCHEMA_VERSION,
+            },
+            timings_ms: timings,
+            duration_ms: (!reused).then_some(total),
+        },
+    )
 }
 
 async fn parse_timeout(state: &ServerState, timeout: Duration) -> Result<ToolResult> {
@@ -257,7 +307,28 @@ async fn parse_timeout(state: &ServerState, timeout: Duration) -> Result<ToolRes
         Some("Wait for the active parser worker to finish, then retry.".to_owned())).await
 }
 
+#[cfg(test)]
 fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEnvironment> {
+    let control = super::ToolExecutionContext::new(crate::CapabilityMode::Analysis, policy.clone());
+    build_environment_checked(
+        parse_path,
+        policy,
+        &control,
+        control.deadline(DEFAULT_PARSE_TIMEOUT_MS),
+    )
+}
+
+fn build_environment_checked(
+    parse_path: PathBuf,
+    policy: PathPolicy,
+    control: &super::ToolExecutionContext,
+    deadline: tokio::time::Instant,
+) -> Result<ParsedEnvironment> {
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Capture);
     let parse_started_at = SystemTime::now();
     let preprocess_started = Instant::now();
     let mut context = Context::default();
@@ -293,6 +364,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
         return Err(anyhow!("DreamMaker parser reported errors:\n{diagnostics}"));
     }
     let preprocess_parse = preprocess_started.elapsed().as_millis() as u64;
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Execution);
 
     // Always run DreamChecker so semantic diagnostics describe this parsed
     // snapshot. Its cost is reported separately in the parse response.
@@ -301,6 +377,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
     let configured_rules = configured_diagnostic_rules(&parse_path, &context);
     let diagnostics = collect_diagnostics(&context, &configured_rules);
     let dreamchecker = dreamchecker_started.elapsed().as_millis() as u64;
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Evidence);
     let search_documents_started = Instant::now();
     let search_documents = SearchDocuments::from_object_tree(&objtree, &context, &parse_path);
     let search_documents_ms = search_documents_started.elapsed().as_millis() as u64;
@@ -321,6 +402,11 @@ fn build_environment(parse_path: PathBuf, policy: PathPolicy) -> Result<ParsedEn
         parse_started_at,
         policy,
     );
+    anyhow::ensure!(
+        control.finalization_reason(deadline).is_none(),
+        "parse request ended"
+    );
+    control.progress(crate::request::Stage::Publication);
     Ok(ParsedEnvironment {
         snapshot: AnalysisSnapshot::from_build(build, 0),
         preprocess_parse,
@@ -389,231 +475,393 @@ pub async fn get_type(
     state: &ServerState,
     args: crate::parameters::GetTypeParams,
 ) -> Result<ToolResult> {
+    use crate::parameters::GetTypeSection as Section;
     let snapshot = state.snapshot().await?;
-    let objtree = &snapshot.objtree;
-    let context = &snapshot.context;
-
-    let type_path = args.type_path.as_str();
-
-    match objtree.find(type_path) {
-        Some(ty) => {
-            // Collect variables
-            let vars: Vec<Value> = ty
-                .vars
-                .iter()
-                .map(|(name, var)| {
-                    json!({
-                        "name": name.to_string(),
-                        "has_value": var.value.expression.is_some(),
-                        "constant": var.value.constant.as_ref().map(|c| format!("{c:?}")),
-                        "declared_here": var.declaration.is_some()
-                    })
-                })
-                .collect();
-
-            // Collect procs
-            let procs: Vec<Value> = ty
+    let Some(ty) = snapshot.objtree.find(&args.type_path) else {
+        return Ok(ToolResult::error(format!(
+            "Type not found: {}",
+            args.type_path
+        )));
+    };
+    let selected = args.sections.clone().unwrap_or_else(|| {
+        vec![
+            Section::Documentation,
+            Section::Vars,
+            Section::Procs,
+            Section::Children,
+        ]
+    });
+    let mut normalized = selected.clone();
+    normalized.sort();
+    let compact = args.detail == Some(crate::parameters::DocumentSymbolsDetail::Compact);
+    let codec = crate::cursor::Cursor::new(
+        &snapshot,
+        if compact { "compact" } else { "full" },
+        json!(["get_type", "members_order_v1", args.type_path, normalized]),
+    );
+    let offset = codec.decode(args.cursor.as_deref())?;
+    let mut budget = Budget::default();
+    let mut omissions = Omissions::default();
+    let documentation = selected.contains(&Section::Documentation).then(|| {
+        budget.document(
+            snapshot
+                .search_index
+                .type_document(&ty.path)
+                .map(|v| v.docs.as_str()),
+            "documentation",
+            &mut omissions,
+        )
+    });
+    let mut vars = selected.contains(&Section::Vars).then(Vec::new);
+    let mut procs = selected.contains(&Section::Procs).then(Vec::new);
+    let mut children = selected.contains(&Section::Children).then(Vec::new);
+    let total = if vars.is_some() { ty.vars.len() } else { 0 }
+        + if procs.is_some() { ty.procs.len() } else { 0 }
+        + if children.is_some() {
+            ty.len_children()
+        } else {
+            0
+        };
+    if offset > total {
+        anyhow::bail!("invalid_input: cursor offset exceeds this type's selected members")
+    }
+    let maximum = args.limit.unwrap_or(MEMBER_WORK as u64) as usize;
+    let mut position = offset.min(if vars.is_some() { ty.vars.len() } else { 0 });
+    let mut count = 0;
+    // Combined section order is stable, independent of the caller's section order.
+    // A retained identifying row always advances, even if its large field is omitted.
+    if let Some(rows) = vars.as_mut() {
+        for (name, var) in ty.vars.iter().skip(offset.min(ty.vars.len())) {
+            if position >= offset && count < maximum && budget.bytes > 256 {
+                let mut fields = Omissions::default();
+                budget.bytes = budget.bytes.saturating_sub(192);
+                let name = budget.text(name, 4096, "name", &mut fields);
+                let constant = if compact {
+                    None
+                } else {
+                    budget.constant(var.value.constant.as_ref(), "constant", &mut fields)
+                };
+                rows.push(TypeVariable {
+                    name,
+                    has_value: var.value.expression.is_some(),
+                    constant,
+                    declared_here: var.declaration.is_some(),
+                    field_omissions: fields,
+                });
+                count += 1;
+            } else if position >= offset {
+                break;
+            }
+            position += 1;
+        }
+    }
+    // Skip complete preceding sections without visiting each skipped row.
+    let vars_total = if vars.is_some() { ty.vars.len() } else { 0 };
+    if position == vars_total || offset >= vars_total {
+        position = vars_total
+            + offset.saturating_sub(vars_total).min(if procs.is_some() {
+                ty.procs.len()
+            } else {
+                0
+            });
+        if let Some(rows) = procs.as_mut() {
+            for (name, proc) in ty
                 .procs
                 .iter()
-                .map(|(name, proc)| {
-                    let param_count = proc.value.first().map(|v| v.parameters.len()).unwrap_or(0);
-                    json!({
-                        "name": name.to_string(),
-                        "parameter_count": param_count,
-                        "override_count": proc.value.len(),
-                        "declared_here": proc.declaration.is_some()
-                    })
-                })
-                .collect();
-
-            // Get parent
-            let parent = ty.parent_type().map(|p| p.path.to_string());
-            let children: Vec<_> = ty.children().map(|child| child.path.to_string()).collect();
-
-            let file_path = get_file_path(context, ty.location.file);
-
-            let result = json!({
-                "path": ty.path,
-                "parent": parent,
-                "children": children,
-                "documentation": ty.docs.text(),
-                "vars": vars,
-                "procs": procs,
-                "location": format!("{}:{}:{}",
-                    file_path,
-                    ty.location.line,
-                    ty.location.column
-                )
-            });
-
-            crate::result::analysis_text(&snapshot, result)
+                .skip(offset.saturating_sub(vars_total).min(ty.procs.len()))
+            {
+                if position >= offset && count < maximum && budget.bytes > 256 {
+                    budget.bytes = budget.bytes.saturating_sub(160);
+                    rows.push(TypeProcedure {
+                        name: budget.text(name, 4096, "procs.name", &mut omissions),
+                        parameter_count: proc.value.first().map_or(0, |v| v.parameters.len()),
+                        override_count: proc.value.len(),
+                        declared_here: proc.declaration.is_some(),
+                    });
+                    count += 1;
+                } else if position >= offset {
+                    break;
+                }
+                position += 1;
+            }
         }
-        None => Ok(ToolResult::error(format!("Type not found: {type_path}"))),
+        let procs_end = vars_total + if procs.is_some() { ty.procs.len() } else { 0 };
+        if position == procs_end || offset >= procs_end {
+            position = procs_end
+                + offset.saturating_sub(procs_end).min(if children.is_some() {
+                    ty.len_children()
+                } else {
+                    0
+                });
+            if let Some(rows) = children.as_mut() {
+                for child in ty
+                    .children()
+                    .skip(offset.saturating_sub(procs_end).min(ty.len_children()))
+                {
+                    if position >= offset && count < maximum && budget.bytes > 256 {
+                        budget.bytes = budget.bytes.saturating_sub(16);
+                        rows.push(budget.text(&child.path, 4096, "children", &mut omissions));
+                        count += 1;
+                    } else if position >= offset {
+                        break;
+                    }
+                    position += 1;
+                }
+            }
+        }
     }
+    let next = offset + count;
+    let pagination =
+        (args.limit.is_some() || args.cursor.is_some() || args.sections.is_some() || next < total)
+            .then(|| TypePagination {
+                offset,
+                count,
+                total_count: total,
+                next_cursor: (next < total).then(|| codec.encode(next)),
+                evaluation_complete: next == total,
+            });
+    crate::result::analysis_text(
+        &snapshot,
+        GetTypeData {
+            path: ty.path.to_string(),
+            parent: ty.parent_type().map(|v| v.path.to_string()),
+            children,
+            documentation,
+            vars,
+            procs,
+            location: format!(
+                "{}:{}:{}",
+                get_file_path(&snapshot.context, ty.location.file),
+                ty.location.line,
+                ty.location.column
+            ),
+            pagination,
+            field_omissions: omissions,
+        },
+    )
 }
 
-/// Get proc information
 pub async fn get_proc(
     state: &ServerState,
     args: crate::parameters::GetProcParams,
 ) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let (include_source, max_source_lines) = (
-        args.include_source.unwrap_or(true),
-        args.max_source_lines
-            .unwrap_or(snapshot.search_index.source_line_limit() as u64) as usize,
-    );
-    let objtree = &snapshot.objtree;
-    let context = &snapshot.context;
-
-    let type_path = args.type_path.as_str();
-
-    let proc_name = args.proc_name.as_str();
-
-    let resolution = match snapshot.proc_resolver().resolve(type_path, proc_name) {
-        Ok(resolution) => resolution,
+    let include_source = args.include_source.unwrap_or(true);
+    let maximum = args
+        .max_source_lines
+        .unwrap_or(snapshot.search_index.source_line_limit() as u64) as usize;
+    let resolution = match snapshot
+        .proc_resolver()
+        .view(&args.type_path, &args.proc_name)
+    {
+        Ok(view) => view,
         Err(error) => {
             return Ok(structured_error(
-                ToolErrorCode::NotFound,
+                if matches!(
+                    error,
+                    crate::proc_resolution::ProcResolutionError::HierarchyLimit
+                ) {
+                    ToolErrorCode::LimitExceeded
+                } else {
+                    ToolErrorCode::NotFound
+                },
                 error.to_string(),
                 Some("Check the exact type and proc names in the active analysis snapshot.".into()),
                 serde_json::to_value(error)?,
-            ));
+            ))
         }
     };
-    let mut values = Vec::with_capacity(resolution.implementations.len());
-    for implementation in &resolution.implementations {
-        let owner = objtree
-            .find(&implementation.owner)
-            .expect("resolved proc owner should remain in the object tree");
-        let proc_ref = owner
-            .iter_self_procs()
-            .find(|proc_ref| {
-                proc_ref.name() == proc_name && proc_ref.index() == implementation.override_index
-            })
-            .expect("resolved proc implementation should remain in the object tree");
-        let value = proc_ref.get();
-        let parameters = value
-            .parameters
-            .iter()
-            .map(|parameter| {
-                json!({
-                    "name": parameter.name.to_string(),
-                    "has_default": parameter.default.is_some(),
-                })
-            })
-            .collect::<Vec<_>>();
-        let file_path = get_file_path(context, value.location.file);
-        let source = if value.location == dreammaker::Location::BUILTINS {
-            None
-        } else {
-            snapshot.search_index.proc_source(
-                &implementation.owner,
-                proc_name,
-                implementation.override_index,
-            )
-        };
-        let mut detail = json!({
-            "owner": implementation.owner,
-            "override_index": implementation.override_index,
-            "parameters": parameters,
-            "documentation": value.docs.text(),
-            "location": format!("{}:{}:{}", file_path, value.location.line, value.location.column),
-            "has_body": implementation.has_body,
-        });
-        if include_source {
-            let fields = detail
-                .as_object_mut()
-                .expect("procedure detail is an object");
-            fields.insert("source_origin".into(), json!("analysis_snapshot"));
-            fields.insert("source_line_limit".into(), json!(max_source_lines));
-            super::search::add_source_fields(fields, source, max_source_lines);
+    let mut budget = Budget::default();
+    let mut omissions = Omissions::default();
+    let mut overrides = Vec::new();
+    for implementation in resolution.implementations.take(MEMBER_WORK + 1) {
+        if overrides.len() == MEMBER_WORK || budget.bytes < 256 {
+            omissions
+                .fields
+                .insert("overrides".into(), "aggregate response/work limit".into());
+            break;
         }
-        values.push(detail);
+        let owner = snapshot
+            .objtree
+            .find(&implementation.owner)
+            .expect("resolved owner remains in snapshot");
+        let value = owner
+            .procs
+            .get(args.proc_name.as_str())
+            .and_then(|v| v.value.get(implementation.override_index))
+            .expect("resolved override remains in snapshot");
+        let mut fields = Omissions::default();
+        let location = format!(
+            "{}:{}:{}",
+            implementation.location.file,
+            implementation.location.line,
+            implementation.location.column
+        );
+        let identifying_bytes =
+            crate::result::encoded_bytes(&(&implementation.owner, &location), usize::MAX)
+                .unwrap_or(usize::MAX)
+                .saturating_add(256);
+        if !overrides.is_empty() && identifying_bytes.saturating_add(256) > budget.bytes {
+            omissions
+                .fields
+                .insert("overrides".into(), "aggregate response byte limit".into());
+            break;
+        }
+        budget.bytes = budget.bytes.saturating_sub(256);
+        let implementation_owner =
+            budget.text(&implementation.owner, 64 * 1024, "owner", &mut fields);
+        let location = budget.text(&location, 64 * 1024, "location", &mut fields);
+        let mut parameters = Vec::new();
+        for parameter in value.parameters.iter().take(MEMBER_WORK) {
+            if budget.bytes < 128 {
+                fields
+                    .fields
+                    .insert("parameters".into(), "aggregate response/work limit".into());
+                break;
+            }
+            budget.bytes = budget.bytes.saturating_sub(64);
+            parameters.push(Parameter {
+                name: budget.text(&parameter.name, 4096, "parameters", &mut fields),
+                has_default: parameter.default.is_some(),
+            });
+        }
+        if parameters.len() < value.parameters.len() {
+            fields
+                .fields
+                .insert("parameters".into(), "aggregate response/work limit".into());
+        }
+        let document = snapshot.search_index.proc_document(
+            &implementation.owner,
+            &args.proc_name,
+            implementation.override_index,
+        );
+        let documentation = budget.document(
+            document.map(|v| v.docs.as_str()),
+            "documentation",
+            &mut fields,
+        );
+        let mut source = if include_source {
+            budget.source(document.and_then(|v| v.source.as_ref()), maximum)
+        } else {
+            SourceFields::default()
+        };
+        if include_source {
+            source.source_origin = Some("analysis_snapshot");
+            source.source_line_limit = Some(maximum);
+        }
+        overrides.push(ProcImplementation {
+            owner: implementation_owner,
+            override_index: implementation.override_index,
+            parameters,
+            documentation,
+            location,
+            has_body: implementation.has_body,
+            source,
+            field_omissions: fields,
+        });
     }
-
-    let result = json!({
-        "name": proc_name,
-        "type_path": type_path,
-        "requested_type_path": resolution.requested_type_path,
-        "implementation_owner": resolution.implementation_owner,
-        "declaration_owner": resolution.declaration_owner,
-        "resolution_kind": resolution.resolution_kind,
-        "declared": resolution.implementation_owner == type_path,
-        "overrides": values,
-        "resolution_diagnostics": resolution.diagnostics(),
-        "state_generation": snapshot.generation,
-    });
-    crate::result::analysis_text(&snapshot, result)
+    let diagnostics = if resolution.implementation_owner == args.type_path {
+        Vec::new()
+    } else {
+        vec![format!(
+            "requested type inherits the implementation from {}",
+            resolution.implementation_owner
+        )]
+    };
+    crate::result::analysis_text(
+        &snapshot,
+        GetProcData {
+            name: args.proc_name.clone(),
+            type_path: args.type_path.clone(),
+            requested_type_path: args.type_path.clone(),
+            implementation_owner: resolution.implementation_owner.into(),
+            declaration_owner: resolution.declaration_owner.into(),
+            resolution_kind: resolution.resolution_kind,
+            declared: resolution.implementation_owner == args.type_path,
+            overrides,
+            resolution_diagnostics: diagnostics,
+            state_generation: snapshot.generation,
+            field_omissions: omissions,
+        },
+    )
 }
 
-/// Get variable information
 pub async fn get_var(
     state: &ServerState,
     args: crate::parameters::GetVarParams,
 ) -> Result<ToolResult> {
     let snapshot = state.snapshot().await?;
-    let objtree = &snapshot.objtree;
-    let context = &snapshot.context;
-
-    let type_path = args.type_path.as_str();
-
-    let var_name = args.var_name.as_str();
-
-    match objtree.find(type_path) {
-        Some(ty) => match ty.get_value(var_name) {
-            Some(value) => {
-                let value_owner = ty
-                    .iter_parent_types()
-                    .find(|owner| owner.vars.contains_key(var_name))
-                    .expect("resolved variable must have a value owner");
-                let declaration = ty.get_var_declaration(var_name);
-                let declaration_owner = ty.iter_parent_types().find(|owner| {
-                    owner
-                        .vars
-                        .get(var_name)
-                        .is_some_and(|var| var.declaration.is_some())
-                });
-                let file_path = get_file_path(context, value.location.file);
-                // An override often changes only the value; retain declaration docs.
-                let documentation = if value.docs.is_empty() {
-                    declaration_owner
-                        .and_then(|owner| owner.vars.get(var_name).map(|var| var.value.docs.text()))
-                        .unwrap_or_default()
-                } else {
-                    value.docs.text()
-                };
-
-                let result = json!({
-                    "name": var_name,
-                    "type_path": type_path,
-                    "declared": ty.vars.get(var_name).is_some_and(|var| var.declaration.is_some()),
-                    "declared_type": declaration.map(|declaration| declaration.var_type.to_string()),
-                    "value_owner": value_owner.path,
-                    "declaration_owner": declaration_owner.map(|owner| owner.path.clone()),
-                    "inherited": value_owner.path != ty.path,
-                    "documentation": documentation,
-                    "constant": value.constant.as_ref().map(|c| format!("{c:?}")),
-                    "has_expression": value.expression.is_some(),
-                    "location": format!("{}:{}:{}",
-                        file_path,
-                        value.location.line,
-                        value.location.column
-                    ),
-                    "declaration_location": declaration.map(|declaration| format!("{}:{}:{}",
-                        get_file_path(context, declaration.location.file),
-                        declaration.location.line, declaration.location.column)),
-                    "state_generation": snapshot.generation,
-                });
-
-                crate::result::analysis_text(&snapshot, result)
-            }
-            None => Ok(ToolResult::error(format!(
-                "Variable not found: {type_path}/{var_name}"
-            ))),
+    let Some(ty) = snapshot.objtree.find(&args.type_path) else {
+        return Ok(ToolResult::error(format!(
+            "Type not found: {}",
+            args.type_path
+        )));
+    };
+    let Some(value) = ty.get_value(&args.var_name) else {
+        return Ok(ToolResult::error(format!(
+            "Variable not found: {}/{}",
+            args.type_path, args.var_name
+        )));
+    };
+    let value_owner = ty
+        .iter_parent_types()
+        .find(|o| o.vars.contains_key(args.var_name.as_str()))
+        .expect("resolved variable owner");
+    let declaration = ty.get_var_declaration(&args.var_name);
+    let declaration_owner = ty.iter_parent_types().find(|o| {
+        o.vars
+            .get(args.var_name.as_str())
+            .is_some_and(|v| v.declaration.is_some())
+    });
+    let docs_owner = if value.docs.is_empty() {
+        declaration_owner
+    } else {
+        Some(value_owner)
+    };
+    let document =
+        docs_owner.and_then(|o| snapshot.search_index.var_document(&o.path, &args.var_name));
+    let mut budget = Budget::default();
+    let mut omissions = Omissions::default();
+    let documentation = budget.document(
+        document.map(|v| v.docs.as_str()),
+        "documentation",
+        &mut omissions,
+    );
+    let constant = budget.constant(value.constant.as_ref(), "constant", &mut omissions);
+    crate::result::analysis_text(
+        &snapshot,
+        GetVarData {
+            name: args.var_name.clone(),
+            type_path: args.type_path.clone(),
+            declared: ty
+                .vars
+                .get(args.var_name.as_str())
+                .is_some_and(|v| v.declaration.is_some()),
+            declared_type: declaration.map(|v| v.var_type.to_string()),
+            value_owner: value_owner.path.to_string(),
+            declaration_owner: declaration_owner.map(|v| v.path.to_string()),
+            inherited: value_owner.path != ty.path,
+            documentation,
+            constant,
+            has_expression: value.expression.is_some(),
+            location: format!(
+                "{}:{}:{}",
+                get_file_path(&snapshot.context, value.location.file),
+                value.location.line,
+                value.location.column
+            ),
+            declaration_location: declaration.map(|v| {
+                format!(
+                    "{}:{}:{}",
+                    get_file_path(&snapshot.context, v.location.file),
+                    v.location.line,
+                    v.location.column
+                )
+            }),
+            state_generation: snapshot.generation,
+            field_omissions: omissions,
         },
-        None => Ok(ToolResult::error(format!("Type not found: {type_path}"))),
-    }
+    )
 }
 
 /// List types in the object tree
@@ -651,35 +899,53 @@ pub async fn list_types(
         cursor <= total_count,
         "Cursor offset exceeds the result count"
     );
-    let types: Vec<Value> = matching_types
-        .into_iter()
-        .skip(cursor)
-        .take(limit)
-        .map(|ty| {
-            json!({
-                "path": ty.path.to_string(),
-                "var_count": ty.vars.len(),
-                "proc_count": ty.procs.len()
-            })
-        })
-        .collect();
+    let mut budget = Budget::default();
+    let mut types = Vec::new();
+    let mut byte_limited = false;
+    for ty in matching_types.into_iter().skip(cursor).take(limit) {
+        let size = crate::result::encoded_bytes(&ty.path, usize::MAX)
+            .unwrap_or(usize::MAX)
+            .saturating_add(80);
+        if !types.is_empty() && size > budget.bytes {
+            byte_limited = true;
+            break;
+        }
+        budget.bytes = budget.bytes.saturating_sub(80);
+        let mut omissions = Omissions::default();
+        let path = budget.text(
+            &ty.path,
+            crate::outputs::budget::DETAIL_BYTES - 80,
+            "path",
+            &mut omissions,
+        );
+        byte_limited |= !omissions.is_empty();
+        types.push(ListTypeRow {
+            path,
+            var_count: ty.vars.len(),
+            proc_count: ty.procs.len(),
+            field_omissions: omissions,
+        });
+    }
     let next_offset = cursor.saturating_add(types.len());
     let has_more = next_offset < total_count;
     let next_cursor = has_more.then(|| codec.encode(next_offset));
 
-    let result = json!({
-        "count": types.len(),
-        "total_count": total_count,
-        "types": types,
-        "pagination": {
-            "cursor": cursor.to_string(),
-            "limit": limit,
-            "next_cursor": next_cursor,
-            "has_more": has_more,
-        }
-    });
+    let result = ListTypesData {
+        count: types.len(),
+        total_count,
+        types,
+        pagination: LegacyPagination {
+            cursor: cursor.to_string(),
+            limit,
+            next_cursor,
+            has_more,
+        },
+    };
     let mut metadata = ToolMetadata::for_snapshot(&snapshot);
-    metadata.truncated = has_more;
+    metadata.truncated = has_more || byte_limited;
+    if byte_limited {
+        metadata.truncation_reasons.push("type_page_bytes".into());
+    }
     if has_more {
         metadata
             .truncation_reasons
@@ -711,7 +977,7 @@ pub async fn search_symbols(
 
     let limit = args.limit.unwrap_or(DEFAULT_SYMBOL_LIMIT) as usize;
 
-    let mut results: Vec<Value> = Vec::new();
+    let mut results: Vec<SymbolSearchRow> = Vec::new();
 
     if kind == "all" || kind == "macro" {
         for symbol in snapshot.language_index.macros() {
@@ -719,7 +985,13 @@ pub async fn search_symbols(
                 break;
             }
             if symbol.name.to_lowercase().contains(&query) {
-                results.push(json!({"kind":"macro","name":symbol.name,"location":format!("{}:{}", symbol.file, symbol.line),"file":symbol.file,"line":symbol.line,"column":symbol.column}));
+                results.push(SymbolSearchRow::Macro {
+                    name: symbol.name.to_string(),
+                    location: format!("{}:{}", symbol.file, symbol.line),
+                    file: symbol.file.to_string(),
+                    line: symbol.line,
+                    column: symbol.column,
+                });
             }
         }
     }
@@ -736,15 +1008,14 @@ pub async fn search_symbols(
                 .implementations
                 .first()
                 .expect("a resolved procedure has an implementation");
-            results.push(json!({
-                "kind": "proc",
-                "name": resolution.proc_name,
-                "type_path": resolution.implementation_owner,
-                "implementation_owner": resolution.implementation_owner,
-                "declaration_owner": resolution.declaration_owner,
-                "resolution_kind": resolution.resolution_kind,
-                "location": format!("{}:{}", first.location.file, first.location.line),
-            }));
+            results.push(SymbolSearchRow::Proc {
+                name: resolution.proc_name.clone(),
+                type_path: resolution.implementation_owner.clone(),
+                implementation_owner: resolution.implementation_owner.clone(),
+                declaration_owner: resolution.declaration_owner.clone(),
+                resolution_kind: resolution.resolution_kind,
+                location: format!("{}:{}", first.location.file, first.location.line),
+            });
         }
     }
 
@@ -756,14 +1027,10 @@ pub async fn search_symbols(
         // Search types
         if (kind == "all" || kind == "type") && ty.path.to_lowercase().contains(&query) {
             let file_path = get_file_path(context, ty.location.file);
-            results.push(json!({
-                "kind": "type",
-                "path": ty.path.to_string(),
-                "location": format!("{}:{}",
-                    file_path,
-                    ty.location.line
-                )
-            }));
+            results.push(SymbolSearchRow::Type {
+                path: ty.path.to_string(),
+                location: format!("{}:{}", file_path, ty.location.line),
+            });
         }
 
         // Search vars
@@ -774,25 +1041,20 @@ pub async fn search_symbols(
                 }
                 if name.to_lowercase().contains(&query) {
                     let file_path = get_file_path(context, var.value.location.file);
-                    results.push(json!({
-                        "kind": "var",
-                        "name": name.to_string(),
-                        "type_path": ty.path.to_string(),
-                        "location": format!("{}:{}",
-                            file_path,
-                            var.value.location.line
-                        )
-                    }));
+                    results.push(SymbolSearchRow::Var {
+                        name: name.to_string(),
+                        type_path: ty.path.to_string(),
+                        location: format!("{}:{}", file_path, var.value.location.line),
+                    });
                 }
             }
         }
     }
 
-    let result = json!({
-        "count": results.len(),
-        "results": results
-    });
-
+    let result = SearchSymbolsData {
+        count: results.len(),
+        results,
+    };
     crate::result::analysis_text(&snapshot, result)
 }
 
@@ -1546,15 +1808,30 @@ mod tests {
 
         assert_eq!(first_payload["count"], 1);
         assert_eq!(first_payload["total_count"], 2);
-        assert_eq!(first_payload["pagination"]["next_cursor"], "1");
+        let next_cursor = first_payload["pagination"]["next_cursor"]
+            .as_str()
+            .expect("an incomplete page supplies an opaque cursor");
+        assert!(next_cursor.starts_with("v2:1:"));
         assert_eq!(first_payload["truncated"], true);
+
+        let repeated = list_types(
+            &state,
+            crate::parameters::decode(json!({"prefix": "/datum/meridian_fixture", "limit": 1}))
+                .expect("valid fixture request"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result_json(&repeated)["pagination"]["next_cursor"],
+            next_cursor
+        );
 
         let second = list_types(
             &state,
             crate::parameters::decode(json!({
                 "prefix": "/datum/meridian_fixture",
                 "limit": 1,
-                "cursor": "1"
+                "cursor": next_cursor
             }))
             .expect("valid fixture request"),
         )
@@ -1563,6 +1840,7 @@ mod tests {
         let second_payload = result_json(&second);
 
         assert_eq!(second_payload["count"], 1);
+        assert_ne!(first_payload["types"][0], second_payload["types"][0]);
         assert_eq!(second_payload["pagination"]["has_more"], false);
         assert!(second_payload["pagination"]["next_cursor"].is_null());
         assert_eq!(second_payload["truncated"], false);

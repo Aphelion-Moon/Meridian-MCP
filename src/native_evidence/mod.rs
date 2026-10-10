@@ -255,14 +255,14 @@ fn run_identity(
     })
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct ComparisonResult {
     pub schema: u32,
     pub build_record_id: String,
     pub run_count: usize,
     pub metrics: BTreeMap<String, ComparisonMetric>,
 }
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct ComparisonMetric {
     pub values: Vec<f64>,
     pub absolute_delta: Option<f64>,

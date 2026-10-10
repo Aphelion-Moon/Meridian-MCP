@@ -21,6 +21,12 @@ Update this table only from fresh, reproducible evidence. Never infer platform s
 
 For the upstream feature mapping, repaired inheritance behavior, and explicit exclusions, see the [SpacemanDMM support audit](audits/2026-09-06-spacemandmm-support.md). Registry coverage is not a claim of full editor parity or completed platform qualification.
 
+## Client shutdown limits
+
+An isolated Windows check of Codex CLI `0.159.0-alpha.12.1` against release `8c223a0` negotiated `2025-06-18` and passed discovery, structured/text equality, strict input rejection, fixture parsing and semantic queries. Closing the app-server's input during an active controlled compile exited the client with code 0 and its exact MCP child with code 1. The compiler connection closed, but the execution and attempt records remained active: confirmed cleanup failed. The exit observation does not establish why the MCP process exited.
+
+That client shutdown path is not qualified for graceful mutation cleanup. Close the client after active work completes and owned runtimes stop. After an interrupted mutation, preserve the state and its quarantine; do not automatically retry the operation or erase records. Direct MCP cancellation/EOF cleanup and forced-owner-loss quarantine have separate controlled-process coverage; neither proves this client's shutdown behavior. Automatic crash recovery remains unsupported.
+
 ## Named Meridian-Rift gate
 
 The scheduled/manual workflow keeps three claims independent. `windows-meridian-compatibility` runs on the explicitly pinned Windows Server 2022 image, drives the release binary through stdio MCP, parses the real `tgstation.dme`, runs the versioned lookup/definition/search manifest, records direct and full-build artifacts, then runs the small owned auxtools protocol fixture and owned Tracy live fixture. The auxtools gate does not boot Meridian-Rift because full-game initialization time is not debugger wire compatibility; the preceding real-repository gates still prove Meridian-Rift compilation and analysis. The fixed image remains part of the live-hook compatibility baseline. `prototype-parser-compatibility` proves that the freshly built MCP/SpacemanDMM stack parses 65,537 declared fixture leaves and resolves the first, boundary, and last paths on Windows and Ubuntu. `prototype-runtime-compatibility` starts compact 50,000-leaf control and 65,537-leaf boundary worlds under BYOND 516.1687. A synthetic failure cannot skip the Windows product gates.

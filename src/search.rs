@@ -191,25 +191,66 @@ impl SearchIndex {
         self.documents.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn proc_source(
         &self,
         owner: &str,
         name: &str,
         override_index: usize,
     ) -> Option<&SourceExcerpt> {
+        self.proc_document(owner, name, override_index)?
+            .source
+            .as_ref()
+    }
+
+    pub(crate) fn type_document(&self, path: &str) -> Option<&SearchDocument> {
+        self.exact_document(path, SymbolKind::Type, path, None, None)
+    }
+
+    pub(crate) fn var_document(&self, owner: &str, name: &str) -> Option<&SearchDocument> {
+        self.exact_document(
+            &member_symbol(owner, "var", name),
+            SymbolKind::Var,
+            owner,
+            Some(name),
+            None,
+        )
+    }
+
+    pub(crate) fn proc_document(
+        &self,
+        owner: &str,
+        name: &str,
+        override_index: usize,
+    ) -> Option<&SearchDocument> {
+        self.exact_document(
+            &member_symbol(owner, "proc", name),
+            SymbolKind::Proc,
+            owner,
+            Some(name),
+            Some(override_index),
+        )
+    }
+
+    fn exact_document(
+        &self,
+        symbol: &str,
+        kind: SymbolKind,
+        owner: &str,
+        name: Option<&str>,
+        override_index: Option<usize>,
+    ) -> Option<&SearchDocument> {
         self.exact_symbols
-            .get(&member_symbol(owner, "proc", name).to_lowercase())?
+            .get(&symbol.to_lowercase())?
             .as_slice()
             .iter()
             .map(|index| &self.documents[*index])
             .find(|document| {
-                document.kind == SymbolKind::Proc
+                document.kind == kind
                     && document.type_path == owner
-                    && document.name == name
-                    && document.override_index == Some(override_index)
-            })?
-            .source
-            .as_ref()
+                    && name.is_none_or(|name| document.name == name)
+                    && document.override_index == override_index
+            })
     }
 
     pub(crate) fn source_line_limit(&self) -> usize {

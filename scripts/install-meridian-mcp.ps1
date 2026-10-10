@@ -18,6 +18,9 @@ $ErrorActionPreference = 'Stop'
 $binary = (Resolve-Path -LiteralPath $BinaryPath).Path
 $manifestPath = (Resolve-Path -LiteralPath $HelperManifestPath).Path
 $auxRoot = (Resolve-Path -LiteralPath $AuxtoolsRoot).Path
+$projectLicense = Join-Path $PSScriptRoot '../LICENSE'
+if (-not (Test-Path -LiteralPath $projectLicense -PathType Leaf)) { throw 'The Meridian-MCP license is missing beside the installer source tree.' }
+Get-FileHash -Algorithm SHA256 -LiteralPath $projectLicense | Out-Null
 $destination = [IO.Path]::GetFullPath($DestinationRoot)
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
 $resolvedWorkspaceRoots = @($WorkspaceRoots | ForEach-Object {
@@ -77,6 +80,55 @@ foreach ($helper in $selectedHelpers) {
 	if ((Get-FileHash -Algorithm SHA256 -LiteralPath $helperSource).Hash.ToLowerInvariant() -ne $helper.sha256) { throw "Source $($helper.id) helper hash mismatch." }
 }
 
+# Manifests may be outside the package; maintained helpers live in helpers/bin/<platform>.
+$manifestDirectory = Split-Path -Parent $manifestPath
+$licenseDirectories = @(
+	Join-Path $manifestDirectory 'licenses'
+	Join-Path $manifestDirectory 'helpers/licenses'
+	foreach ($helper in $selectedHelpers) {
+		$helperSource = [IO.Path]::GetFullPath((Join-Path $manifestDirectory $helper.path))
+		$binDirectory = Split-Path -Parent (Split-Path -Parent $helperSource)
+		$helperDirectory = Split-Path -Parent $binDirectory
+		if ((Split-Path -Leaf $binDirectory) -eq 'bin' -and (Split-Path -Leaf $helperDirectory) -eq 'helpers') {
+			Join-Path $helperDirectory 'licenses'
+		}
+	}
+) | Select-Object -Unique
+$requiredNotices = @($selectedHelpers | ForEach-Object {
+	switch ($_.id) {
+		'dmdoc' { 'SpacemanDMM-LICENSE' }
+		'tracy-server-helper' {
+			'tracy-LICENSE', 'tracy-json-LICENSE', 'tracy-capstone-LICENSE',
+			'tracy-capstone-LLVM-LICENSE', 'tracy-capstone-BSD-LICENSE',
+			'tracy-zstd-LICENSE', 'tracy-zstd-COPYING', 'tracy-ppqsort-LICENSE',
+			'tracy-lz4-NOTICE', 'tracy-lz4hc-NOTICE', 'tracy-robin-hood-NOTICE',
+			'tracy-xxhash-NOTICE', 'tracy-pdqsort-NOTICE'
+		}
+		'byond-tracy' { 'byond-tracy-LICENSE', 'byond-tracy-lz4-NOTICE' }
+		default { throw "No package notice mapping is defined for helper $($_.id)." }
+	}
+} | Select-Object -Unique)
+$noticeSources = [ordered]@{}
+foreach ($name in $requiredNotices) {
+	$sourceNotices = @($licenseDirectories | ForEach-Object { Join-Path $_ $name } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+	if ($sourceNotices.Count -eq 0) { throw "Required helper notice is missing: $name. Rebuild the helper package with the maintained scripts." }
+	if (@($sourceNotices | ForEach-Object { (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash } | Select-Object -Unique).Count -ne 1) { throw "Conflicting helper notices: $name." }
+	$noticeSources[$name] = $sourceNotices[0]
+}
+$auxSource = Join-Path $auxRoot 'helpers/auxtools/v2.3.7/debug_server.dll'
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $auxSource).Hash.ToLowerInvariant() -ne 'b188999ac58a0e0171b015c39a403ab7da2f37ddb8ac3817a078f5bce02a8be7') { throw 'Source auxtools hash mismatch.' }
+$auxNoticeNames = [ordered]@{
+	'LICENSE' = 'auxtools-LICENSE'
+	'LICENSE-debug-server' = 'auxtools-debug-server-LICENSE'
+	'UPSTREAM-README.md' = 'auxtools-UPSTREAM-README.md'
+}
+foreach ($entry in $auxNoticeNames.GetEnumerator()) {
+	$auxNotice = Join-Path $auxRoot "helpers/auxtools/v2.3.7/$($entry.Key)"
+	if (-not (Test-Path -LiteralPath $auxNotice -PathType Leaf)) { throw "The upstream auxtools notice is missing: $($entry.Key). Restage auxtools with the maintained fetch script." }
+	Get-FileHash -Algorithm SHA256 -LiteralPath $auxNotice | Out-Null
+	$noticeSources[$entry.Value] = $auxNotice
+}
+
 function Install-File([string]$Source, [string]$Target) {
 	$parent = Split-Path -Parent $Target
 	New-Item -ItemType Directory -Force -Path $parent | Out-Null
@@ -107,8 +159,14 @@ if (-not [string]::IsNullOrWhiteSpace($MemoryHelperDirectory)) {
 		if ($entry.Count -ne 1 -or $entry[0].patch_sha256 -ne $expectedHash) { throw 'Native memory source overlay mismatch.' }
 	}
 	if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $memoryRoot 'debug_server.dll')).Hash.ToLowerInvariant() -ne $memoryEntry.sha256) { throw 'Native memory helper checksum mismatch.' }
+	foreach ($name in @('LICENSE', 'LICENSE-debug-server', 'UPSTREAM-README.md')) {
+		$memoryNotice = Join-Path $memoryRoot $name
+		if (-not (Test-Path -LiteralPath $memoryNotice -PathType Leaf)) { throw "The upstream native memory helper notice is missing: $name" }
+		Get-FileHash -Algorithm SHA256 -LiteralPath $memoryNotice | Out-Null
+	}
 }
 Install-File $binary $installedBinary
+Install-File $projectLicense (Join-Path $destination 'LICENSE')
 $installedHelpers = @()
 foreach ($helper in $selectedHelpers) {
 	$helperSource = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $manifestPath) $helper.path))
@@ -130,12 +188,14 @@ foreach ($helper in $selectedHelpers) {
 	if ($null -ne $helper.telemetry) { $installedEntry.telemetry = $helper.telemetry }
 	$installedHelpers += $installedEntry
 }
-$auxSource = Join-Path $auxRoot 'helpers/auxtools/v2.3.7/debug_server.dll'
 $auxTarget = Join-Path $destination 'helpers/auxtools/v2.3.7/debug_server.dll'
 Install-File $auxSource $auxTarget
 if ((Get-FileHash -Algorithm SHA256 -LiteralPath $auxTarget).Hash.ToLowerInvariant() -ne 'b188999ac58a0e0171b015c39a403ab7da2f37ddb8ac3817a078f5bce02a8be7') { throw 'Installed auxtools hash mismatch.' }
+foreach ($notice in $noticeSources.GetEnumerator()) {
+	Install-File $notice.Value (Join-Path $destination "helpers/licenses/$($notice.Key)")
+}
 if (-not [string]::IsNullOrWhiteSpace($MemoryHelperDirectory)) {
-	foreach ($name in @('debug_server.dll','manifest.json','LICENSE')) {
+	foreach ($name in @('debug_server.dll','manifest.json','LICENSE','LICENSE-debug-server','UPSTREAM-README.md')) {
 		Install-File (Join-Path $memoryRoot $name) (Join-Path $destination "helpers/auxtools-memory/$name")
 	}
 }

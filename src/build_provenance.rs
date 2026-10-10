@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ProjectBuildIdentity {
     pub root: PathBuf,
     pub repository_identity: String,
@@ -16,7 +16,7 @@ pub struct ProjectBuildIdentity {
     pub dirty: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct BuildInputIdentity {
     pub path: PathBuf,
     #[serde(default)]
@@ -51,8 +51,18 @@ impl BuildInputIdentity {
         path: &Path,
         role: impl Into<String>,
     ) -> Result<Self> {
+        Self::capture_authorized_checked(policy, root, path, role, || Ok(()))
+    }
+
+    fn capture_authorized_checked(
+        policy: &PathPolicy,
+        root: &Path,
+        path: &Path,
+        role: impl Into<String>,
+        checkpoint: impl Fn() -> Result<()>,
+    ) -> Result<Self> {
         let resolved = policy.read_path(path)?;
-        let identity = FileIdentity::capture(&resolved)?;
+        let identity = FileIdentity::capture_checked(&resolved, checkpoint)?;
         Ok(Self {
             path: path.to_owned(),
             resolved_path: Some(identity.path),
@@ -67,7 +77,7 @@ impl BuildInputIdentity {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct BuildVerification {
     pub method: String,
     pub arguments: Vec<String>,
@@ -75,7 +85,7 @@ pub struct BuildVerification {
     pub absent_inputs: Vec<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct BuildRecord {
     pub schema: u32,
     pub record_id: String,
@@ -92,7 +102,7 @@ pub struct BuildRecord {
     pub created_at_unix_ms: u128,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum BuildAttemptOutcome {
     InProgress,
@@ -102,7 +112,7 @@ pub enum BuildAttemptOutcome {
     Unverified { code: String },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct BuildAttempt {
     pub schema: u32,
     pub attempt_id: String,
@@ -113,7 +123,7 @@ pub struct BuildAttempt {
     pub created_at_unix_ms: u128,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProvenanceStatus {
     Verified,
@@ -121,7 +131,7 @@ pub enum ProvenanceStatus {
     Stale,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct ProvenanceReason {
     pub code: String,
     pub message: String,
@@ -129,7 +139,7 @@ pub struct ProvenanceReason {
     pub path: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct LaunchDecision {
     pub status: ProvenanceStatus,
     pub allowed: bool,
@@ -137,7 +147,7 @@ pub struct LaunchDecision {
     pub reasons: Vec<ProvenanceReason>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct LaunchProvenance {
     pub status: ProvenanceStatus,
     pub build_record_id: Option<String>,
@@ -145,7 +155,7 @@ pub struct LaunchProvenance {
     pub warnings: Vec<ProvenanceReason>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 struct ArtifactLocation {
     schema: u32,
     artifact_key: String,
@@ -153,7 +163,7 @@ struct ArtifactLocation {
 
 // A single replacement publishes the managed marker, attempt, and last build.
 // Legacy location/build/attempt records remain read-only during a quiesced upgrade.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 struct ArtifactState {
     schema: u32,
     artifact_key: String,
@@ -204,9 +214,20 @@ impl BuildProvenanceStore {
         dmb_path: &Path,
         inputs: Vec<BuildInputIdentity>,
     ) -> Result<BuildAttempt> {
+        self.begin_attempt_checked(dmb_path, inputs, || Ok(()))
+    }
+
+    pub(crate) fn begin_attempt_checked(
+        &self,
+        dmb_path: &Path,
+        inputs: Vec<BuildInputIdentity>,
+        checkpoint: impl Fn() -> Result<()>,
+    ) -> Result<BuildAttempt> {
+        checkpoint()?;
         let dmb_path = self.authorized_location(dmb_path)?;
         let key = location_key(&dmb_path)?;
         let transaction = self.state.transaction()?;
+        checkpoint()?;
         let previous = self.load_state(&transaction, &dmb_path, &key)?;
         // Legacy location pointers may identify another artifact. Retain their
         // stale evidence in the legacy store, not as this location's last build.
@@ -223,6 +244,7 @@ impl BuildProvenanceStore {
             retained_dmb_sha256: None,
             created_at_unix_ms: unix_ms(),
         };
+        checkpoint()?;
         transaction.write_json_atomic(
             &state_path(&key),
             &ArtifactState {
@@ -434,9 +456,20 @@ impl BuildProvenanceStore {
         dmb_path: &Path,
         require_verified: bool,
     ) -> Result<LaunchDecision> {
+        self.evaluate_launch_checked(dmb_path, require_verified, || Ok(()))
+    }
+
+    pub(crate) fn evaluate_launch_checked(
+        &self,
+        dmb_path: &Path,
+        require_verified: bool,
+        checkpoint: impl Fn() -> Result<()>,
+    ) -> Result<LaunchDecision> {
+        checkpoint()?;
         let dmb_path = self.authorized_location(dmb_path)?;
         let requested_location = location_key(&dmb_path)?;
         let transaction = self.state.transaction()?;
+        checkpoint()?;
         let Some(state) = self.load_state(&transaction, &dmb_path, &requested_location)? else {
             return Ok(unverified(require_verified));
         };
@@ -481,7 +514,8 @@ impl BuildProvenanceStore {
             ));
         }
         for input in &record.inputs {
-            match FileIdentity::capture(&input.path) {
+            checkpoint()?;
+            match FileIdentity::capture_checked(&input.path, &checkpoint) {
                 Ok(current)
                     if current.size == input.size
                         && current.sha256 == input.sha256
@@ -502,6 +536,7 @@ impl BuildProvenanceStore {
                     Some(input.path.clone()),
                 )),
             }
+            checkpoint()?;
         }
         if let Some(verification) = &record.verification {
             for path in &verification.absent_inputs {
@@ -515,15 +550,23 @@ impl BuildProvenanceStore {
                 }
             }
         }
-        compare_output(
+        compare_output_checked(
             &record.dmb,
             "dmb_changed",
             "the managed DMB changed",
             &mut reasons,
-        );
+            &checkpoint,
+        )?;
         if let Some(rsc) = &record.rsc {
-            compare_output(rsc, "rsc_changed", "the managed RSC changed", &mut reasons);
+            compare_output_checked(
+                rsc,
+                "rsc_changed",
+                "the managed RSC changed",
+                &mut reasons,
+                &checkpoint,
+            )?;
         }
+        checkpoint()?;
 
         {
             if !matches!(attempt.outcome, BuildAttemptOutcome::Succeeded) {
@@ -609,18 +652,21 @@ impl BuildProvenanceStore {
     }
 }
 
-fn compare_output(
+fn compare_output_checked(
     recorded: &FileIdentity,
     code: &str,
     message: &str,
     reasons: &mut Vec<ProvenanceReason>,
-) {
+    checkpoint: &impl Fn() -> Result<()>,
+) -> Result<()> {
     if !matches!(
-        FileIdentity::capture(&recorded.path),
+        FileIdentity::capture_checked(&recorded.path, checkpoint),
         Ok(current) if current.size == recorded.size && current.sha256 == recorded.sha256
     ) {
         reasons.push(reason(code, message, None, Some(recorded.path.clone())));
     }
+    checkpoint()?;
+    Ok(())
 }
 
 fn unverified(require_verified: bool) -> LaunchDecision {
@@ -698,7 +744,8 @@ pub(crate) struct PreparedBuild {
 }
 
 impl PreparedBuild {
-    pub fn capture(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn capture_checked(
         policy: &PathPolicy,
         snapshot: Option<&crate::analysis_snapshot::AnalysisSnapshot>,
         fixture: Option<&crate::fixture_manifest::VerifiedFixtureManifest>,
@@ -706,10 +753,12 @@ impl PreparedBuild {
         compiler: &Path,
         arguments: Vec<String>,
         working_directory: PathBuf,
+        checkpoint: impl Fn() -> Result<()>,
     ) -> Result<Self> {
+        checkpoint()?;
         let mut prepared = Self {
             inputs: Vec::new(),
-            compiler: FileIdentity::capture(compiler)?,
+            compiler: FileIdentity::capture_checked(compiler, &checkpoint)?,
             verification: BuildVerification {
                 method: "literal_dm_closure_v1".to_owned(),
                 arguments,
@@ -731,6 +780,7 @@ impl PreparedBuild {
         let mut pending = vec![dme.to_owned()];
         let mut visited = std::collections::BTreeSet::new();
         while let Some(path) = pending.pop() {
+            checkpoint()?;
             if visited.len() >= 10_000 {
                 prepared.reason = Some("build_input_limit");
                 break;
@@ -738,10 +788,16 @@ impl PreparedBuild {
             if !visited.insert(path.clone()) {
                 continue;
             }
-            let input = match BuildInputIdentity::capture_authorized(policy, root, &path, "source")
-            {
+            let input = match BuildInputIdentity::capture_authorized_checked(
+                policy,
+                root,
+                &path,
+                "source",
+                &checkpoint,
+            ) {
                 Ok(input) => input,
                 Err(_) => {
+                    checkpoint()?;
                     prepared.reason = Some("build_input_unavailable");
                     continue;
                 }
@@ -880,7 +936,9 @@ impl PreparedBuild {
             if let Some(reason) = checkpoint() {
                 return Some(reason);
             }
-            let current = FileIdentity::capture(&input.path);
+            let current = FileIdentity::capture_checked(&input.path, || {
+                checkpoint().map_or(Ok(()), |reason| Err(anyhow!(reason)))
+            });
             if let Some(reason) = checkpoint() {
                 return Some(reason);
             }
@@ -902,7 +960,9 @@ impl PreparedBuild {
         if let Some(reason) = checkpoint() {
             return Some(reason);
         }
-        let compiler = FileIdentity::capture(&self.compiler.path);
+        let compiler = FileIdentity::capture_checked(&self.compiler.path, || {
+            checkpoint().map_or(Ok(()), |reason| Err(anyhow!(reason)))
+        });
         if let Some(reason) = checkpoint() {
             return Some(reason);
         }
@@ -948,8 +1008,14 @@ mod publication_tests {
             None,
             Some(state.clone()),
         );
-        let (cancel, cancellation) = tokio::sync::watch::channel(false);
-        context.cancellation = Some(cancellation);
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let original = cancel.clone();
+        context = context.for_request(
+            tokio::time::Instant::now(),
+            "publication".into(),
+            Arc::new(move || original.load(std::sync::atomic::Ordering::SeqCst)),
+            None,
+        );
         let inputs = vec![BuildInputIdentity::capture(&root, &input, "source").unwrap()];
         let mut record = BuildRecord {
             schema: 2,
@@ -990,7 +1056,7 @@ mod publication_tests {
                 })
                 .unwrap()
         });
-        cancel.send(true).unwrap();
+        cancel.store(true, std::sync::atomic::Ordering::SeqCst);
         drop(publication);
         assert_eq!(publisher.join().unwrap(), Some("request_cancelled"));
         let current: ArtifactState = state.read_json(&state_path(&key)).unwrap();

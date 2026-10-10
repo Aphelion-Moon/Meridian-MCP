@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 
 use crate::{EffectiveRoot, RootSource};
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct PolicyContext {
     pub containment_mode: &'static str,
     pub policy_source: &'static str,
     pub effective_roots: Vec<EffectiveRoot>,
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
 pub struct PathPolicyStatus {
     #[serde(rename = "mode")]
     pub containment_mode: &'static str,

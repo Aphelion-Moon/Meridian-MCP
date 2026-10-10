@@ -29,43 +29,7 @@ impl ResponseOptions {
     }
 }
 
-// serde_json uses these escapes for string contents. Count UTF-8 and JSON bytes
-// separately, since a captured control byte can become six response bytes.
-fn json_char_bytes(ch: char) -> usize {
-    match ch {
-        '"' | '\\' | '\u{8}' | '\t' | '\n' | '\u{c}' | '\r' => 2,
-        '\0'..='\u{1f}' => 6,
-        _ => ch.len_utf8(),
-    }
-}
-
-pub(super) fn bounded_text(text: &str, raw_limit: usize, json_limit: usize, tail: bool) -> &str {
-    let mut raw_bytes = 0;
-    let mut json_bytes = 2; // quotes
-    let mut add = |ch: char| {
-        if raw_bytes + ch.len_utf8() > raw_limit || json_bytes + json_char_bytes(ch) > json_limit {
-            return false;
-        }
-        raw_bytes += ch.len_utf8();
-        json_bytes += json_char_bytes(ch);
-        true
-    };
-    if tail {
-        for ch in text.chars().rev() {
-            if !add(ch) {
-                break;
-            }
-        }
-        &text[text.len() - raw_bytes..]
-    } else {
-        for ch in text.chars() {
-            if !add(ch) {
-                break;
-            }
-        }
-        &text[..raw_bytes]
-    }
-}
+pub(super) use crate::result::bounded_text;
 
 pub(super) fn json_bytes(value: &Value) -> usize {
     // Values constructed here contain no fallible user-defined serializers.
@@ -258,7 +222,7 @@ fn take_output(
     (output, output_summary)
 }
 
-pub(super) fn format_helper(mut result: Value, options: ResponseOptions) -> Result<String> {
+fn helper_projection(mut result: Value, options: ResponseOptions) -> Result<Value> {
     let (output, output_summary) = take_output(&mut result, &options);
     let capture_truncated = ["stdout_truncated_bytes", "stderr_truncated_bytes"]
         .iter()
@@ -297,18 +261,27 @@ pub(super) fn format_helper(mut result: Value, options: ResponseOptions) -> Resu
     result["output_summary"] = Value::Object(output_summary);
     let text = serde_json::to_string(&result)?;
     debug_assert!(text.len() <= 256 * 1024, "helper response budget");
-    Ok(text)
+    Ok(result)
 }
 
+#[cfg(test)]
+pub(super) fn format_helper(result: Value, options: ResponseOptions) -> Result<String> {
+    Ok(serde_json::to_string(&helper_projection(result, options)?)?)
+}
+
+#[cfg(test)]
 pub(super) fn format(mut result: Value, options: ResponseOptions) -> Result<String> {
-    format_build(&mut result, options, false)
+    format_build(&mut result, options, false)?;
+    Ok(serde_json::to_string(&result)?)
 }
 
+#[cfg(test)]
 pub(super) fn format_rift(mut result: Value, options: ResponseOptions) -> Result<String> {
-    format_build(&mut result, options, true)
+    format_build(&mut result, options, true)?;
+    Ok(serde_json::to_string(&result)?)
 }
 
-fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Result<String> {
+fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Result<()> {
     let (output, output_summary) = take_output(result, &options);
     let mut diagnostic_summary = result.as_object_mut().unwrap().remove("diagnostic_summary").unwrap_or_else(|| json!({
         "capture_complete": result["stdout_truncated_bytes"] == 0 && result["stderr_truncated_bytes"] == 0,
@@ -343,7 +316,45 @@ fn format_build(result: &mut Value, options: ResponseOptions, rift: bool) -> Res
     result["diagnostic_summary"] = diagnostic_summary;
     let text = serde_json::to_string(&result)?;
     debug_assert!(text.len() <= REPLY_JSON_BYTES, "compiler response budget");
-    Ok(text)
+    Ok(())
+}
+
+pub(super) fn project_compile(
+    data: crate::outputs::CompileData,
+    options: ResponseOptions,
+) -> Result<crate::outputs::CompileData> {
+    let mut value = serde_json::to_value(data)?;
+    format_build(&mut value, options, false)?;
+    Ok(serde_json::from_value(value)?)
+}
+pub(super) fn project_rift(
+    data: crate::outputs::RiftCompileData<crate::outputs::RiftDiagnosticData>,
+    options: ResponseOptions,
+) -> Result<crate::outputs::RiftCompileData> {
+    let mut value = serde_json::to_value(data)?;
+    format_build(&mut value, options, true)?;
+    Ok(serde_json::from_value(value)?)
+}
+pub(super) fn project_helper(
+    data: crate::outputs::DocsData,
+    options: ResponseOptions,
+) -> Result<crate::outputs::HelperProjection> {
+    let mut value = helper_projection(serde_json::to_value(data)?, options)?;
+    let object = value.as_object_mut().expect("bounded helper object");
+    let truncated =
+        serde_json::from_value(object.remove("truncated").expect("formatter truncation"))?;
+    let truncation_reasons = serde_json::from_value(
+        object
+            .remove("truncation_reasons")
+            .expect("formatter reasons"),
+    )?;
+    // Deserialize the named DTO directly: Serde's flattened content deserializer
+    // does not support u128, which our existing duration fields intentionally use.
+    Ok(crate::outputs::HelperProjection {
+        data: serde_json::from_value(value)?,
+        truncated,
+        truncation_reasons,
+    })
 }
 
 #[cfg(test)]
@@ -482,3 +493,6 @@ mod tests {
         }
     }
 }
+
+// The existing field budgets operate on JSON values, while both sides of this
+// boundary remain named projections. No formatted compatibility text is parsed.

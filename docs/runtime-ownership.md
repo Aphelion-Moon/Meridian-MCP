@@ -19,8 +19,9 @@ Do not opt a shared general-purpose host into this lifetime policy accidentally.
 Uninitialized library launches fail closed with an actionable error. Existing
 unrelated processes are never found or terminated by a stored PID.
 
-Clean stdio EOF and transport errors call `MeridianServer::shutdown()`. It stops the
-runtime before integrity finalization, with a five-second overall deadline. A
+Clean stdio EOF and transport errors call `MeridianServer::shutdown()`. It cancels
+and drains strongly registered request owners, stops sessions before integrity
+finalization, and drains non-abortable workers with a five-second overall deadline. A
 timeout is an error; the kernel ownership fallback remains active until owner exit.
 Forced owner loss cannot finalize an integrity journal. Existing unfinished-journal
 recovery remains a separate operation and never kills a process from persisted PID
@@ -42,8 +43,17 @@ exec failure cleans up without executing uncontained target code.
 
 Unix library embeddings configure an absolute Meridian executable through
 `process::initialize_runtime_owner_with_executable`. The normal binary configures
-itself. Analysis-only embeddings need no guardian configuration. Generic process
-runner and independent collector containment retain their existing behavior.
+itself. Analysis-only embeddings need no guardian configuration. The shared process
+runner and owned collector startup also use this containment path. Cancellation
+does not release a compiler's execution scope while its worker or final evidence
+publication remains active. A blocking worker retains its pool permit after its
+caller stops waiting, and shutdown requires its actual completion acknowledgement.
+
+The executable separately bounds Tokio runtime shutdown. This cannot abort an
+already running blocking closure or establish cleanup proof. Cleanup overrun and
+owner death leave durable active execution state quarantined even when its OS
+lease becomes available; a free lock or a missing PID does not prove child exit.
+Automatic recovery of that quarantine is outside the supported boundary.
 
 Natural exit retains cleanup ownership until termination is confirmed. Standard
 integrity finalization and Tracy post-stop finalization wait for this boundary.

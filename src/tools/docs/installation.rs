@@ -1,6 +1,6 @@
 use crate::atomic_output::rename_without_replace;
+use crate::outputs::DocsInstallation;
 use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -79,7 +79,7 @@ impl StagingDirectory {
         }
     }
 
-    pub fn install(&mut self, output: &Path, overwrite: bool) -> Result<Value> {
+    pub fn install(&mut self, output: &Path, overwrite: bool) -> Result<DocsInstallation> {
         self.install_with(output, overwrite, rename_without_replace)
     }
 
@@ -88,7 +88,7 @@ impl StagingDirectory {
         output: &Path,
         overwrite: bool,
         mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
-    ) -> Result<Value> {
+    ) -> Result<DocsInstallation> {
         let exists = validate_directory_target(output)?;
         if exists && !overwrite {
             return Err(anyhow!("output exists; set overwrite=true"));
@@ -110,17 +110,22 @@ impl StagingDirectory {
         };
 
         if let Err(install) = rename(&self.path, output) {
-            let mut report = json!({"installed":false,"success":false,"code":"documentation_install_failed","message":install.to_string()});
+            let mut report = DocsInstallation {
+                cleanup_complete: true,
+                code: Some("documentation_install_failed".into()),
+                message: Some(install.to_string()),
+                ..Default::default()
+            };
             if let Some(backup) = backup {
                 match rename(&backup.join("previous"), output) {
                     Ok(()) => {
-                        report["previous_restored"] = json!(true);
+                        report.previous_restored = Some(true);
                         if let Err(error) = std::fs::remove_dir(&backup) {
                             recovery(&mut report, &backup, &error.to_string());
                         }
                     }
                     Err(error) => {
-                        report["previous_restored"] = json!(false);
+                        report.previous_restored = Some(false);
                         recovery(&mut report, &backup, &error.to_string());
                     }
                 }
@@ -128,11 +133,16 @@ impl StagingDirectory {
             return Ok(report);
         }
         self.armed = false;
-        let mut report = json!({"installed":true,"success":true,"cleanup_complete":true});
+        let mut report = DocsInstallation {
+            installed: true,
+            success: true,
+            cleanup_complete: true,
+            ..Default::default()
+        };
         if let Some(backup) = backup {
             if let Err(error) = std::fs::remove_dir_all(&backup) {
-                report["success"] = json!(false);
-                report["code"] = json!("documentation_cleanup_incomplete");
+                report.success = false;
+                report.code = Some("documentation_cleanup_incomplete".into());
                 recovery(&mut report, &backup, &error.to_string());
             }
         }
@@ -148,12 +158,12 @@ impl Drop for StagingDirectory {
     }
 }
 
-fn recovery(report: &mut Value, backup: &Path, message: &str) {
-    report["cleanup_complete"] = json!(false);
-    report["backup_directory"] = json!(backup);
-    report["backup_name"] = json!(backup.file_name());
-    report["cleanup_error"] = json!(message);
-    report["recovery"] = json!("Inspect the installed output and retained backup before retrying. Restore needed previous files from the backup's previous directory.");
+fn recovery(report: &mut DocsInstallation, backup: &Path, message: &str) {
+    report.cleanup_complete = false;
+    report.backup_directory = Some(backup.into());
+    report.backup_name = backup.file_name().map(|v| v.to_string_lossy().into_owned());
+    report.cleanup_error = Some(message.into());
+    report.recovery=Some("Inspect the installed output and retained backup before retrying. Restore needed previous files from the backup's previous directory.".into());
 }
 
 pub(super) fn validate_directory_target(output: &Path) -> Result<bool> {
@@ -204,6 +214,7 @@ mod tests {
                 rename_without_replace(source, destination)
             })
             .unwrap();
+        let report = serde_json::to_value(report).unwrap();
         assert_eq!(report["installed"], false);
         assert_eq!(report["previous_restored"], false);
         assert_eq!(report["cleanup_complete"], false);
@@ -235,6 +246,7 @@ mod tests {
         let (mut root, mut stage, output) = replacement_fixture();
         let held = lock_file(&stage.path.join("index.html"));
         let report = stage.install(&output, true).unwrap();
+        let report = serde_json::to_value(report).unwrap();
         assert_eq!(report["installed"], false);
         assert_eq!(report["previous_restored"], true);
         assert_eq!(
@@ -262,6 +274,7 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+        let report = serde_json::to_value(report).unwrap();
         assert_eq!(report["installed"], true);
         assert_eq!(report["success"], false);
         assert_eq!(report["code"], "documentation_cleanup_incomplete");

@@ -241,9 +241,12 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
     }
     drop(state);
     drop(context);
+    // Temporary-directory aliases can differ from the canonical path reported by the child.
+    let expected_artifacts = normalize_spawn_path(&artifacts.canonicalize().unwrap());
+    let expected_requested = normalize_spawn_path(&requested.canonicalize().unwrap());
     std::fs::remove_dir_all(&root).unwrap();
     let problems: Vec<_> = outcomes.iter().filter_map(|(case,result,stopped)| {
-        let expected = if *case == "default" { &artifacts } else { &requested };
+        let expected = if *case == "default" { &expected_artifacts } else { &expected_requested };
         let lines = result["readiness"]["recent_output"].as_array().cloned().unwrap_or_default();
         let expected_cwd = format!("LAUNCH_CWD:{}", expected.display());
         let has_cwd = lines.iter().any(|line| line == &expected_cwd);
@@ -252,7 +255,7 @@ async fn launch_uses_requested_directory_and_preserves_artifact_integrity_scope(
         let expected_cd = expected.display().to_string();
         let has_cd = args.windows(2).any(|pair| pair == ["-cd", &expected_cd]);
         let tracks_artifact = *case != "absolute" || stopped["integrity"]["warnings"].as_array().is_some_and(|warnings| warnings.iter().any(|warning| warning["relative_path"] == "tracked.dm"));
-        (result["success"] != true || result["working_directory"] != expected_cd || !has_cwd || !has_bind || !has_cd || !tracks_artifact).then(|| format!("{case}: cwd={has_cwd}, explicit_cd={has_cd}, loopback={has_bind}, artifact_integrity={tracks_artifact}, result={result}"))
+        (result["success"] != true || result["working_directory"] != expected_cd || !has_cwd || !has_bind || !has_cd || !tracks_artifact).then(|| format!("{case}: expected={expected_cd}, cwd={has_cwd}, explicit_cd={has_cd}, loopback={has_bind}, artifact_integrity={tracks_artifact}, result={result}"))
     }).collect();
     assert!(problems.is_empty(), "{}", problems.join("\n"));
     assert!(previous_id.is_some(), "launch must identify its runtime");

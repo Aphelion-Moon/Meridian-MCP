@@ -171,7 +171,9 @@ pub struct BoundedOutput {
     pub truncated_bytes: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminationReason {
     Exited,
@@ -196,6 +198,7 @@ pub struct ProcessSpec {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ProcessOutcome {
+    pub process_started: bool,
     pub exit_code: Option<i32>,
     pub termination: TerminationReason,
     pub duration_ms: u128,
@@ -337,6 +340,7 @@ async fn run_process_observed(
         .is_some_and(|receiver| *receiver.borrow())
     {
         return Ok(ProcessOutcome {
+            process_started: false,
             exit_code: None,
             termination: TerminationReason::Cancelled,
             duration_ms: started_at.elapsed().as_millis(),
@@ -374,6 +378,7 @@ async fn run_process_observed(
             }
             let message = format!("failed to spawn {}: {error}", spec.program.display());
             return Ok(ProcessOutcome {
+                process_started: false,
                 exit_code: None,
                 termination: TerminationReason::SpawnFailed,
                 duration_ms: started_at.elapsed().as_millis(),
@@ -516,6 +521,7 @@ async fn run_process_observed(
     }
 
     Ok(ProcessOutcome {
+        process_started: true,
         exit_code,
         termination,
         duration_ms: started_at.elapsed().as_millis(),

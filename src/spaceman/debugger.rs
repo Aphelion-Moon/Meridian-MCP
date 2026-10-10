@@ -84,7 +84,7 @@ pub fn validate_installation(
     })
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub enum AuxRequest {
     Disconnect,
     Configured,
@@ -132,7 +132,7 @@ pub enum AuxRequest {
     },
     Pause,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub enum AuxResponse {
     Ack,
     StdDef(Option<String>),
@@ -173,55 +173,55 @@ pub enum AuxResponse {
         reason: BreakpointReason,
     },
 }
-#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone, schemars::JsonSchema)]
 pub struct ProcRef {
     pub path: String,
     pub override_id: u32,
 }
-#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone, schemars::JsonSchema)]
 pub struct InstructionRef {
     pub proc: ProcRef,
     pub offset: u32,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub enum BreakpointReason {
     Breakpoint,
     Step,
     Pause,
     Runtime(String),
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub enum ContinueKind {
     Continue,
     StepOver { stack_id: u32 },
     StepInto { stack_id: u32 },
     StepOut { stack_id: u32 },
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct Stack {
     pub id: u32,
     pub name: String,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct StackFrame {
     pub id: u32,
     pub instruction: InstructionRef,
     pub line: Option<u32>,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub enum BreakpointSetResult {
     Success { line: Option<u32> },
     Failed,
 }
-#[derive(Clone, Hash, Eq, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Clone, Hash, Eq, PartialEq, Serialize, Deserialize, Debug, schemars::JsonSchema)]
 pub struct VariablesRef(pub i32);
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct Variable {
     pub name: String,
     pub value: String,
     pub variables: Option<VariablesRef>,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct EvalResponse {
     pub value: String,
     pub variables: Option<VariablesRef>,
@@ -405,7 +405,7 @@ impl AuxConnection {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DebuggerLifecycle {
     Running,
@@ -433,7 +433,7 @@ pub struct DebuggerSession {
     pub(crate) execution_lease: Option<crate::execution_lease::ExecutionLease>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct DebuggerEventRecord {
     pub sequence: u64,
     pub kind: String,
@@ -443,14 +443,68 @@ pub struct DebuggerEventRecord {
 
 impl DebuggerSession {
     pub async fn stop(&mut self) -> anyhow::Result<()> {
+        self.stop_with_pool(None).await
+    }
+
+    pub(crate) async fn stop_with_pool(
+        &mut self,
+        pool: Option<crate::request::BlockingPool>,
+    ) -> anyhow::Result<()> {
         let _ = self.connection.disconnect().await;
         self.containment.request_termination()?;
-        tokio::time::timeout(Duration::from_secs(2), self.process.wait()).await??;
-        crate::process::wait_for_cleanup(&self.containment).await?;
-        if let Some(lease) = self.execution_lease.as_mut() {
-            lease.finish()?;
+        let mut outcome = crate::result::MutationOutcome {
+            operation_ran: true,
+            action: Some("debug_stop".into()),
+            runtime_id: Some(self.runtime_id.clone()),
+            recovery_required: true,
+            ..Default::default()
+        };
+        let stopped = tokio::time::timeout(Duration::from_secs(2), self.process.wait()).await;
+        match stopped {
+            Ok(Ok(_)) => outcome.process_stopped = true,
+            Ok(Err(error)) => {
+                return Err(crate::result::OutcomeError {
+                    error: error.into(),
+                    outcome,
+                }
+                .into())
+            }
+            Err(error) => {
+                return Err(crate::result::OutcomeError {
+                    error: error.into(),
+                    outcome,
+                }
+                .into())
+            }
         }
-        self.execution_lease = None;
+        crate::process::wait_for_cleanup(&self.containment)
+            .await
+            .map_err(|error| crate::result::OutcomeError {
+                error,
+                outcome: outcome.clone(),
+            })?;
+        outcome.cleanup_complete = true;
+        if let Some(mut lease) = self.execution_lease.take() {
+            let (result, lease) = if let Some(pool) = pool {
+                pool.run(move || Ok((lease.finish(), lease)))
+                    .await
+                    .map_err(|error| {
+                        let mut outcome = outcome.clone();
+                        outcome.cleanup_complete = false;
+                        outcome.recovery_required = true;
+                        crate::result::OutcomeError { error, outcome }
+                    })?
+            } else {
+                (lease.finish(), lease)
+            };
+            if result.is_err() {
+                self.execution_lease = Some(lease);
+            }
+            result.map_err(|error| crate::result::OutcomeError {
+                error,
+                outcome: outcome.clone(),
+            })?;
+        }
         Ok(())
     }
 }

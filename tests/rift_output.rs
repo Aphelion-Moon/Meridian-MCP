@@ -22,6 +22,7 @@ fn root() -> PathBuf {
     path
 }
 fn compiler() -> &'static PathBuf {
+    meridian_mcp::process::initialize_runtime_owner().unwrap();
     static BINARY: OnceLock<PathBuf> = OnceLock::new();
     BINARY.get_or_init(|| {
         let path = root().join("fixture.exe");
@@ -106,8 +107,9 @@ async fn run(mode: &str, options: Value) -> (usize, Value, Option<Value>, bool) 
         .artifact_key(&workspace.join("tgstation.dmb"))
         .unwrap();
     let attempt = private
-        .read_json::<Value>(&format!("attempts/{key}.json"))
-        .ok();
+        .read_json::<Value>(&format!("artifacts-v2/{key}/state.json"))
+        .ok()
+        .map(|state| state["attempt"].clone());
     let started = workspace.join("wrapper.marker").exists();
     drop(context);
     drop(store);
@@ -125,7 +127,7 @@ async fn early_errors_and_wrapper_records_survive_tail_eviction() {
         ("oversized", "output_analysis_incomplete"),
     ] {
         let (_, body, attempt, _) = run(mode, json!({})).await;
-        assert_eq!(body["success"], false, "{mode}");
+        assert_eq!(body["success"], false, "{mode}: {body}");
         assert_eq!(body["code"], code, "{mode}");
         assert_eq!(attempt.unwrap()["outcome"]["status"], "failed");
     }
@@ -133,7 +135,7 @@ async fn early_errors_and_wrapper_records_survive_tail_eviction() {
 #[tokio::test]
 async fn early_cache_evidence_survives_tail_eviction() {
     let (_, body, _, _) = run("cache", json!({})).await;
-    assert_eq!(body["success"], true);
+    assert_eq!(body["success"], true, "{body}");
     assert_eq!(body["evidence"], "valid_cache_hit");
     assert!(body["cache_evidence"]
         .as_str()
@@ -144,7 +146,7 @@ async fn early_cache_evidence_survives_tail_eviction() {
 async fn response_controls_bound_logs_and_preserve_full_diagnostic_counts() {
     let (bytes, body, _, _) = run("flood", json!({})).await;
     assert!(bytes <= 512 * 1024, "reply bytes: {bytes}");
-    assert_eq!(body["success"], true);
+    assert_eq!(body["success"], true, "{body}");
     assert!(body["artifact_after"]["dmb"]["sha256"].is_string());
     for limit in [0, 2, 200] {
         let (bytes, body, _, _) = run(
@@ -162,7 +164,7 @@ async fn response_controls_bound_logs_and_preserve_full_diagnostic_counts() {
 #[tokio::test]
 async fn missing_artifact_failures_are_recorded() {
     let (_, body, attempt, _) = run("missing", json!({})).await;
-    assert_eq!(body["success"], false);
+    assert_eq!(body["success"], false, "{body}");
     assert_eq!(
         attempt.expect("missing failed attempt")["outcome"]["status"],
         "failed"

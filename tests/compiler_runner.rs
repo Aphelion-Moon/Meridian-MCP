@@ -500,6 +500,39 @@ async fn dropping_a_compiler_request_completes_cleanup_before_scope_reuse() {
         !dme.with_extension("dmb").exists(),
         "cancelled compiler wrote after cleanup"
     );
+    let reuse_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    let scope_key = std::path::Path::new(record)
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap();
+    let lease_file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(
+            private
+                .root()
+                .join("execution-locks-v1")
+                .join(scope_key)
+                .with_extension("lock"),
+        )
+        .unwrap();
+    // The durable inactive record proves writer cleanup. The owner still holds
+    // its OS lease while finishing the response, so also await that boundary.
+    tokio::time::timeout_at(reuse_deadline, async {
+        loop {
+            match lease_file.try_lock() {
+                Ok(()) => break,
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(error) => panic!("could not observe execution lease release: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("dropped compiler did not release its execution lease");
+    drop(lease_file);
     let second = tokio::spawn(async move {
         call_tool(
             &context,
@@ -509,11 +542,10 @@ async fn dropping_a_compiler_request_completes_cleanup_before_scope_reuse() {
         )
         .await
     });
-    let (mut stream, _) =
-        tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
-            .await
-            .unwrap()
-            .unwrap();
+    let (mut stream, _) = tokio::time::timeout_at(reuse_deadline, listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
     stream.read_exact(&mut [0; 7]).await.unwrap();
     assert_eq!(private.read_json::<Value>(record).unwrap()["active"], true);
     second.abort();

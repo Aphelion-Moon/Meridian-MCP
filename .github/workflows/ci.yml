@@ -73,7 +73,7 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Portable provenance and evidence gates
         run: cargo test --locked --test repository_roots --test proc_resolution --test build_provenance --test runtime_integrity --test native_evidence_readers --test native_evidence_timeline --test native_evidence_summary --test native_evidence_comparison
-      - run: cargo test --locked --all-features
+      - run: cargo test --locked --all-features --no-fail-fast
       - run: cargo build --locked --release
       - name: SpacemanDMM documentation stdio fixture
         shell: pwsh

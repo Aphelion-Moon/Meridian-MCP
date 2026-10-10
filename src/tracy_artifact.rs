@@ -26,30 +26,36 @@ pub enum TraceSetError {
     OverwriteUnsupported,
     #[error("sidecar serialization failed: {0}")]
     Serialize(#[from] serde_json::Error),
-    #[error("paired output rollback failed; the newly-created trace remains at {0}")]
-    Rollback(PathBuf),
+    #[error("{source}; paired trace rollback complete: {rollback_complete}")]
+    PartialPublication {
+        #[source]
+        source: Box<AtomicOutputError>,
+        trace: OutputArtifact,
+        trace_retained: bool,
+        rollback_complete: bool,
+    },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct PromotedTraceSet {
     pub trace: OutputArtifact,
     pub sidecar: OutputArtifact,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DiagnosticTraceSet {
     pub authoritative: bool,
     pub trace: OutputArtifact,
     pub sidecar: OutputArtifact,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct RawRange {
     pub raw_begin: u64,
     pub raw_end: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct TraceMetadata {
     pub trace_sha256: String,
     pub meridian_mcp_build_id: String,
@@ -83,21 +89,21 @@ fn has_required_memory_roles(roles: &[ProcessRole]) -> bool {
             == 1
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ComparisonMode {
     SameExperimentSamePhase,
     CrossExperiment,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct IdentityMismatch {
     pub field: String,
     pub baseline: String,
     pub current: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 pub struct ComparisonCompatibility {
     pub compatible: bool,
     pub mode: ComparisonMode,
@@ -300,6 +306,15 @@ impl ReservedTraceSet {
     }
 
     pub fn promote<T: Serialize>(self, sidecar: &T) -> Result<PromotedTraceSet, TraceSetError> {
+        self.promote_checked(sidecar, || Ok(()))
+    }
+
+    pub(crate) fn promote_checked<T: Serialize>(
+        self,
+        sidecar: &T,
+        checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+    ) -> Result<PromotedTraceSet, TraceSetError> {
+        checkpoint()?;
         let bytes = serde_json::to_vec_pretty(sidecar)?;
         let mut output = std::fs::OpenOptions::new()
             .write(true)
@@ -310,17 +325,20 @@ impl ReservedTraceSet {
         output.flush()?;
         output.sync_all()?;
         drop(output);
-
-        let trace = self.trace.commit()?;
+        checkpoint()?;
+        let trace = self.trace.commit_checked(&checkpoint)?;
         match self.sidecar.commit() {
             Ok(sidecar) => Ok(PromotedTraceSet { trace, sidecar }),
             Err(error) => {
-                if hash_file(&trace.path).is_ok_and(|hash| hash == trace.sha256)
-                    && std::fs::remove_file(&trace.path).is_err()
-                {
-                    return Err(TraceSetError::Rollback(trace.path));
-                }
-                Err(error.into())
+                let rollback_complete = hash_file(&trace.path)
+                    .is_ok_and(|hash| hash == trace.sha256)
+                    && std::fs::remove_file(&trace.path).is_ok();
+                Err(TraceSetError::PartialPublication {
+                    source: Box::new(error),
+                    trace,
+                    trace_retained: !rollback_complete,
+                    rollback_complete,
+                })
             }
         }
     }
@@ -331,12 +349,34 @@ impl ReservedTraceSet {
         diagnostic_trace: &Path,
         sidecar: &T,
     ) -> Result<DiagnosticTraceSet, TraceSetError> {
+        self.promote_diagnostic_checked(policy, diagnostic_trace, sidecar, || Ok(()))
+    }
+
+    pub(crate) fn promote_diagnostic_checked<T: Serialize>(
+        self,
+        policy: &PathPolicy,
+        diagnostic_trace: &Path,
+        sidecar: &T,
+        checkpoint: impl Fn() -> Result<(), AtomicOutputError>,
+    ) -> Result<DiagnosticTraceSet, TraceSetError> {
+        checkpoint()?;
         let diagnostic = reserve_trace_set(policy, diagnostic_trace, false)?;
-        std::fs::copy(
-            self.temporary_trace_path(),
-            diagnostic.temporary_trace_path(),
-        )?;
-        let promoted = diagnostic.promote(sidecar)?;
+        let mut source = std::fs::File::open(self.temporary_trace_path())?;
+        let mut target = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(diagnostic.temporary_trace_path())?;
+        let mut buffer = [0; 64 * 1024];
+        loop {
+            checkpoint()?;
+            let count = std::io::Read::read(&mut source, &mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            target.write_all(&buffer[..count])?;
+        }
+        drop(target);
+        let promoted = diagnostic.promote_checked(sidecar, checkpoint)?;
         Ok(DiagnosticTraceSet {
             authoritative: false,
             trace: promoted.trace,
@@ -408,8 +448,56 @@ fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::has_required_memory_roles;
+    use super::*;
     use crate::process_metrics::ProcessRole;
+
+    #[test]
+    fn interrupted_preparation_does_not_publish_normal_or_diagnostic_trace_pairs() {
+        let root = std::env::temp_dir().join(format!(
+            "meridian-trace-interruption-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let policy = PathPolicy::new(vec![root.clone()], vec![]).unwrap();
+        for diagnostic in [false, true] {
+            let output = root.join("capture.tracy");
+            let reserved = reserve_trace_set(&policy, &output, false).unwrap();
+            std::fs::write(reserved.temporary_trace_path(), b"captured bytes").unwrap();
+            let checks = std::cell::Cell::new(0);
+            let checkpoint = || {
+                checks.set(checks.get() + 1);
+                // Interrupt after one copy/hash chunk, before promotion.
+                if checks.get() == if diagnostic { 3 } else { 4 } {
+                    return Err(AtomicOutputError::writer("request_cancelled"));
+                }
+                Ok(())
+            };
+            if diagnostic {
+                assert!(reserved
+                    .promote_diagnostic_checked(
+                        &policy,
+                        &output,
+                        &serde_json::json!({}),
+                        checkpoint
+                    )
+                    .is_err());
+            } else {
+                assert!(reserved
+                    .promote_checked(&serde_json::json!({}), checkpoint)
+                    .is_err());
+            }
+            assert_eq!(
+                std::fs::read_dir(&root).unwrap().count(),
+                0,
+                "interrupted trace publication left an output or staging file"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn required_memory_roles_allow_an_owned_wake_client() {
