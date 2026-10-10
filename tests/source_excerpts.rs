@@ -16,9 +16,13 @@ impl Fixture {
     async fn new(source: impl AsRef<[u8]>) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "meridian-source-excerpts-{}-{}",
+            "meridian-source-excerpts-{}-{}-{}",
             std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
+            NEXT.fetch_add(1, Ordering::Relaxed),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("fixture.dm"), source).unwrap();

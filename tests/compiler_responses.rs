@@ -12,9 +12,13 @@ use std::sync::{
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 fn root() -> PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "meridian-compiler-response-{}-{}",
+        "meridian-compiler-response-{}-{}-{}",
         std::process::id(),
-        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::create_dir(&root).unwrap();
     root
